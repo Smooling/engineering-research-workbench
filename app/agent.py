@@ -14,7 +14,7 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from . import config, store, activity
+from . import config, store, activity, retrieval
 from .workspace import ensure_workspace
 
 _LOCK = threading.RLock()
@@ -186,6 +186,51 @@ def _reference_context(ref_ids: list[str]) -> tuple[str, list[dict[str, str]]]:
     return "\n\n---\n\n".join(chunks), refs
 
 
+def _retrieval_context(query: str, options: dict[str, Any] | None, exclude_ids: set[str] | None = None) -> tuple[str, list[dict[str, Any]], dict[str, Any]]:
+    opts = retrieval.normalize_options(options)
+    if not opts.get("enabled") or not str(query or "").strip():
+        return "", [], {"options": opts, "returned": 0}
+    result = retrieval.retrieve(query, opts)
+    excluded = exclude_ids or set()
+    chunks: list[str] = []
+    refs: list[dict[str, Any]] = []
+    total = 0
+    for item in result.get("items") or []:
+        doc_id = str(item.get("id") or "")
+        if not doc_id or doc_id in excluded:
+            continue
+        heading = str(item.get("heading") or "").strip()
+        passage = str(item.get("passage") or "").strip()
+        header = f"[AUTO {len(refs)+1}] {item.get('title','')} | 类型={item.get('kind','')} | 项目={', '.join(item.get('projects') or []) or '未归属'}"
+        if heading:
+            header += f" | 章节={heading}"
+        block = header + "\n" + passage
+        if total + len(block) > _MAX_CONTEXT_CHARS:
+            remain = max(0, _MAX_CONTEXT_CHARS - total)
+            if remain < 500:
+                break
+            block = block[:remain]
+        chunks.append(block)
+        refs.append({
+            "id": doc_id,
+            "title": str(item.get("title") or doc_id),
+            "kind": str(item.get("kind") or ""),
+            "project": str(item.get("project") or ""),
+            "projects": item.get("projects") or [],
+            "heading": heading,
+            "score": item.get("score"),
+            "source": str(item.get("source") or "keyword"),
+            "reason": str(item.get("reason") or ""),
+            "auto": True,
+        })
+        total += len(block)
+        if total >= _MAX_CONTEXT_CHARS:
+            break
+    meta = dict(result.get("meta") or {})
+    meta["returned"] = len(refs)
+    return "\n\n---\n\n".join(chunks), refs, meta
+
+
 def _llm_cfg() -> dict[str, Any]:
     cfg = config.get_active_llm_profile_runtime()
     if not cfg.get("enabled", False):
@@ -327,7 +372,7 @@ def _chat_completions(cfg: dict[str, Any], system_prompt: str, history: list[dic
     return str(content or "").strip(), reasoning
 
 
-def send_message(session_id: str, text: str, ref_ids: list[str] | None = None, image_paths: list[str] | None = None, request_preset: str = "") -> dict[str, Any]:
+def send_message(session_id: str, text: str, ref_ids: list[str] | None = None, image_paths: list[str] | None = None, request_preset: str = "", retrieval_options: dict[str, Any] | None = None) -> dict[str, Any]:
     text = str(text or "").strip()
     ref_ids = [str(x) for x in (ref_ids or []) if str(x).strip()]
     image_paths = [str(x) for x in (image_paths or []) if str(x).strip()][:6]
@@ -352,9 +397,16 @@ def send_message(session_id: str, text: str, ref_ids: list[str] | None = None, i
         messages = session.get("messages") if isinstance(session.get("messages"), list) else []
         history = list(messages)
     context, refs = _reference_context(ref_ids)
+    auto_context, auto_refs, retrieval_meta = _retrieval_context(text, retrieval_options, {str(x.get("id") or "") for x in refs})
     system_prompt = str(cfg.get("system_prompt") or config.DEFAULT_SYSTEM_PROMPT).strip()
     if context:
         system_prompt += "\n\n以下是用户手动引用的本地研究资料。仅将其作为上下文，不要声称看到了未提供的资料：\n\n" + context
+    if auto_context:
+        system_prompt += (
+            "\n\n以下是系统根据当前问题自动检索到的本地研究资料。它们是候选证据，不代表一定正确；"
+            "回答时优先使用能直接支持结论的内容，若证据不足请明确说明，不要根据标题或关联关系臆测：\n\n"
+            + auto_context
+        )
     preset_id, preset_label, preset_model, preset_temperature, request_params = _request_preset(cfg, request_preset)
     if not preset_model:
         raise ValueError(f"请求模式 {preset_label} 尚未配置模型名称")
@@ -363,7 +415,7 @@ def send_message(session_id: str, text: str, ref_ids: list[str] | None = None, i
     if preset_temperature is not None:
         request_cfg["temperature"] = preset_temperature
     now = _now()
-    user_msg = {"id": "msg-" + uuid.uuid4().hex[:10], "role": "user", "content": text, "created": now, "refs": refs, "images": image_paths, "request_preset": preset_id, "request_preset_label": preset_label, "profile_id": cfg.get("id"), "profile_name": cfg.get("name")}
+    user_msg = {"id": "msg-" + uuid.uuid4().hex[:10], "role": "user", "content": text, "created": now, "refs": refs, "auto_refs": auto_refs, "retrieval": retrieval_meta, "images": image_paths, "request_preset": preset_id, "request_preset_label": preset_label, "profile_id": cfg.get("id"), "profile_name": cfg.get("name")}
     with _LOCK:
         session = get_session(session_id)
         session.setdefault("messages", []).append(user_msg)
@@ -383,7 +435,7 @@ def send_message(session_id: str, text: str, ref_ids: list[str] | None = None, i
         session["updated"] = _now()
         _atomic_json(_session_path(session_id), session)
     activity.record("agent_chat", ref=session_id, kind="agent", title=session.get("title", "Agent 对话"), project="")
-    return {"ok": True, "session": session, "assistant": assistant_msg}
+    return {"ok": True, "session": session, "assistant": assistant_msg, "retrieval": {"items": auto_refs, "meta": retrieval_meta}}
 
 
 def test_connection() -> dict[str, Any]:
