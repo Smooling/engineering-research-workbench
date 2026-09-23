@@ -251,3 +251,12 @@ button,input,textarea,select{font:inherit;color:inherit} button{cursor:pointer} 
 .timeline-3d-card.selected{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 28%,transparent),var(--shadow)}
 @media(max-width:1450px){.graph-wrap.preview-open{grid-template-columns:minmax(0,1fr) 330px}.graph-wrap.preview-open .graph-side{grid-column:1/-1;display:grid;grid-template-columns:minmax(220px,.8fr) 1fr 1fr;gap:14px}.milestone-3d-layout.preview-open{grid-template-columns:minmax(0,1fr) 330px}}
 @media(max-width:1100px){.graph-wrap,.graph-wrap.preview-open,.milestone-3d-layout.preview-open{grid-template-columns:1fr}.graph-preview,.milestone-preview{max-height:none}.graph-canvas-help{display:none}.graph-wrap.preview-open .graph-side{display:block;grid-column:auto}}
+
+
+/* test/rag-hybrid-retrieval · explainable automatic local retrieval */
+#agent-rag-settings.rag-on{background:var(--accent-soft);border-color:color-mix(in srgb,var(--accent) 35%,var(--line));color:var(--accent-ink)}
+.agent-auto-ref{max-width:420px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rag-settings{display:grid;gap:8px}.rag-switch{display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface-2)}.rag-switch input,.rag-kind-grid input{accent-color:var(--accent)}
+.rag-kind-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2)}.rag-kind-grid label{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)}
+.rag-preview-box{display:grid;gap:7px;max-height:350px;overflow:auto;margin-top:8px}.rag-preview-item{border:1px solid var(--line);border-radius:9px;padding:9px 10px;background:var(--surface-2)}.rag-preview-item>div:first-child{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.rag-preview-item p{margin:7px 0 0;font-size:10px;line-height:1.65;color:var(--muted);white-space:pre-wrap}
+@media(max-width:820px){.rag-kind-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
