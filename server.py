@@ -314,10 +314,15 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(agent.rename_session(str(payload.get("id") or ""), str(payload.get("title") or "")))
         if path == "/api/agent/assets":
             return self.send_json(agent.save_image(str(payload.get("data_url") or ""), str(payload.get("name") or "image.png")))
+        if path == "/api/retrieval/search":
+            return self.send_json(indexer.retrieve(
+                str(payload.get("query") or ""), payload.get("options") or {},
+            ))
         if path == "/api/agent/send":
             return self.send_json(agent.send_message(
                 str(payload.get("session_id") or ""), str(payload.get("message") or ""),
                 payload.get("refs") or [], payload.get("images") or [], str(payload.get("request_preset") or ""),
+                payload.get("retrieval") or {},
             ))
         if path == "/api/agent/test":
             return self.send_json(agent.test_connection())
