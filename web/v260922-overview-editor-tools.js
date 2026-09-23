@@ -102,7 +102,7 @@
         const res=await fetch('/api/docs?kind='+encodeURIComponent(kind));
         if(!res.ok)throw new Error(`HTTP ${res.status}`);
         const data=await res.json();
-        return Array.isArray(data)?data.slice(0,10):[];
+        return Array.isArray(data)?data.slice(0,5):[]; /* v260922i2 · 笔记行数 6→5，压缩最近卡高度 */
       }));
       specs.forEach(([,card],i)=>paintRecentCard(card,results[i]));
       group.dataset.recentExpanded='done';

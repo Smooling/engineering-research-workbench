@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#087f83">
   <title>科研工作台</title>
+  <link rel="icon" type="image/png" href="/favicon.png?v=260923">
+  <link rel="apple-touch-icon" href="/favicon.png?v=260923">
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/v260922-projects.css">
   <link rel="stylesheet" href="/v260922-compact-layout.css">
@@ -61,6 +63,17 @@
             <span class="status-dot"></span><span id="weather-text">天气加载中</span>
           </button>
           <button class="icon-btn" id="theme-btn" type="button" title="切换主题">◐</button>
+          <button class="density-pill" id="density-btn" type="button" title="当前：紧凑型（热力图与学业卡并排、一屏收纳免滚动）。点击切换为宽松型">紧凑型</button>
+          <div class="zoom-wrap">
+            <button class="zoom-pill" id="zoom-btn" type="button" title="界面缩放">100%</button>
+            <div class="dropdown hidden" id="zoom-menu">
+              <button type="button" data-zoom="80">80% · 紧凑</button>
+              <button type="button" data-zoom="90">90% · 偏小</button>
+              <button type="button" data-zoom="100">100% · 默认</button>
+              <button type="button" data-zoom="110">110% · 偏大</button>
+              <button type="button" data-zoom="125">125% · 宽松</button>
+            </div>
+          </div>
           <div class="reload-wrap">
             <button class="primary-btn reload-btn" id="reload-btn" type="button" title="重新读取所有配置并刷新本地缓存">↻ Reload</button>
             <button class="primary-btn reload-menu-btn" id="reload-menu-btn" type="button" aria-label="Reload 菜单">⌄</button>

@@ -373,6 +373,24 @@ OPENAI_API_KEY
 
 运行模型调用时，Python 进程从操作系统环境变量中读取真实值。
 
+### 方式一（推荐）：本地私密文件 config/secrets.json
+
+该文件已被 `.gitignore` 排除，不会上传 git。在 `env` 对象中填入 `"环境变量名": "密钥值"`：
+
+```json
+{
+  "env": {
+    "OPENAI_API_KEY": "你的密钥"
+  }
+}
+```
+
+服务运行中保存后自动注入环境变量（按文件修改时间热重载，无需重启），`run.bat` 启动无需每次手动设置 Key。若设置页填写的是其它变量名（如 `DASHSCOPE_API_KEY`），在 `env` 中添加对应条目即可。
+
+> `config/secrets.json` 只存在于本机；工作台不会把 Key 回写到 `config/app.json`、Workspace 或任何接口返回中。
+
+### 方式二：临时环境变量（仅当前会话有效）
+
 ### Windows PowerShell
 
 ```powershell

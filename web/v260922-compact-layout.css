@@ -48,8 +48,8 @@
   .quick-capture-actions{gap:6px;max-width:820px}.quick-action{min-height:46px;padding:6px 8px;grid-template-columns:19px 1fr;column-gap:6px;border-radius:8px}.quick-action>span{font-size:15px}.quick-action b{font-size:11px}.quick-action small{font-size:8px}
 
   .overview-academic-grid{gap:10px}.academic-progress-card,.graduation-card{padding:14px;min-height:0}.academic-progress-card .card-head,.graduation-card .card-head{margin-bottom:7px}
-  .degree-progress-value{font-size:44px;margin:7px 0 7px}.degree-progress-value span{font-size:15px}.degree-progress-dates,.degree-progress-foot{margin-top:7px}.degree-progress-foot{gap:20px}
-  .condition-score{font-size:23px}.condition-list{gap:9px;margin-top:9px}.condition-line{font-size:11px;margin-bottom:5px}.academic-empty,.academic-empty.compact{min-height:112px;padding:14px;gap:5px}
+  .degree-progress-value{font-size:34px;margin:5px 0 5px}.degree-progress-value span{font-size:14px}.degree-progress-dates,.degree-progress-foot{margin-top:6px}.degree-progress-foot{gap:20px}
+  .condition-score{font-size:21px}.condition-list{gap:7px;margin-top:7px}.condition-line{font-size:11px;margin-bottom:3px}.academic-empty,.academic-empty.compact{min-height:112px;padding:14px;gap:5px}
 
   .heatmap-card{--heat-cell-size:13px;--heat-gap:3px;padding:13px 14px 10px}.heatmap-card .card-head{margin-bottom:6px}.heatmap-card .card-head p{margin-top:3px;font-size:10px}.heatmap-head-tools{gap:8px}.heatmap-summary{gap:3px 7px}.heatmap-summary strong{font-size:16px}.mini-select{padding-top:5px;padding-bottom:5px}.heatmap-scroll{padding:4px 2px 5px}.heatmap-axis{flex-basis:38px;width:38px}.heatmap-axis-cap,.heatmap-months{height:20px}.heatmap-footer{margin-top:2px}
 
@@ -63,6 +63,66 @@
  * Existing overview DOM is deliberately reused: only visual placement changes.
  */
 @media (min-width:1280px){
+  /* v260922j · 响应式高度系统：视口→主区→dashboard 全链拉通，
+   * 概览路由时锁定视口高度，四条横带按 fr 比例分配剩余空间。 */
+  .app-shell:has(>.main-shell .overview-dashboard){
+    height:100vh;
+  }
+  .app-shell:has(>.main-shell .overview-dashboard)>.sidebar{
+    height:100vh;
+    overflow-y:auto; /* 侧栏独立滚动，不撑破整页高度 */
+  }
+  .main-shell:has(>.main-content .overview-dashboard){
+    height:100vh;
+    display:flex;
+    flex-direction:column;
+  }
+  .main-shell:has(>.main-content .overview-dashboard)>.main-content{
+    flex:1 1 auto;
+    min-height:0;
+    display:flex;
+    flex-direction:column;
+    overflow-y:auto; /* 模块内容下限之和超出视口时自然回退为滚动 */
+  }
+  .main-shell:has(>.main-content .overview-dashboard)>.main-content>.overview-dashboard{
+    flex:1 1 auto;
+    min-height:0;
+    grid-template-rows:
+      minmax(242px,34fr)  /* 行1 热力图+学业区：内容最多，占比最大 */
+      minmax(92px,12fr)   /* 行2 今天+快速记录：宽屏两种密度都双列并排 */
+      minmax(140px,17fr)  /* 行3 节奏|任务|里程碑 */
+      minmax(220px,29fr); /* 行4 项目推进|最近研究活动 */
+  }
+  /* v260922k4 · 宽松型 mid-row 宽屏也双列：堆叠布局会把行 2 撑到约 230px 破坏一屏高度；
+   * 紧凑型规则（styles.css，特异性更高）不受影响。 */
+  .overview-dashboard>.overview-mid-row{
+    grid-template-columns:minmax(0,.92fr) minmax(0,1.08fr);
+  }
+  /* v260922k5 · 宽松型不锁一屏：解除视口高度锁定与行占比，
+   * 各模块高度随内容自适应，页面超出视口时用滚动条下滑。 */
+  html[data-density="cozy"] .app-shell:has(>.main-shell .overview-dashboard){height:auto}
+  html[data-density="cozy"] .app-shell:has(>.main-shell .overview-dashboard)>.sidebar{height:auto;overflow:visible}
+  html[data-density="cozy"] .main-shell:has(>.main-content .overview-dashboard){height:auto}
+  html[data-density="cozy"] .main-shell:has(>.main-content .overview-dashboard)>.main-content{overflow-y:visible}
+  html[data-density="cozy"] .main-shell:has(>.main-content .overview-dashboard)>.main-content>.overview-dashboard{
+    grid-template-rows:none; /* 行高随内容，不再按 fr 强制占比 */
+  }
+  /* v260922k7 · 紧凑型：灵感/研究日志/笔记等文档页锁定一屏，消除整页滚动条 */
+  html[data-density="compact"] .main-shell:has(>.main-content .docs-layout){
+    height:100vh;
+    display:flex;flex-direction:column;
+  }
+  html[data-density="compact"] .main-shell:has(>.main-content .docs-layout)>.main-content{
+    flex:1 1 auto;
+    min-height:0;
+    display:flex;flex-direction:column; /* v260922k7d · 高度链闭合：让 docs-layout 的 flex:1 真正生效，否则其高度塌陷、内容被裁 */
+    overflow:hidden; /* 高度由 flex 精确分配，杜绝整页滚动 */
+  }
+  html[data-density="compact"] .main-shell:has(>.main-content .docs-layout)>.main-content>.docs-layout{
+    height:auto; /* k6 的 calc 基准作废，改由 flex 填满剩余空间 */
+    flex:1 1 auto;
+    min-height:0;
+  }
   .overview-dashboard{
     display:grid;
     grid-template-columns:repeat(12,minmax(0,1fr));
@@ -70,54 +130,91 @@
     align-items:stretch;
   }
 
-  /* Top: heatmap dominates; academic information stacks at the right. */
-  .overview-dashboard>.heatmap-card{
-    grid-column:1 / 8;
+  /* Top band: renderOverview wraps heatmap + academic grid in .overview-top-row,
+   * so the console grid must place the WRAPPER, not the cards inside it.
+   * The inner heatmap|academic split is owned by fitResearchHeatmap (inline template). */
+  .overview-dashboard>.overview-top-row{
+    grid-column:1 / 13;
     grid-row:1;
-    min-height:306px;
+    min-width:0;
+    min-height:0; /* v260922j · 允许行内收缩，fr 行高不被内容下限撑破 */
   }
-  .overview-dashboard>.overview-academic-grid{
-    grid-column:8 / 13;
-    grid-row:1;
+  .overview-dashboard>.overview-top-row>.heatmap-card{
+    min-width:0;
+  }
+  .overview-dashboard>.overview-top-row>.overview-academic-grid{
     display:grid;
     grid-template-columns:1fr;
     grid-template-rows:minmax(0,1fr) minmax(0,1fr);
     gap:10px;
     min-width:0;
   }
-  .overview-dashboard>.overview-academic-grid>.card{
+  .overview-dashboard>.overview-top-row>.overview-academic-grid>.card{
     min-height:0;
     height:100%;
   }
-  .overview-dashboard>.overview-academic-grid .degree-progress-value{
-    font-size:38px;
-    margin:4px 0 5px;
+  /* v260922i2 · 学业两卡内容纵向撑满，消除卡内拉伸留白（宽松/紧凑通用） */
+  .overview-dashboard>.overview-top-row>.overview-academic-grid>.academic-progress-card,
+  .overview-dashboard>.overview-top-row>.overview-academic-grid>.graduation-card{
+    display:flex;
+    flex-direction:column;
   }
-  .overview-dashboard>.overview-academic-grid .condition-list{
-    gap:7px;
-    margin-top:6px;
+  .overview-dashboard>.overview-top-row>.overview-academic-grid>.academic-progress-card .degree-progress-dates,
+  .overview-dashboard>.overview-top-row>.overview-academic-grid>.academic-progress-card .degree-progress-foot{
+    margin-top:auto;
+  }
+  .overview-dashboard>.overview-top-row>.overview-academic-grid>.graduation-card .condition-list{
+    flex:1 1 auto;
+    align-content:space-evenly;
+  }
+  .overview-dashboard>.overview-top-row>.overview-academic-grid .degree-progress-value{
+    font-size:26px;
+    margin:2px 0 3px;
+  }
+  .overview-dashboard>.overview-top-row>.overview-academic-grid .condition-list{
+    gap:5px;
+    margin-top:4px;
   }
 
-  /* Second band: daily desk on the left, rhythm/tasks/milestones on the right. */
-  .overview-dashboard>.overview-today{
-    grid-column:1 / 7;
+  /* Second band: today + quick capture live inside .overview-mid-row (wrapper);
+   * its inner split comes from styles.css (compact = two columns). */
+  .overview-dashboard>.overview-mid-row{
+    grid-column:1 / 13;
     grid-row:2;
-    min-height:92px;
+    min-width:0;
+    min-height:0; /* v260922j */
   }
-  .overview-dashboard>.overview-today .today-metrics{
-    min-width:52%;
+  .overview-dashboard>.overview-mid-row>.overview-today,
+  .overview-dashboard>.overview-mid-row>.quick-capture-card{
+    min-height:0;
   }
+
+  /* Rhythm/tasks/milestones take a full-width band below. */
   .overview-dashboard>.overview-ops-grid{
-    grid-column:7 / 13;
-    grid-row:2;
+    grid-column:1 / 13;
+    grid-row:3;
     display:grid;
     grid-template-columns:repeat(3,minmax(0,1fr));
     gap:10px;
+    min-height:0;
   }
   .overview-dashboard>.overview-ops-grid>.card{
     min-width:0;
-    min-height:92px;
+    min-height:0;
     padding:12px;
+    display:flex;        /* v260922j · 卡内容纵向填满行 3 分配的高度 */
+    flex-direction:column;
+    overflow:hidden;
+  }
+  .overview-dashboard>.overview-ops-grid>.card>.card-head{flex:0 0 auto}
+  .overview-dashboard>.overview-ops-grid>.card>.list-stack{
+    flex:1 1 auto;
+    min-height:0;
+    overflow-y:auto;
+  }
+  .overview-dashboard>.overview-ops-grid .empty{
+    min-height:0;
+    flex:1 1 auto;
   }
   .overview-dashboard>.overview-ops-grid .card-head{
     margin-bottom:7px;
@@ -131,77 +228,16 @@
     padding:7px 8px;
   }
 
-  /* Third/fourth bands: capture + project pulse at left, recent activity at right. */
-  .overview-dashboard>.quick-capture-card{
-    grid-column:1 / 7;
-    grid-row:3;
-    min-width:0;
-  }
-  .overview-dashboard>.quick-capture-card .quick-capture-copy{
-    min-width:160px;
-  }
-  .overview-dashboard>.quick-capture-card .quick-capture-actions{
-    grid-template-columns:repeat(5,minmax(72px,1fr));
-    gap:5px;
-    max-width:none;
-  }
-  .overview-dashboard>.quick-capture-card .quick-action{
-    min-width:0;
-  }
-
-  .overview-dashboard>.project-pulse-card{
-    grid-column:1 / 7;
-    grid-row:4;
-    min-width:0;
-  }
-  .overview-dashboard>.project-pulse-card .project-pulse-grid{
-    grid-template-columns:repeat(2,minmax(0,1fr));
-  }
-
-  .overview-dashboard>.section-title{
-    grid-column:7 / 13;
-    grid-row:3;
-    align-self:end;
-    margin:0;
-    min-height:58px;
-  }
-  .overview-dashboard>.section-title+ .grid.grid-3{
-    grid-column:7 / 13;
-    grid-row:4 / span 2;
-    display:grid;
-    grid-template-columns:repeat(3,minmax(0,1fr));
-    gap:10px;
-    align-self:stretch;
-  }
-  .overview-dashboard>.section-title+ .grid.grid-3>.card{
-    min-width:0;
-    min-height:154px;
-    padding:12px;
-  }
-
-  /* Asset counters finish the left column instead of consuming a full-width row. */
-  .overview-dashboard>.overview-stats{
-    grid-column:1 / 7;
-    grid-row:5;
-    display:grid;
-    grid-template-columns:repeat(4,minmax(0,1fr));
-    gap:10px;
-  }
-  .overview-dashboard>.overview-stats .stat-card{
-    min-width:0;
-    min-height:68px;
-    padding:10px 12px;
-  }
-  .overview-dashboard>.overview-stats .stat-value{font-size:22px}
-  .overview-dashboard>.overview-stats .stat-label{font-size:10px;margin-top:4px}
+  /* v260922j · 旧的四带直排定位规则已随包装层 DOM 失效，统一移除；
+   * quick-capture/project-pulse/recent/stats 由 styles.css 与 editor-tools.css 的
+   * mid-row / lower-band 结构接管。 */
 
   /* Make the heatmap visually fill the large top-left panel. */
-  .overview-dashboard>.heatmap-card .heatmap-scroll{
+  .overview-dashboard>.overview-top-row>.heatmap-card .heatmap-scroll{
     display:flex;
     align-items:center;
-    min-height:218px;
   }
-  .overview-dashboard>.heatmap-card .heatmap-plot{
+  .overview-dashboard>.overview-top-row>.heatmap-card .heatmap-plot{
     width:max-content;
     min-width:100%;
   }

@@ -811,7 +811,7 @@ def dashboard() -> dict[str, Any]:
     for name in project_names:
         project_docs = [d for d in docs if name in (d.get("projects") or ([d.get("project")] if d.get("project") else []))]
         project_todos = [t for t in todo_items if str(t.get("project") or "").strip() == name and not t.get("done")]
-        project_milestones = [d for d in project_docs if d.get("kind") == "milestone" and d.get("status") != "完成"]
+        project_milestones = [d for d in project_docs if d.get("kind") == "milestone"]
         timestamps = [str(d.get("updated") or d.get("created") or "") for d in project_docs]
         timestamps += [str(t.get("updated") or t.get("created") or "") for t in todo_items if str(t.get("project") or "").strip() == name]
         last_updated = max([x for x in timestamps if x], default="")
@@ -819,7 +819,7 @@ def dashboard() -> dict[str, Any]:
             "name": name,
             "docs": len(project_docs),
             "open_todos": len(project_todos),
-            "open_milestones": len(project_milestones),
+            "milestones": len(project_milestones),
             "literature": sum(1 for d in project_docs if d.get("kind") == "literature"),
             "notes": sum(1 for d in project_docs if d.get("kind") in {"note", "journal", "idea"}),
             "last_updated": last_updated,

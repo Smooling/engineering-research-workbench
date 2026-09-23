@@ -72,25 +72,48 @@
   .overview-mid-band>.overview-ops-grid .row-meta{font-size:9px}
   .overview-mid-band>.overview-ops-grid .empty{min-height:145px;padding:12px}
 
-  /* Lower dashboard is another aligned 50/50 band: project pulse starts at the same y as Recent Research. */
+  /* Lower dashboard is another aligned 50/50 band: project pulse starts at the same y as Recent Research.
+   * Row 4: row 1 = top-row (heatmap|academic), row 2 = mid-row (today|quick), row 3 = ops grid.
+   * v260922j · 随高度系统改为 stretch 填满：左右列吃满行 4，内部再按内容比例分配。 */
   .overview-dashboard>.overview-lower-band{
     grid-column:1 / 13;
-    grid-row:3;
+    grid-row:4;
     display:grid;
     grid-template-columns:minmax(0,1fr) minmax(0,1fr);
     gap:10px;
-    align-items:start;
+    align-items:stretch;
     min-width:0;
+    min-height:0;
   }
   .overview-lower-left,
-  .overview-recent-group{display:grid;gap:10px;min-width:0;align-content:start}
-  .overview-lower-left>.project-pulse-card{margin:0;min-width:0}
+  .overview-recent-group{
+    display:grid;
+    gap:10px;
+    min-width:0;
+    min-height:0;
+    align-content:stretch;
+  }
+  /* 左列：项目推进吃满弹性高度，统计卡按内容固定在底部。 */
+  .overview-lower-left{grid-template-rows:minmax(0,1fr) auto}
+  .overview-lower-left>.project-pulse-card{
+    margin:0;
+    min-width:0;
+    min-height:0;
+    display:flex;
+    flex-direction:column;
+  }
+  .overview-lower-left>.project-pulse-card .project-pulse-grid{
+    flex:1 1 auto;
+    align-content:space-evenly;
+  }
   .overview-lower-left>.overview-stats{
     display:grid;
     grid-template-columns:repeat(4,minmax(0,1fr));
     gap:10px;
     margin:0;
   }
+  /* 右列：标题按内容固定，最近三卡吃满剩余高度；卡内滚动兜底防溢出。 */
+  .overview-recent-group{grid-template-rows:auto minmax(0,1fr)}
   .overview-recent-group>.section-title{
     margin:0;
     min-height:58px;
@@ -101,17 +124,21 @@
     grid-template-columns:repeat(3,minmax(0,1fr));
     gap:10px;
     margin:0;
+    min-height:0;
   }
-  .overview-recent-group>.grid.grid-3>.card{min-width:0;min-height:154px;padding:12px}
-
-  /* Disable the previous direct-child placement rules after JS groups these sections. */
-  .overview-dashboard>.overview-today,
-  .overview-dashboard>.quick-capture-card,
-  .overview-dashboard>.overview-ops-grid,
-  .overview-dashboard>.project-pulse-card,
-  .overview-dashboard>.overview-stats,
-  .overview-dashboard>.section-title,
-  .overview-dashboard>.section-title+.grid.grid-3{grid-column:auto;grid-row:auto}
+  .overview-recent-group>.grid.grid-3>.card{
+    min-width:0;
+    min-height:0;
+    height:100%;
+    padding:12px;
+    overflow-y:auto;
+  }
+  .overview-recent-group>.grid.grid-3>.card>.card-head{
+    position:sticky;
+    top:0;
+    z-index:1;
+    background:var(--surface);
+  }
 }
 
 @media (min-width:1101px) and (max-width:1279px){
@@ -137,7 +164,9 @@
   white-space:nowrap;
 }
 .editor-zoom-field select{
-  height:30px;
+  height:26px; /* v260923 · 与 .toolbar button 26px 统一，消除工具栏内高低不一 */
+  box-sizing:border-box;
+  line-height:24px;
   min-width:66px;
   padding:0 5px;
   border:1px solid var(--line);
@@ -148,6 +177,7 @@
   outline:none;
 }
 .editor-zoom-field select:focus{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+.editor-tabs button{height:26px;padding:0 10px} /* v260923 · 模式切换按钮显式同高 */
 .editor-zoom-controls+.editor-tabs{margin-left:4px}
 
 #editor-pane{--md-edit-scale:1;--md-preview-scale:1}
