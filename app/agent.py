@@ -179,7 +179,7 @@ def _reference_context(ref_ids: list[str]) -> tuple[str, list[dict[str, str]]]:
         chunks.append(chunk)
         refs.append({"id": doc["id"], "title": str(doc.get("title") or doc["id"]), "kind": str(doc.get("kind") or ""), "project": str(doc.get("project") or "")})
         total += len(chunk)
-        if total >= max_chars:
+        if total >= _MAX_CONTEXT_CHARS:
             break
     if not chunks:
         return "", refs
@@ -225,7 +225,7 @@ def _retrieval_context(query: str, options: dict[str, Any] | None, exclude_ids: 
             "auto": True,
         })
         total += len(block)
-        if total >= _MAX_CONTEXT_CHARS:
+        if total >= max_chars:
             break
     meta = dict(result.get("meta") or {})
     meta["returned"] = len(refs)
