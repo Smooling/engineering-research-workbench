@@ -179,16 +179,17 @@ def _reference_context(ref_ids: list[str]) -> tuple[str, list[dict[str, str]]]:
         chunks.append(chunk)
         refs.append({"id": doc["id"], "title": str(doc.get("title") or doc["id"]), "kind": str(doc.get("kind") or ""), "project": str(doc.get("project") or "")})
         total += len(chunk)
-        if total >= _MAX_CONTEXT_CHARS:
+        if total >= max_chars:
             break
     if not chunks:
         return "", refs
     return "\n\n---\n\n".join(chunks), refs
 
 
-def _retrieval_context(query: str, options: dict[str, Any] | None, exclude_ids: set[str] | None = None) -> tuple[str, list[dict[str, Any]], dict[str, Any]]:
+def _retrieval_context(query: str, options: dict[str, Any] | None, exclude_ids: set[str] | None = None, max_chars: int = 30_000) -> tuple[str, list[dict[str, Any]], dict[str, Any]]:
     opts = retrieval.normalize_options(options)
-    if not opts.get("enabled") or not str(query or "").strip():
+    max_chars = max(0, min(_MAX_CONTEXT_CHARS, int(max_chars or 0)))
+    if not opts.get("enabled") or not str(query or "").strip() or max_chars < 500:
         return "", [], {"options": opts, "returned": 0}
     result = retrieval.retrieve(query, opts)
     excluded = exclude_ids or set()
@@ -205,8 +206,8 @@ def _retrieval_context(query: str, options: dict[str, Any] | None, exclude_ids: 
         if heading:
             header += f" | 章节={heading}"
         block = header + "\n" + passage
-        if total + len(block) > _MAX_CONTEXT_CHARS:
-            remain = max(0, _MAX_CONTEXT_CHARS - total)
+        if total + len(block) > max_chars:
+            remain = max(0, max_chars - total)
             if remain < 500:
                 break
             block = block[:remain]
@@ -397,7 +398,10 @@ def send_message(session_id: str, text: str, ref_ids: list[str] | None = None, i
         messages = session.get("messages") if isinstance(session.get("messages"), list) else []
         history = list(messages)
     context, refs = _reference_context(ref_ids)
-    auto_context, auto_refs, retrieval_meta = _retrieval_context(text, retrieval_options, {str(x.get("id") or "") for x in refs})
+    auto_context, auto_refs, retrieval_meta = _retrieval_context(
+        text, retrieval_options, {str(x.get("id") or "") for x in refs},
+        max_chars=max(0, _MAX_CONTEXT_CHARS - len(context)),
+    )
     system_prompt = str(cfg.get("system_prompt") or config.DEFAULT_SYSTEM_PROMPT).strip()
     if context:
         system_prompt += "\n\n以下是用户手动引用的本地研究资料。仅将其作为上下文，不要声称看到了未提供的资料：\n\n" + context
