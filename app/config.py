@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CONFIG_DIR = ROOT / "config"
 SECRET_PATH = CONFIG_DIR / "secret.json"
 LEGACY_SECRET_PATH = CONFIG_DIR / "secrets.json"
-LLM_SECRET_SCHEMA_VERSION = 2
+LLM_SECRET_SCHEMA_VERSION = 3
 DEFAULT_SYSTEM_PROMPT = "你是一个严谨的科研助手。优先基于用户显式引用的研究资料回答，不确定时明确说明。"
 
 DEFAULT_APP_CONFIG = {
@@ -59,7 +59,6 @@ DEFAULT_APP_CONFIG = {
     "embedding": {
         "enabled": False,
         "base_url": "https://api.openai.com/v1",
-        "api_key_env": "OPENAI_API_KEY",
         "model": "",
         "timeout": 120,
         "batch_size": 32,
@@ -228,7 +227,20 @@ def _migrate_secret(app: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _normalize_secret(raw: dict[str, Any]) -> dict[str, Any]:
+def _embedding_secret_from_sources(app: dict[str, Any], source: dict[str, Any]) -> dict[str, Any]:
+    existing = source.get("embedding") if isinstance(source.get("embedding"), dict) else {}
+    key = str(existing.get("api_key") or "").strip()
+    app_embedding = app.get("embedding") if isinstance(app.get("embedding"), dict) else {}
+    if not key:
+        key = str(app_embedding.get("api_key") or "").strip()
+    if not key:
+        env_name = str(app_embedding.get("api_key_env") or "").strip()
+        if env_name:
+            key = str(os.environ.get(env_name) or "").strip()
+    return {"api_key": key}
+
+
+def _normalize_secret(raw: dict[str, Any], app: dict[str, Any] | None = None) -> dict[str, Any]:
     source = raw if isinstance(raw, dict) else {}
     profiles_raw = source.get("profiles") if isinstance(source.get("profiles"), list) else []
     profiles: list[dict[str, Any]] = []
@@ -244,10 +256,12 @@ def _normalize_secret(raw: dict[str, Any]) -> dict[str, Any]:
     active_id = str(source.get("active_profile_id") or profiles[0]["id"])
     if active_id not in {p["id"] for p in profiles}:
         active_id = profiles[0]["id"]
+    embedding_secret = _embedding_secret_from_sources(app or {}, source)
     return {
         "schema_version": LLM_SECRET_SCHEMA_VERSION,
         "active_profile_id": active_id,
         "profiles": profiles,
+        "embedding": embedding_secret,
         **({"migrated_at": source.get("migrated_at")} if source.get("migrated_at") else {}),
     }
 
@@ -259,17 +273,22 @@ def _strip_legacy_llm_for_storage(app: dict[str, Any]) -> dict[str, Any]:
         "enabled": old.get("enabled", False) is True,
         "system_prompt": str(old.get("system_prompt") or DEFAULT_SYSTEM_PROMPT),
     }
+    emb = _normalize_embedding(out.get("embedding"))
+    out["embedding"] = emb
     return _deep_merge(DEFAULT_APP_CONFIG, out)
 
 
 def _load_or_migrate_secret(app: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     raw = _read_json(SECRET_PATH)
-    if int(raw.get("schema_version") or 0) >= LLM_SECRET_SCHEMA_VERSION and isinstance(raw.get("profiles"), list):
-        normalized = _normalize_secret(raw)
-        if normalized != raw:
+    if isinstance(raw.get("profiles"), list):
+        normalized = _normalize_secret(raw, app)
+        upgraded = normalized != raw
+        if upgraded:
             _atomic_json_write(SECRET_PATH, normalized)
-        return normalized, False
+        return normalized, upgraded
     migrated = _migrate_secret(app)
+    migrated["embedding"] = _embedding_secret_from_sources(app, raw)
+    migrated["schema_version"] = LLM_SECRET_SCHEMA_VERSION
     _atomic_json_write(SECRET_PATH, migrated)
     return migrated, True
 
@@ -355,8 +374,9 @@ def get_public() -> dict:
     })
     app["llm"] = llm
     embedding = _normalize_embedding(app.get("embedding"))
-    env_name = str(embedding.get("api_key_env") or "").strip()
-    embedding["has_api_key"] = bool(env_name and os.environ.get(env_name))
+    embedding_secret = secret.get("embedding") if isinstance(secret.get("embedding"), dict) else {}
+    embedding["has_api_key"] = bool(str(embedding_secret.get("api_key") or ""))
+    embedding["api_key_source"] = "config/secret.json"
     app["embedding"] = embedding
     return {"app": app, "rss": rss}
 
@@ -378,7 +398,6 @@ def _normalize_embedding(item: Any) -> dict[str, Any]:
     return {
         "enabled": raw.get("enabled", False) is True,
         "base_url": str(raw.get("base_url") or "https://api.openai.com/v1").strip().rstrip("/"),
-        "api_key_env": str(raw.get("api_key_env") or "OPENAI_API_KEY").strip() or "OPENAI_API_KEY",
         "model": str(raw.get("model") or "").strip()[:240],
         "timeout": max(5, min(600, int(raw.get("timeout") or 120))),
         "batch_size": max(1, min(128, int(raw.get("batch_size") or 32))),
@@ -386,10 +405,12 @@ def _normalize_embedding(item: Any) -> dict[str, Any]:
 
 
 def get_embedding_runtime() -> dict[str, Any]:
-    cfg = get_app()
-    emb = _normalize_embedding(cfg.get("embedding"))
-    env_name = str(emb.get("api_key_env") or "").strip()
-    emb["api_key"] = str(os.environ.get(env_name) or "").strip() if env_name else ""
+    with _lock:
+        if not _cache:
+            reload_all()
+        emb = _normalize_embedding(_cache["app"].get("embedding"))
+        secret = _cache["secret"].get("embedding") if isinstance(_cache["secret"].get("embedding"), dict) else {}
+    emb["api_key"] = str(secret.get("api_key") or "")
     emb["has_api_key"] = bool(emb["api_key"])
     return emb
 
@@ -436,6 +457,14 @@ def save_app(data: dict) -> dict:
             "system_prompt": str(incoming_llm.get("system_prompt") or DEFAULT_SYSTEM_PROMPT),
         }
         incoming["llm"] = clean_llm
+
+        incoming_embedding = incoming.get("embedding") if isinstance(incoming.get("embedding"), dict) else {}
+        current_embedding_secret = current_secret.get("embedding") if isinstance(current_secret.get("embedding"), dict) else {}
+        incoming_embedding_key = str(incoming_embedding.get("api_key") or "")
+        embedding_key = incoming_embedding_key if incoming_embedding_key else str(current_embedding_secret.get("api_key") or "")
+        secret["embedding"] = {"api_key": embedding_key}
+        incoming["embedding"] = _normalize_embedding(incoming_embedding)
+
         merged = _deep_merge(DEFAULT_APP_CONFIG, incoming)
         _atomic_json_write(CONFIG_DIR / "app.json", merged)
         _atomic_json_write(SECRET_PATH, secret)
