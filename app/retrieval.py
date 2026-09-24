@@ -667,7 +667,7 @@ def _feedback_terms(items: list[dict[str, Any]], original_terms: list[str]) -> l
     return [term for term, _ in counts.most_common(10)]
 
 
-def _collect_routes(conn, query: str, options: dict[str, Any], extra_terms: list[str] | None = None) -> tuple[dict[str, float], dict[str, list[dict[str, Any]]], dict[str, dict[str, Any]], list[str], list[str]]:
+def _collect_routes(conn, query: str, options: dict[str, Any], extra_terms: list[str] | None = None) -> tuple[dict[str, float], dict[str, list[dict[str, Any]]], dict[str, dict[str, Any]], list[str], list[str], dict[str, Any]]:
     terms = _query_terms(query)
     if extra_terms:
         for term in extra_terms:
