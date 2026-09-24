@@ -135,6 +135,17 @@ def _vector_norm(vector: list[float]) -> float:
     return math.sqrt(sum(x * x for x in vector)) or 1.0
 
 
+def test_embedding_connection() -> dict[str, Any]:
+    runtime = _embedding_runtime("")
+    vector = _embedding_request(["科研工作台 Embedding 连接测试"], runtime)[0]
+    return {
+        "ok": True,
+        "model": runtime["model"],
+        "dimension": len(vector),
+        "base_url": runtime["base_url"],
+    }
+
+
 def embedding_status(model: str = "") -> dict[str, Any]:
     ensure_rag_units(force=False)
     runtime = None
