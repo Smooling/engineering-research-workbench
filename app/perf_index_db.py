@@ -10,7 +10,7 @@ from typing import Any
 
 from . import workspace
 
-SCHEMA_VERSION=1
+SCHEMA_VERSION=2
 WORKSPACE_SCHEMA_VERSION=3
 SYNC_INTERVAL_SECONDS=30.0
 DEFAULT_PAGE_SIZE=50
@@ -183,6 +183,34 @@ def _init_db(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_graph_edges_target ON graph_edges(target);
         CREATE INDEX IF NOT EXISTS idx_graph_edges_relation ON graph_edges(relation);
 
+        CREATE TABLE IF NOT EXISTS rag_units (
+            unit_id TEXT PRIMARY KEY,
+            doc_id TEXT NOT NULL,
+            level TEXT NOT NULL,
+            ordinal INTEGER NOT NULL DEFAULT 0,
+            heading_path TEXT NOT NULL DEFAULT '',
+            text TEXT NOT NULL DEFAULT '',
+            embedding_text TEXT NOT NULL DEFAULT '',
+            content_hash TEXT NOT NULL DEFAULT '',
+            updated TEXT NOT NULL DEFAULT '',
+            FOREIGN KEY(doc_id) REFERENCES documents(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_rag_units_doc ON rag_units(doc_id, ordinal);
+        CREATE INDEX IF NOT EXISTS idx_rag_units_level ON rag_units(level);
+
+        CREATE TABLE IF NOT EXISTS rag_embeddings (
+            unit_id TEXT NOT NULL,
+            model_key TEXT NOT NULL,
+            content_hash TEXT NOT NULL,
+            dim INTEGER NOT NULL DEFAULT 0,
+            norm REAL NOT NULL DEFAULT 0,
+            vector BLOB NOT NULL,
+            updated TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY(unit_id, model_key),
+            FOREIGN KEY(unit_id) REFERENCES rag_units(unit_id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_rag_embeddings_model ON rag_embeddings(model_key);
+
         CREATE TABLE IF NOT EXISTS todos_index (
             id TEXT PRIMARY KEY,
             title TEXT NOT NULL DEFAULT '',
@@ -236,4 +264,20 @@ def _init_db(conn: sqlite3.Connection) -> None:
         ).fetchone()
         text = str(sql[0] if sql else "")
         _FTS_TOKENIZER = "trigram" if "trigram" in text else "unicode61"
+
+    rag_fts_exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='rag_units_fts'"
+    ).fetchone()
+    if not rag_fts_exists:
+        tokenizer = "trigram" if _FTS_TOKENIZER == "trigram" else "unicode61"
+        try:
+            conn.execute(
+                "CREATE VIRTUAL TABLE rag_units_fts USING fts5("
+                "unit_id UNINDEXED, doc_id UNINDEXED, title, heading, text, tokenize='" + tokenizer + "')"
+            )
+        except sqlite3.OperationalError:
+            conn.execute(
+                "CREATE VIRTUAL TABLE rag_units_fts USING fts5("
+                "unit_id UNINDEXED, doc_id UNINDEXED, title, heading, text, tokenize='unicode61')"
+            )
     conn.commit()
