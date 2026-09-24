@@ -78,11 +78,10 @@ def _embedding_runtime(model: str = "") -> dict[str, str]:
         raise ValueError("未配置 Embedding 模型")
     base_url = str(cfg.get("base_url") or "").rstrip("/")
     api_key = str(cfg.get("api_key") or "")
-    env_name = str(cfg.get("api_key_env") or "")
     if not base_url:
         raise ValueError("Embedding Base URL 为空")
     if not api_key:
-        raise ValueError(f"Embedding API Key 环境变量未设置：{env_name or '未配置'}")
+        raise ValueError("Embedding API Key 尚未配置，请在“设置 → Embedding”中填写")
     return {
         "model": selected_model,
         "model_key": base_url + "|" + selected_model,
