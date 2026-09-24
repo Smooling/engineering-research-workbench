@@ -320,6 +320,8 @@ class Handler(BaseHTTPRequestHandler):
             ))
         if path == "/api/retrieval/embedding/status":
             return self.send_json(indexer.embedding_status(str(payload.get("model") or "")))
+        if path == "/api/retrieval/embedding/test":
+            return self.send_json(indexer.test_embedding_connection())
         if path == "/api/retrieval/embedding/rebuild":
             return self.send_json(indexer.rebuild_embeddings(
                 str(payload.get("model") or ""),
