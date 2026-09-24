@@ -753,7 +753,31 @@ def _display_reason(item: dict[str, Any]) -> str:
     return "；".join(parts) or "多路检索候选"
 
 
-def _to_items(ranked: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+def _parent_passage(conn, unit: dict[str, Any]) -> tuple[str, str]:
+    heading = unit["heading"]
+    text = unit["text"].strip()
+    if unit["level"] != "chunk":
+        return heading, text
+    base_heading = re.sub(r" · 片段\d+$", "", heading).strip()
+    if not base_heading:
+        return heading, text
+    row = conn.execute(
+        """
+        SELECT heading_path,text FROM rag_units
+        WHERE doc_id=? AND level='section' AND heading_path=?
+        ORDER BY ordinal LIMIT 1
+        """,
+        (unit["doc_id"], base_heading),
+    ).fetchone()
+    if not row:
+        return heading, text
+    parent = str(row["text"] or "").strip()
+    if not parent:
+        return heading, text
+    return base_heading, parent
+
+
+def _to_items(conn, ranked: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     seen_docs: Counter[str] = Counter()
     for ranked_item in ranked:
@@ -763,7 +787,7 @@ def _to_items(ranked: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
         if seen_docs[doc["id"]] >= 2:
             continue
         seen_docs[doc["id"]] += 1
-        passage = unit["text"].strip()
+        display_heading, passage = _parent_passage(conn, unit)
         if len(passage) > PASSAGE_CHARS:
             passage = passage[:PASSAGE_CHARS].rstrip() + "…"
         items.append({
@@ -782,7 +806,7 @@ def _to_items(ranked: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
             "rrf_score": round(float(ranked_item["rrf"]), 6),
             "source": "multi_retrieval",
             "reason": _display_reason(ranked_item),
-            "heading": unit["heading"],
+            "heading": display_heading,
             "passage": passage,
             "routes": ranked_item["evidence"]["routes"],
             "coverage": ranked_item["evidence"]["coverage"],
@@ -837,7 +861,7 @@ def retrieve(query: str, options: dict[str, Any] | None = None) -> dict[str, Any
                 )
 
         final_coverage = _coverage(ranked, original_terms)
-        items = _to_items(ranked, opts["limit"])
+        items = _to_items(conn, ranked, opts["limit"])
 
     return {
         "query": query,
