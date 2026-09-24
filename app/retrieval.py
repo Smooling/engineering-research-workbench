@@ -805,11 +805,12 @@ def retrieve(query: str, options: dict[str, Any] | None = None) -> dict[str, Any
         _init_db(conn)
 
         scores, traces, units, terms, variants, semantic_meta = _collect_routes(conn, query, opts)
+        original_terms = list(terms)
         ranked = _rank_candidates(
             scores, traces, units, query, terms, opts,
             max(opts["candidate_limit"], opts["limit"] * 5),
         )
-        first_coverage = _coverage(ranked, terms)
+        first_coverage = _coverage(ranked, original_terms)
 
         second_pass = False
         feedback_terms: list[str] = []
@@ -835,7 +836,7 @@ def retrieve(query: str, options: dict[str, Any] | None = None) -> dict[str, Any
                     max(opts["candidate_limit"], opts["limit"] * 5),
                 )
 
-        final_coverage = _coverage(ranked, terms)
+        final_coverage = _coverage(ranked, original_terms)
         items = _to_items(ranked, opts["limit"])
 
     return {
