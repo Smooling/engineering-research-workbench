@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 import sqlite3
 import time
 from datetime import datetime
@@ -41,6 +43,215 @@ def _relative(path: Path) -> str:
     return str(path.relative_to(_root())).replace("\\", "/")
 
 
+def _rag_sections(body: str) -> list[tuple[list[str], str]]:
+    lines = str(body or "").splitlines()
+    stack: list[tuple[int, str]] = []
+    path: list[str] = []
+    buf: list[str] = []
+    out: list[tuple[list[str], str]] = []
+    fence = chr(96) * 3
+    in_fence = False
+
+    def flush() -> None:
+        nonlocal buf
+        text = "\n".join(buf).strip()
+        if text:
+            out.append((list(path), text))
+        buf = []
+
+    for line in lines:
+        if line.lstrip().startswith(fence):
+            in_fence = not in_fence
+            buf.append(line)
+            continue
+        match = None if in_fence else re.match(r"^(#{1,6})\s+(.+?)\s*$", line)
+        if match:
+            flush()
+            level = len(match.group(1))
+            title = match.group(2).strip()
+            while stack and stack[-1][0] >= level:
+                stack.pop()
+            stack.append((level, title))
+            path = [item[1] for item in stack]
+        else:
+            buf.append(line)
+    flush()
+    return out or [([], str(body or "").strip())]
+
+
+def _rag_blocks(text: str) -> list[str]:
+    lines = str(text or "").splitlines()
+    out: list[str] = []
+    buf: list[str] = []
+    fence = chr(96) * 3
+    in_fence = False
+
+    def flush() -> None:
+        nonlocal buf
+        block = "\n".join(buf).strip()
+        if block:
+            out.append(block)
+        buf = []
+
+    for line in lines:
+        if line.lstrip().startswith(fence):
+            in_fence = not in_fence
+            buf.append(line)
+            continue
+        if not in_fence and not line.strip():
+            flush()
+        else:
+            buf.append(line)
+    flush()
+    return out
+
+
+def _rag_chunks(text: str, target_chars: int = 1800, max_chars: int = 3200) -> list[str]:
+    blocks = _rag_blocks(text)
+    if not blocks:
+        return []
+    chunks: list[str] = []
+    buf: list[str] = []
+    size = 0
+    for block in blocks:
+        extra = len(block) + (2 if buf else 0)
+        if buf and size + extra > max_chars:
+            chunks.append("\n\n".join(buf).strip())
+            buf, size = [], 0
+        if len(block) > max_chars and not buf:
+            # Preserve fenced code, equations and tables as indivisible semantic blocks.
+            if block.lstrip().startswith(chr(96) * 3) or "$" in block or ("|" in block and "\n" in block):
+                chunks.append(block)
+                continue
+            sentences = re.split(r"(?<=[。！？.!?])\s*", block)
+            for sentence in sentences:
+                if not sentence:
+                    continue
+                if buf and size + len(sentence) > max_chars:
+                    chunks.append("\n\n".join(buf).strip())
+                    buf, size = [], 0
+                buf.append(sentence)
+                size += len(sentence)
+            continue
+        buf.append(block)
+        size += extra
+        if size >= target_chars:
+            chunks.append("\n\n".join(buf).strip())
+            buf, size = [], 0
+    if buf:
+        chunks.append("\n\n".join(buf).strip())
+    return [x for x in chunks if x]
+
+
+def _rag_unit_id(doc_id: str, level: str, heading: str, ordinal: int) -> str:
+    raw = f"{doc_id}|{level}|{heading}|{ordinal}".encode("utf-8")
+    return "rag-" + hashlib.sha1(raw).hexdigest()[:20]
+
+
+def _replace_rag_units_conn(
+    conn: sqlite3.Connection,
+    doc_id: str,
+    title: str,
+    body: str,
+    projects: list[str],
+    tags: list[str],
+    updated: str,
+) -> None:
+    conn.execute("DELETE FROM rag_units_fts WHERE doc_id=?", (doc_id,))
+    conn.execute("DELETE FROM rag_units WHERE doc_id=?", (doc_id,))
+
+    sections = _rag_sections(body)
+    heading_outline = " > ".join(path[-1] for path, _ in sections if path)[:2200]
+    project_text = ", ".join(projects)
+    tag_text = ", ".join(tags)
+    units: list[tuple[str, str, int, str, str, str, str, str]] = []
+
+    doc_text = str(body or "").strip()
+    if len(doc_text) > 3600:
+        doc_text = doc_text[:2400] + "\n…\n" + doc_text[-900:]
+    doc_embedding = (
+        f"文档：{title}\n项目：{project_text or '未归属'}\n标签：{tag_text or '无'}\n"
+        f"目录：{heading_outline or '无'}\n\n{doc_text}"
+    )
+    doc_hash = hashlib.sha1(doc_embedding.encode("utf-8")).hexdigest()
+    units.append((_rag_unit_id(doc_id, "document", "", 0), "document", 0, "", doc_text, doc_embedding, doc_hash, updated))
+
+    ordinal = 1
+    for heading_path, section_text in sections:
+        heading = " > ".join(heading_path[-4:])
+        section_for_embedding = section_text
+        if len(section_for_embedding) > 7000:
+            section_for_embedding = section_for_embedding[:4400] + "\n…\n" + section_for_embedding[-1800:]
+        section_embedding = (
+            f"文档：{title}\n项目：{project_text or '未归属'}\n标签：{tag_text or '无'}\n"
+            f"章节：{heading or '正文'}\n\n{section_for_embedding}"
+        )
+        section_hash = hashlib.sha1(section_embedding.encode("utf-8")).hexdigest()
+        units.append((_rag_unit_id(doc_id, "section", heading, ordinal), "section", ordinal, heading, section_text, section_embedding, section_hash, updated))
+        ordinal += 1
+
+        chunks = _rag_chunks(section_text)
+        if len(chunks) <= 1 and len(section_text) <= 2200:
+            continue
+        for chunk_index, chunk in enumerate(chunks):
+            chunk_heading = heading + (f" · 片段{chunk_index + 1}" if heading else f"片段{chunk_index + 1}")
+            chunk_embedding = (
+                f"文档：{title}\n项目：{project_text or '未归属'}\n标签：{tag_text or '无'}\n"
+                f"章节：{heading or '正文'}\n\n{chunk}"
+            )
+            chunk_hash = hashlib.sha1(chunk_embedding.encode("utf-8")).hexdigest()
+            units.append((_rag_unit_id(doc_id, "chunk", heading, ordinal), "chunk", ordinal, chunk_heading, chunk, chunk_embedding, chunk_hash, updated))
+            ordinal += 1
+
+    conn.executemany(
+        """
+        INSERT INTO rag_units(unit_id,doc_id,level,ordinal,heading_path,text,embedding_text,content_hash,updated)
+        VALUES(?,?,?,?,?,?,?,?,?)
+        """,
+        [(unit_id, doc_id, level, ord_no, heading, text, emb, digest, upd)
+         for unit_id, level, ord_no, heading, text, emb, digest, upd in units],
+    )
+    conn.executemany(
+        "INSERT INTO rag_units_fts(unit_id,doc_id,title,heading,text) VALUES(?,?,?,?,?)",
+        [(unit_id, doc_id, title, heading, text)
+         for unit_id, level, ord_no, heading, text, emb, digest, upd in units],
+    )
+
+
+def ensure_rag_units(force: bool = False) -> dict[str, int]:
+    with _LOCK:
+        with _connect() as conn:
+            _init_db(conn)
+            if force:
+                conn.execute("DELETE FROM rag_units_fts")
+                conn.execute("DELETE FROM rag_units")
+            rows = conn.execute(
+                """
+                SELECT d.id,d.title,d.projects_json,d.tags_json,d.updated,f.body
+                FROM documents d
+                JOIN documents_fts f ON f.doc_id=d.id
+                LEFT JOIN rag_units ru ON ru.doc_id=d.id AND ru.level='document'
+                WHERE ru.unit_id IS NULL
+                ORDER BY d.updated DESC
+                """
+            ).fetchall()
+            rebuilt = 0
+            for row in rows:
+                _replace_rag_units_conn(
+                    conn,
+                    str(row["id"]),
+                    str(row["title"] or row["id"]),
+                    str(row["body"] or ""),
+                    _loads_list(row["projects_json"]),
+                    _loads_list(row["tags_json"]),
+                    str(row["updated"] or ""),
+                )
+                rebuilt += 1
+            conn.commit()
+            count = int(conn.execute("SELECT COUNT(*) FROM rag_units").fetchone()[0])
+    return {"documents_rebuilt": rebuilt, "units": count}
+
+
 def _project_pairs(meta: dict[str, Any]) -> list[tuple[str, str]]:
     names = _json_list(meta.get("projects"))
     legacy_name = str(meta.get("project") or "").strip()
@@ -62,6 +273,8 @@ def _project_pairs(meta: dict[str, Any]) -> list[tuple[str, str]]:
 
 
 def _remove_doc_conn(conn: sqlite3.Connection, doc_id: str) -> None:
+    conn.execute("DELETE FROM rag_units_fts WHERE doc_id=?", (doc_id,))
+    conn.execute("DELETE FROM rag_units WHERE doc_id=?", (doc_id,))
     conn.execute("DELETE FROM documents_fts WHERE doc_id=?", (doc_id,))
     conn.execute("DELETE FROM graph_edges WHERE source=? OR target=?", (doc_id, doc_id))
     conn.execute("DELETE FROM documents WHERE id=?", (doc_id,))
@@ -151,6 +364,7 @@ def _index_path_conn(conn: sqlite3.Connection, kind: str, path: Path) -> str:
         "INSERT INTO documents_fts(doc_id,title,body,tags,projects) VALUES(?,?,?,?,?)",
         (doc_id, title, body, " ".join(tags), " ".join(projects)),
     )
+    _replace_rag_units_conn(conn, doc_id, title, body, projects, tags, updated)
     return doc_id
 
 
