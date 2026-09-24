@@ -54,6 +54,16 @@ DEFAULT_APP_CONFIG = {
         "enabled": False,
         "system_prompt": DEFAULT_SYSTEM_PROMPT,
     },
+    # Embedding is intentionally independent from the Agent / chat provider.
+    # Only the environment-variable name is persisted; the real key stays in os.environ.
+    "embedding": {
+        "enabled": False,
+        "base_url": "https://api.openai.com/v1",
+        "api_key_env": "OPENAI_API_KEY",
+        "model": "",
+        "timeout": 120,
+        "batch_size": 32,
+    },
 }
 
 DEFAULT_RSS_CONFIG = {
@@ -344,6 +354,10 @@ def get_public() -> dict:
         "api_key_source": "config/secret.json",
     })
     app["llm"] = llm
+    embedding = _normalize_embedding(app.get("embedding"))
+    env_name = str(embedding.get("api_key_env") or "").strip()
+    embedding["has_api_key"] = bool(env_name and os.environ.get(env_name))
+    app["embedding"] = embedding
     return {"app": app, "rss": rss}
 
 
@@ -357,6 +371,27 @@ def get_active_llm_profile_runtime() -> dict[str, Any]:
     profile["system_prompt"] = str(app_llm.get("system_prompt") or DEFAULT_SYSTEM_PROMPT)
     profile["protocol"] = "chat_completions"
     return profile
+
+
+def _normalize_embedding(item: Any) -> dict[str, Any]:
+    raw = item if isinstance(item, dict) else {}
+    return {
+        "enabled": raw.get("enabled", False) is True,
+        "base_url": str(raw.get("base_url") or "https://api.openai.com/v1").strip().rstrip("/"),
+        "api_key_env": str(raw.get("api_key_env") or "OPENAI_API_KEY").strip() or "OPENAI_API_KEY",
+        "model": str(raw.get("model") or "").strip()[:240],
+        "timeout": max(5, min(600, int(raw.get("timeout") or 120))),
+        "batch_size": max(1, min(128, int(raw.get("batch_size") or 32))),
+    }
+
+
+def get_embedding_runtime() -> dict[str, Any]:
+    cfg = get_app()
+    emb = _normalize_embedding(cfg.get("embedding"))
+    env_name = str(emb.get("api_key_env") or "").strip()
+    emb["api_key"] = str(os.environ.get(env_name) or "").strip() if env_name else ""
+    emb["has_api_key"] = bool(emb["api_key"])
+    return emb
 
 
 def get_rss() -> dict:
