@@ -29,7 +29,7 @@
     graphKinds: new Set(storedArray('graphKinds', ['idea','journal','note','milestone','summary','literature','project','tag'])),
     graphRelations: new Set(storedArray('graphRelations', ['wikilink','tag','project'])),
     agentSession: null, agentRefs: [], agentImages: [], agentPreset: localStorage.getItem('agentRequestPreset') || '', agentSending:false,
-    agentRetrieval: {...{enabled:false,project:'',tags:[],kinds:[],limit:6,expand_wikilinks:true}, ...storedJson('agentRetrievalOptions',{})},
+    agentRetrieval: {...{enabled:false,project:'',project_mode:'prefer',tags:[],kinds:[],limit:8,candidate_limit:80,expand_wikilinks:true,multi_query:true,adaptive_second_pass:true,embedding_enabled:false,embedding_model:''}, ...storedJson('agentRetrievalOptions',{})},
     heatmapMonths: storedInt('heatmapMonths', 12, 1, 12), heatmapObserver: null,
     focus: {mode:'专注', focusMinutes:savedFocusMinutes, breakMinutes:savedBreakMinutes, seconds:savedFocusMinutes*60, total:savedFocusMinutes*60, timer:null, running:false},
     sidebarPinned: new Set(storedArray('sidebarPinned', ['core'])),
