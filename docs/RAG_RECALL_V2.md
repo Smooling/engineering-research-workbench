@@ -108,11 +108,17 @@ Configure it under **Settings -> Embedding**:
 
 - enabled;
 - Base URL;
-- API Key environment variable name;
+- API Key;
 - embedding model;
 - timeout;
 - batch size.
 
-Only the environment-variable name is stored in app.json. The real API key is read from the Python process environment at request time.
+The API Key follows the same local-secret design as the current Agent API configuration:
+
+- the user enters the key in the Settings page;
+- the real key is stored only in local `config/secret.json`;
+- `config/app.json`, Workspace data and public configuration responses never contain the real key;
+- the Settings page only receives `has_api_key`;
+- saving with an empty key field preserves the already stored key.
 
 The RAG dialog only controls whether semantic retrieval participates in the current retrieval strategy. Provider/model configuration and semantic-index maintenance live exclusively in Settings -> Embedding.
