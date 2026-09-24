@@ -3,10 +3,13 @@ from __future__ import annotations
 import json
 import math
 import re
+import urllib.error
+import urllib.request
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from typing import Any
 
+from . import config
 from .perf_index_core import _connect, _init_db, ensure_rag_units, sync
 
 DEFAULT_LIMIT = 8
@@ -61,6 +64,192 @@ def normalize_options(options: dict[str, Any] | None) -> dict[str, Any]:
         "multi_query": raw.get("multi_query", True) is not False,
         "adaptive_second_pass": raw.get("adaptive_second_pass", True) is not False,
         "candidate_limit": max(20, min(200, int(raw.get("candidate_limit") or 80))),
+        "embedding_enabled": bool(raw.get("embedding_enabled", False)),
+        "embedding_model": str(raw.get("embedding_model") or "").strip(),
+    }
+
+
+def _embedding_runtime(model: str) -> dict[str, str]:
+    model = str(model or "").strip()
+    if not model:
+        raise ValueError("未配置 Embedding 模型")
+    profile = config.get_active_llm_profile_runtime()
+    base_url = str(profile.get("base_url") or "").rstrip("/")
+    api_key = str(profile.get("api_key") or "")
+    if not base_url or not api_key:
+        raise ValueError("当前 Agent API 配置缺少 Base URL 或 API Key，无法调用 Embedding")
+    return {
+        "model": model,
+        "model_key": base_url + "|" + model,
+        "base_url": base_url,
+        "api_key": api_key,
+    }
+
+
+def _embedding_request(texts: list[str], runtime: dict[str, str], timeout: int = 120) -> list[list[float]]:
+    payload = json.dumps(
+        {"model": runtime["model"], "input": texts},
+        ensure_ascii=False,
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        runtime["base_url"] + "/embeddings",
+        data=payload,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + runtime["api_key"],
+            "User-Agent": "Workbench-RAG/2",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=max(10, min(timeout, 600))) as response:
+            data = json.loads(response.read().decode("utf-8", errors="replace"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:1200]
+        raise ValueError(f"Embedding API HTTP {exc.code}: {detail}") from None
+    except urllib.error.URLError as exc:
+        raise ValueError(f"无法连接 Embedding API：{exc.reason}") from None
+
+    rows = data.get("data") if isinstance(data, dict) else None
+    if not isinstance(rows, list) or len(rows) != len(texts):
+        raise ValueError("Embedding API 返回结构异常")
+    rows = sorted(rows, key=lambda x: int(x.get("index") or 0))
+    out: list[list[float]] = []
+    for row in rows:
+        vector = row.get("embedding") if isinstance(row, dict) else None
+        if not isinstance(vector, list) or not vector:
+            raise ValueError("Embedding API 未返回有效向量")
+        out.append([float(x) for x in vector])
+    return out
+
+
+def _vector_norm(vector: list[float]) -> float:
+    return math.sqrt(sum(x * x for x in vector)) or 1.0
+
+
+def embedding_status(model: str = "") -> dict[str, Any]:
+    ensure_rag_units(force=False)
+    runtime = None
+    if model:
+        runtime = _embedding_runtime(model)
+    with _connect() as conn:
+        _init_db(conn)
+        total = int(conn.execute("SELECT COUNT(*) FROM rag_units").fetchone()[0])
+        if not runtime:
+            return {"model": "", "total_units": total, "embedded_units": 0, "complete": False}
+        embedded = int(conn.execute(
+            "SELECT COUNT(*) FROM rag_embeddings WHERE model_key=?",
+            (runtime["model_key"],),
+        ).fetchone()[0])
+    return {
+        "model": runtime["model"],
+        "model_key": runtime["model_key"],
+        "total_units": total,
+        "embedded_units": embedded,
+        "complete": total > 0 and embedded >= total,
+    }
+
+
+def rebuild_embeddings(model: str, force: bool = False, batch_size: int = 32) -> dict[str, Any]:
+    ensure_rag_units(force=False)
+    runtime = _embedding_runtime(model)
+    batch_size = max(1, min(64, int(batch_size or 32)))
+    with _connect() as conn:
+        _init_db(conn)
+        if force:
+            conn.execute("DELETE FROM rag_embeddings WHERE model_key=?", (runtime["model_key"],))
+            conn.commit()
+
+        rows = conn.execute(
+            """
+            SELECT ru.unit_id,ru.embedding_text,ru.content_hash
+            FROM rag_units ru
+            LEFT JOIN rag_embeddings e
+              ON e.unit_id=ru.unit_id AND e.model_key=?
+            WHERE e.unit_id IS NULL OR e.content_hash<>ru.content_hash
+            ORDER BY ru.doc_id,ru.ordinal
+            """,
+            (runtime["model_key"],),
+        ).fetchall()
+
+        indexed = 0
+        for start in range(0, len(rows), batch_size):
+            batch = rows[start:start + batch_size]
+            texts = [str(row["embedding_text"] or "") for row in batch]
+            vectors = _embedding_request(texts, runtime)
+            payload = []
+            now = datetime.now().isoformat(timespec="seconds")
+            for row, vector in zip(batch, vectors):
+                raw = json.dumps(vector, separators=(",", ":")).encode("utf-8")
+                payload.append((
+                    str(row["unit_id"]),
+                    runtime["model_key"],
+                    str(row["content_hash"]),
+                    len(vector),
+                    _vector_norm(vector),
+                    raw,
+                    now,
+                ))
+            conn.executemany(
+                """
+                INSERT INTO rag_embeddings(unit_id,model_key,content_hash,dim,norm,vector,updated)
+                VALUES(?,?,?,?,?,?,?)
+                ON CONFLICT(unit_id,model_key) DO UPDATE SET
+                    content_hash=excluded.content_hash,
+                    dim=excluded.dim,norm=excluded.norm,vector=excluded.vector,updated=excluded.updated
+                """,
+                payload,
+            )
+            conn.commit()
+            indexed += len(batch)
+
+    status = embedding_status(model)
+    status["indexed_now"] = indexed
+    return status
+
+
+def _semantic_route(conn, query: str, options: dict[str, Any], route_limit: int = ROUTE_LIMIT) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    if not options.get("embedding_enabled") or not options.get("embedding_model"):
+        return [], {"enabled": False}
+    runtime = _embedding_runtime(options["embedding_model"])
+    query_vector = _embedding_request([query], runtime)[0]
+    query_norm = _vector_norm(query_vector)
+    where, params = _where(options)
+    rows = conn.execute(
+        f"""
+        SELECT
+            ru.unit_id,ru.doc_id,ru.level,ru.ordinal,ru.heading_path,ru.text AS unit_text,
+            ru.embedding_text,ru.content_hash,
+            e.dim,e.norm,e.vector,
+            d.*
+        FROM rag_embeddings e
+        JOIN rag_units ru ON ru.unit_id=e.unit_id
+        JOIN documents d ON d.id=ru.doc_id
+        WHERE e.model_key=? AND e.content_hash=ru.content_hash AND {" AND ".join(where)}
+        """,
+        [runtime["model_key"], *params],
+    ).fetchall()
+
+    scored: list[tuple[float, dict[str, Any]]] = []
+    for row in rows:
+        try:
+            vector = [float(x) for x in json.loads(bytes(row["vector"]).decode("utf-8"))]
+        except Exception:
+            continue
+        if len(vector) != len(query_vector):
+            continue
+        dot = sum(a * b for a, b in zip(query_vector, vector))
+        sim = dot / (query_norm * float(row["norm"] or _vector_norm(vector)))
+        unit = _unit_payload(row)
+        if options.get("project_mode") == "prefer" and _project_matches(unit["doc"], options):
+            sim += 0.025
+        scored.append((sim, unit))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [unit for _, unit in scored[:route_limit]], {
+        "enabled": True,
+        "model": runtime["model"],
+        "indexed_units": len(rows),
+        "top_similarity": round(scored[0][0], 4) if scored else None,
     }
 
 
@@ -507,6 +696,11 @@ def _collect_routes(conn, query: str, options: dict[str, Any], extra_terms: list
         units[unit["unit_id"]] = unit
     _rrf_add(scores, traces, "metadata", metadata, 0.85)
 
+    semantic_rows, semantic_meta = _semantic_route(conn, query, options)
+    for unit in semantic_rows:
+        units[unit["unit_id"]] = unit
+    _rrf_add(scores, traces, "embedding", semantic_rows, 1.2)
+
     prelim_ids = sorted(scores, key=scores.get, reverse=True)[:16]
     prelim = [units[x] for x in prelim_ids if x in units]
     graph_rows = _graph_expand(conn, prelim, terms, options)
@@ -514,7 +708,7 @@ def _collect_routes(conn, query: str, options: dict[str, Any], extra_terms: list
         units[unit["unit_id"]] = unit
     _rrf_add(scores, traces, "wikilink", graph_rows, 0.75)
 
-    return scores, traces, units, terms, variants
+    return scores, traces, units, terms, variants, semantic_meta
 
 
 def _rank_candidates(scores: dict[str, float], traces: dict[str, list[dict[str, Any]]], units: dict[str, dict[str, Any]], query: str, terms: list[str], options: dict[str, Any], limit: int) -> list[dict[str, Any]]:
@@ -610,7 +804,7 @@ def retrieve(query: str, options: dict[str, Any] | None = None) -> dict[str, Any
     with _connect() as conn:
         _init_db(conn)
 
-        scores, traces, units, terms, variants = _collect_routes(conn, query, opts)
+        scores, traces, units, terms, variants, semantic_meta = _collect_routes(conn, query, opts)
         ranked = _rank_candidates(
             scores, traces, units, query, terms, opts,
             max(opts["candidate_limit"], opts["limit"] * 5),
@@ -623,11 +817,13 @@ def retrieve(query: str, options: dict[str, Any] | None = None) -> dict[str, Any
             feedback_terms = _feedback_terms(ranked, terms)
             if feedback_terms:
                 second_pass = True
-                scores2, traces2, units2, terms2, variants2 = _collect_routes(conn, query, opts, feedback_terms)
+                scores2, traces2, units2, terms2, variants2, semantic_meta2 = _collect_routes(conn, query, opts, feedback_terms)
                 for unit_id, value in scores2.items():
                     scores[unit_id] += value
                     traces[unit_id].extend(traces2.get(unit_id, []))
                 units.update(units2)
+                if semantic_meta2.get("enabled"):
+                    semantic_meta = semantic_meta2
                 for term in terms2:
                     if term not in terms:
                         terms.append(term)
@@ -656,6 +852,6 @@ def retrieve(query: str, options: dict[str, Any] | None = None) -> dict[str, Any
             "second_pass": second_pass,
             "feedback_terms": feedback_terms,
             "retrieval": "Multi-Query + Document/Section/Chunk FTS5 + Metadata + WikiLink + RRF + adaptive second pass",
-            "embedding_enabled": False,
+            "embedding": semantic_meta,
         },
     }
