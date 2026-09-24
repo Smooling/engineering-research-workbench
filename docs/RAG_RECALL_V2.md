@@ -98,3 +98,21 @@ Create 30-50 questions for which the expected source documents are already known
 - expected section if known.
 
 Compare the old branch and this branch using Top-5 / Top-10 source recall before judging answer quality.
+
+
+## Independent Embedding configuration
+
+Embedding no longer reuses the Agent / Chat provider.
+
+Configure it under **Settings -> Embedding**:
+
+- enabled;
+- Base URL;
+- API Key environment variable name;
+- embedding model;
+- timeout;
+- batch size.
+
+Only the environment-variable name is stored in app.json. The real API key is read from the Python process environment at request time.
+
+The RAG dialog only controls whether semantic retrieval participates in the current retrieval strategy. Provider/model configuration and semantic-index maintenance live exclusively in Settings -> Embedding.
