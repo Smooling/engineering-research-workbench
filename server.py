@@ -318,6 +318,14 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(indexer.retrieve(
                 str(payload.get("query") or ""), payload.get("options") or {},
             ))
+        if path == "/api/retrieval/embedding/status":
+            return self.send_json(indexer.embedding_status(str(payload.get("model") or "")))
+        if path == "/api/retrieval/embedding/rebuild":
+            return self.send_json(indexer.rebuild_embeddings(
+                str(payload.get("model") or ""),
+                bool(payload.get("force", False)),
+                int(payload.get("batch_size") or 32),
+            ))
         if path == "/api/agent/send":
             return self.send_json(agent.send_message(
                 str(payload.get("session_id") or ""), str(payload.get("message") or ""),
