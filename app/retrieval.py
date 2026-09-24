@@ -69,24 +69,31 @@ def normalize_options(options: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
-def _embedding_runtime(model: str) -> dict[str, str]:
-    model = str(model or "").strip()
-    if not model:
+def _embedding_runtime(model: str = "") -> dict[str, str]:
+    cfg = config.get_embedding_runtime()
+    selected_model = str(model or cfg.get("model") or "").strip()
+    if not cfg.get("enabled"):
+        raise ValueError("Embedding 服务尚未启用，请先在“设置 → Embedding”中启用")
+    if not selected_model:
         raise ValueError("未配置 Embedding 模型")
-    profile = config.get_active_llm_profile_runtime()
-    base_url = str(profile.get("base_url") or "").rstrip("/")
-    api_key = str(profile.get("api_key") or "")
-    if not base_url or not api_key:
-        raise ValueError("当前 Agent API 配置缺少 Base URL 或 API Key，无法调用 Embedding")
+    base_url = str(cfg.get("base_url") or "").rstrip("/")
+    api_key = str(cfg.get("api_key") or "")
+    env_name = str(cfg.get("api_key_env") or "")
+    if not base_url:
+        raise ValueError("Embedding Base URL 为空")
+    if not api_key:
+        raise ValueError(f"Embedding API Key 环境变量未设置：{env_name or '未配置'}")
     return {
-        "model": model,
-        "model_key": base_url + "|" + model,
+        "model": selected_model,
+        "model_key": base_url + "|" + selected_model,
         "base_url": base_url,
         "api_key": api_key,
+        "timeout": str(int(cfg.get("timeout") or 120)),
+        "batch_size": str(int(cfg.get("batch_size") or 32)),
     }
 
 
-def _embedding_request(texts: list[str], runtime: dict[str, str], timeout: int = 120) -> list[list[float]]:
+def _embedding_request(texts: list[str], runtime: dict[str, str], timeout: int | None = None) -> list[list[float]]:
     payload = json.dumps(
         {"model": runtime["model"], "input": texts},
         ensure_ascii=False,
@@ -102,7 +109,8 @@ def _embedding_request(texts: list[str], runtime: dict[str, str], timeout: int =
         },
     )
     try:
-        with urllib.request.urlopen(request, timeout=max(10, min(timeout, 600))) as response:
+        effective_timeout = int(timeout if timeout is not None else runtime.get("timeout") or 120)
+        with urllib.request.urlopen(request, timeout=max(10, min(effective_timeout, 600))) as response:
             data = json.loads(response.read().decode("utf-8", errors="replace"))
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")[:1200]
@@ -150,10 +158,11 @@ def embedding_status(model: str = "") -> dict[str, Any]:
     }
 
 
-def rebuild_embeddings(model: str, force: bool = False, batch_size: int = 32) -> dict[str, Any]:
+def rebuild_embeddings(model: str = "", force: bool = False, batch_size: int | None = None) -> dict[str, Any]:
     ensure_rag_units(force=False)
     runtime = _embedding_runtime(model)
-    batch_size = max(1, min(64, int(batch_size or 32)))
+    batch_size = int(batch_size if batch_size is not None else runtime.get("batch_size") or 32)
+    batch_size = max(1, min(128, batch_size))
     with _connect() as conn:
         _init_db(conn)
         if force:
@@ -209,9 +218,9 @@ def rebuild_embeddings(model: str, force: bool = False, batch_size: int = 32) ->
 
 
 def _semantic_route(conn, query: str, options: dict[str, Any], route_limit: int = ROUTE_LIMIT) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    if not options.get("embedding_enabled") or not options.get("embedding_model"):
+    if not options.get("embedding_enabled"):
         return [], {"enabled": False}
-    runtime = _embedding_runtime(options["embedding_model"])
+    runtime = _embedding_runtime(options.get("embedding_model") or "")
     query_vector = _embedding_request([query], runtime)[0]
     query_norm = _vector_norm(query_vector)
     where, params = _where(options)
