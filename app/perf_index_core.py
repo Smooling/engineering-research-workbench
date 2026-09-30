@@ -19,7 +19,10 @@ def initialize(force: bool = False) -> dict[str, Any]:
     _ensure_schema_marker()
     with _LOCK:
         with _connect() as conn:
-            _init_db(conn)
+            # v260923 · _init_db 返回是否发生 schema 迁移（如 attachment 补列），
+            # 迁移后旧行 attachment 为空，需强制重索引回填
+            if _init_db(conn):
+                force = True
     return sync(force=force)
 
 
@@ -98,8 +101,8 @@ def _index_path_conn(conn: sqlite3.Connection, kind: str, path: Path) -> str:
         INSERT INTO documents(
             id,path,kind,title,status,created,updated,mtime_ns,size,excerpt,
             due,record_date,added_date,pinned,project,projects_json,project_id,
-            project_ids_json,tags_json,kind_marks_json,authors,year,venue,doi,url,cite_key
-        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            project_ids_json,tags_json,kind_marks_json,authors,year,venue,doi,url,cite_key,attachment
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(id) DO UPDATE SET
             path=excluded.path,kind=excluded.kind,title=excluded.title,status=excluded.status,
             created=excluded.created,updated=excluded.updated,mtime_ns=excluded.mtime_ns,
@@ -108,7 +111,8 @@ def _index_path_conn(conn: sqlite3.Connection, kind: str, path: Path) -> str:
             project=excluded.project,projects_json=excluded.projects_json,project_id=excluded.project_id,
             project_ids_json=excluded.project_ids_json,tags_json=excluded.tags_json,
             kind_marks_json=excluded.kind_marks_json,authors=excluded.authors,year=excluded.year,
-            venue=excluded.venue,doi=excluded.doi,url=excluded.url,cite_key=excluded.cite_key
+            venue=excluded.venue,doi=excluded.doi,url=excluded.url,cite_key=excluded.cite_key,
+            attachment=excluded.attachment
         """,
         (
             doc_id, rel, kind, title, status, created, updated, int(st.st_mtime_ns), int(st.st_size),
@@ -119,6 +123,7 @@ def _index_path_conn(conn: sqlite3.Connection, kind: str, path: Path) -> str:
             json.dumps(marks, ensure_ascii=False), str(meta.get("authors") or ""),
             str(meta.get("year") or ""), str(meta.get("venue") or ""), str(meta.get("doi") or ""),
             str(meta.get("url") or ""), str(meta.get("cite_key") or ""),
+            str(meta.get("attachment") or ""),
         ),
     )
     conn.execute("DELETE FROM document_projects WHERE doc_id=?", (doc_id,))
@@ -441,6 +446,14 @@ def _row_doc(row: sqlite3.Row) -> dict[str, Any]:
     project_ids = _loads_list(row["project_ids_json"])
     tags = _loads_list(row["tags_json"])
     marks = _loads_list(row["kind_marks_json"])
+    # v260923 · 文献 PDF 附件：仅当路径指向真实存在的 .pdf 时才打附件标记（stat 检查，无内容读取）
+    att = str(row["attachment"] or "") if "attachment" in row.keys() else ""
+    att_ok = False
+    if att.strip():
+        att_path = Path(att)
+        if not att_path.is_absolute():
+            att_path = _root() / att
+        att_ok = att_path.suffix.lower() == ".pdf" and att_path.is_file()
     return {
         "id": row["id"], "path": row["path"], "filename": Path(row["path"]).name,
         "kind": row["kind"], "title": row["title"], "status": row["status"],
@@ -450,6 +463,7 @@ def _row_doc(row: sqlite3.Row) -> dict[str, Any]:
         "project_id": row["project_id"], "project_ids": project_ids, "tags": tags,
         "kind_marks": marks, "authors": row["authors"], "year": row["year"],
         "venue": row["venue"], "doi": row["doi"], "url": row["url"], "cite_key": row["cite_key"],
+        "attachment": att, "attachment_exists": att_ok,
     }
 
 

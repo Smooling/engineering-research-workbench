@@ -3,12 +3,16 @@ from __future__ import annotations
 import json
 import os
 import threading
+import uuid
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parents[1]
+from .paths import DATA_ROOT
+
+# v260923 · 打包 exe 后可写数据（config/、Workspace/）须落在 exe 同级目录而非临时解压目录
+ROOT = DATA_ROOT
 CONFIG_DIR = ROOT / "config"
 SECRET_PATH = CONFIG_DIR / "secret.json"
 LEGACY_SECRET_PATH = CONFIG_DIR / "secrets.json"
@@ -67,6 +71,37 @@ DEFAULT_RSS_CONFIG = {
 
 _lock = threading.RLock()
 _cache: dict[str, Any] = {}
+_secrets_mtime: int | None = None
+
+
+def load_secrets() -> None:
+    """加载本地私密配置 config/secrets.json（已被 .gitignore 排除，不上传 git）。
+
+    将其中 env 对象的键值注入进程环境变量，供 agent 按 api_key_env 读取。
+    通过文件修改时间检测变更：保存后自动重新注入，无需重启服务。
+    文件不存在或格式异常时静默跳过，不阻断启动。
+    """
+    global _secrets_mtime
+    path = CONFIG_DIR / "secrets.json"
+    try:
+        mtime = path.stat().st_mtime_ns
+    except OSError:
+        _secrets_mtime = None
+        return
+    if mtime == _secrets_mtime:
+        return
+    _secrets_mtime = mtime
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+        env = data.get("env") if isinstance(data, dict) else None
+        if not isinstance(env, dict):
+            return
+        for key, value in env.items():
+            name = str(key).strip()
+            if name and isinstance(value, str) and value.strip():
+                os.environ[name] = value.strip()
+    except Exception:
+        pass
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
@@ -242,12 +277,63 @@ def _normalize_secret(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _clean_custom_actions(actions: Any) -> list[dict[str, str]]:
+    """v260929b · 阅读助手自定义动作归一化：仅保留 id/name/prompt，去空去重，上限 12 个。"""
+    out: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in actions if isinstance(actions, list) else []:
+        if len(out) >= 12:
+            break
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()[:30]
+        prompt = str(item.get("prompt") or "").strip()
+        aid = str(item.get("id") or "").strip()[:40] or ("ca-" + uuid.uuid4().hex[:8])
+        if not name or not prompt or aid in seen:
+            continue
+        seen.add(aid)
+        out.append({"id": aid, "name": name, "prompt": prompt})
+    return out
+
+
+def _clean_assist(assist: Any) -> dict[str, Any]:
+    """v260929 · AI 阅读助手设置归一化（save_app 与 reload_all 共用，防止 reload 洗掉 assist）。"""
+    a = assist if isinstance(assist, dict) else {}
+    try:
+        max_chars = max(1000, min(60000, int(a.get("max_chars") or 24000)))
+    except Exception:
+        max_chars = 24000
+    raw_temp = a.get("temperature_override")
+    try:
+        temp = float(raw_temp) if raw_temp is not None and str(raw_temp).strip() != "" else None
+    except Exception:
+        temp = None
+    # v260929x · 预设动作提示词覆盖（translate/summarize/organize/polish），空 = 用内置默认；非法键丢弃
+    raw_prompts = a.get("prompts") if isinstance(a.get("prompts"), dict) else {}
+    prompts = {k: str(raw_prompts.get(k) or "").strip() for k in ("translate", "summarize", "organize", "polish")}
+    prompts = {k: v for k, v in prompts.items() if v}
+    return {
+        "enabled": a.get("enabled") is not False,
+        "request_preset": str(a.get("request_preset") or ""),
+        "model_override": str(a.get("model_override") or ""),
+        "temperature_override": temp,
+        "extra_params": a.get("extra_params") if isinstance(a.get("extra_params"), dict) else {},
+        "target_language": str(a.get("target_language") or "中文"),
+        "style_instruction": str(a.get("style_instruction") or ""),
+        "max_chars": max_chars,
+        "custom_actions": _clean_custom_actions(a.get("custom_actions")),  # v260929b · 自定义阅读动作
+        "prompts": prompts,  # v260929x · 预设动作提示词覆盖
+    }
+
+
 def _strip_legacy_llm_for_storage(app: dict[str, Any]) -> dict[str, Any]:
     out = deepcopy(app)
     old = out.get("llm") if isinstance(out.get("llm"), dict) else {}
     out["llm"] = {
         "enabled": old.get("enabled", False) is True,
         "system_prompt": str(old.get("system_prompt") or DEFAULT_SYSTEM_PROMPT),
+        "assist": _clean_assist(old.get("assist")),  # v260929 · 保留 AI 阅读助手设置
+        "vision_enabled": old.get("vision_enabled", False) is True,  # v260929c · 多模态开关
     }
     return _deep_merge(DEFAULT_APP_CONFIG, out)
 
@@ -280,6 +366,7 @@ def reload_all() -> dict:
 
 
 def get_all() -> dict:
+    load_secrets()
     with _lock:
         if not _cache:
             reload_all()
@@ -356,6 +443,8 @@ def get_active_llm_profile_runtime() -> dict[str, Any]:
     profile["enabled"] = app_llm.get("enabled", False) is True
     profile["system_prompt"] = str(app_llm.get("system_prompt") or DEFAULT_SYSTEM_PROMPT)
     profile["protocol"] = "chat_completions"
+    profile["assist"] = app_llm.get("assist") if isinstance(app_llm.get("assist"), dict) else {}  # v260929 · 阅读区 AI 助手设置（app.json 持久化，运行时透出给 agent.assist）
+    profile["vision_enabled"] = app_llm.get("vision_enabled", False) is True  # v260929c · 多模态开关：阅读区 AI 助手可发送截图（需模型支持图片输入）
     return profile
 
 
@@ -396,9 +485,12 @@ def save_app(data: dict) -> dict:
             reload_all()
         current_secret = deepcopy(_cache["secret"])
         secret = _merge_profiles_from_public(incoming_llm, current_secret)
+        assist = incoming_llm.get("assist") if isinstance(incoming_llm.get("assist"), dict) else {}
         clean_llm = {
             "enabled": incoming_llm.get("enabled", False) is True,
             "system_prompt": str(incoming_llm.get("system_prompt") or DEFAULT_SYSTEM_PROMPT),
+            "assist": _clean_assist(assist),  # v260929 · AI 阅读助手设置：app.json 的 llm 下持久化（其余 llm 字段归 secret profiles，save 时会被清掉，故显式保留）
+            "vision_enabled": incoming_llm.get("vision_enabled", False) is True,  # v260929c · 多模态开关：阅读区 AI 助手可发送截图
         }
         incoming["llm"] = clean_llm
         merged = _deep_merge(DEFAULT_APP_CONFIG, incoming)
@@ -423,4 +515,5 @@ def workspace_root() -> Path:
     return p if p.is_absolute() else ROOT / p
 
 
+load_secrets()
 reload_all()

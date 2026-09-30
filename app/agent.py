@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 import base64
+import http.client
 import json
 import mimetypes
 import os
 import re
 import shutil
 import threading
+import urllib.request
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from . import config, store, activity
@@ -204,11 +207,84 @@ def _endpoint(base_url: str, suffix: str) -> str:
     return base + suffix
 
 
+_HTTP_POOL: dict[tuple[str, str, int], list[http.client.HTTPConnection]] = {}  # v260929c · Keep-Alive 连接池：复用已建立的 TLS 连接，省去每次请求的 DNS/TCP/TLS 握手
+_HTTP_POOL_LOCK = threading.Lock()
+_MAX_POOL_PER_HOST = 4
+
+
+def _api_headers(api_key: str) -> dict[str, str]:
+    return {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}", "User-Agent": "Workbench/260922.3", "Accept": "application/json"}
+
+
+def _http_error_message(status: int, raw: str) -> str:
+    detail = raw[:2000]
+    try:
+        msg = json.loads(raw).get("error", {}).get("message") or detail
+    except Exception:
+        msg = detail
+    return f"LLM API HTTP {status}: {msg}"
+
+
+def _pool_get(key: tuple[str, str, int], timeout: int) -> tuple[http.client.HTTPConnection, bool]:
+    with _HTTP_POOL_LOCK:
+        conns = _HTTP_POOL.get(key)
+        if conns:
+            return conns.pop(), True  # 复用池中连接
+    scheme, host, port = key
+    conn = http.client.HTTPSConnection(host, port, timeout=timeout) if scheme == "https" else http.client.HTTPConnection(host, port, timeout=timeout)
+    return conn, False
+
+
+def _pool_put(key: tuple[str, str, int], conn: http.client.HTTPConnection) -> None:
+    with _HTTP_POOL_LOCK:
+        conns = _HTTP_POOL.setdefault(key, [])
+        if len(conns) < _MAX_POOL_PER_HOST:
+            conns.append(conn)
+            return
+    try:
+        conn.close()
+    except Exception:
+        pass
+
+
 def _http_json(url: str, payload: dict[str, Any] | None, api_key: str, timeout: int = 120, method: str = "POST") -> dict[str, Any]:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
-    req = Request(url, data=body, method=method, headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}", "User-Agent": "Workbench/260922.3"})
+    headers = _api_headers(api_key)
+    tmo = max(5, min(int(timeout or 120), 600))
+    # v260929c · 响应提速：未配置系统 https 代理时走 Keep-Alive 连接池（直连复用）；配置了代理则维持 urlopen 旧路径，行为不变
+    if not urllib.request.getproxies().get("https"):
+        u = urlparse(url)
+        host = u.hostname or ""
+        port = u.port or (443 if u.scheme == "https" else 80)
+        key = (u.scheme, host, port)
+        path = u.path + (("?" + u.query) if u.query else "")
+        for attempt in (1, 0):  # 复用连接可能已被服务端关闭 → 新连接重试一次
+            conn, reused = _pool_get(key, tmo)
+            try:
+                conn.request(method, path, body=body, headers=headers)
+                resp = conn.getresponse()
+                raw = resp.read().decode("utf-8", errors="replace")
+                if resp.will_close:
+                    conn.close()
+                else:
+                    _pool_put(key, conn)
+                if resp.status >= 400:
+                    raise ValueError(_http_error_message(resp.status, raw))
+                return json.loads(raw) if raw else {}
+            except ValueError:
+                raise
+            except TimeoutError:
+                raise ValueError(f"无法连接 LLM API：请求超时（>{tmo}s），可在 设置 → Agent / LLM 调大超时") from None
+            except Exception as e:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                if not reused or attempt == 0:
+                    raise ValueError(f"无法连接 LLM API：{e}") from None
+    req = Request(url, data=body, method=method, headers=headers)
     try:
-        with urlopen(req, timeout=max(5, min(int(timeout or 120), 600))) as resp:
+        with urlopen(req, timeout=tmo) as resp:
             raw = resp.read().decode("utf-8", errors="replace")
             return json.loads(raw) if raw else {}
     except HTTPError as e:
@@ -288,7 +364,7 @@ def _reasoning_text(value: Any) -> str:
     return str(value).strip()
 
 
-def _chat_completions(cfg: dict[str, Any], system_prompt: str, history: list[dict[str, Any]], user_text: str, image_paths: list[str], request_params: dict[str, Any] | None = None) -> tuple[str, str]:
+def _chat_completions(cfg: dict[str, Any], system_prompt: str, history: list[dict[str, Any]], user_text: str, image_paths: list[str], request_params: dict[str, Any] | None = None, image_data_urls: list[str] | None = None) -> tuple[str, str]:
     messages: list[dict[str, Any]] = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
@@ -296,10 +372,15 @@ def _chat_completions(cfg: dict[str, Any], system_prompt: str, history: list[dic
         role = m.get("role")
         if role in ("user", "assistant") and str(m.get("content") or "").strip():
             messages.append({"role": role, "content": str(m.get("content") or "")})
+    img_urls: list[str] = []  # v260929c · 多模态消息：workspace 图片路径 + 直接传入的截图 data URL 合并
     if image_paths:
+        img_urls.extend(_image_data_url(p) for p in image_paths[:6])
+    if image_data_urls:
+        img_urls.extend(str(u) for u in image_data_urls[:6] if str(u).startswith("data:image/"))
+    if img_urls:
         content: list[dict[str, Any]] = [{"type": "text", "text": user_text or "请分析这些图片。"}]
-        for p in image_paths[:6]:
-            content.append({"type": "image_url", "image_url": {"url": _image_data_url(p)}})
+        for u in img_urls:
+            content.append({"type": "image_url", "image_url": {"url": u}})
         messages.append({"role": "user", "content": content})
     else:
         messages.append({"role": "user", "content": user_text})
@@ -384,6 +465,94 @@ def send_message(session_id: str, text: str, ref_ids: list[str] | None = None, i
         _atomic_json(_session_path(session_id), session)
     activity.record("agent_chat", ref=session_id, kind="agent", title=session.get("title", "Agent 对话"), project="")
     return {"ok": True, "session": session, "assistant": assistant_msg}
+
+
+_ASSIST_PROMPTS = {  # v260929 · PDF 阅读区 AI 助手：按动作切换系统提示词，全部要求 Markdown 输出；具体行为可经 设置→文献/PDF→AI 阅读助手 调整
+    "translate": "你是科研文献翻译助手。将用户提供的学术内容准确翻译为目标语言：专业术语首次出现时在括号内保留原文；公式、变量、单位、人名保持原样。只输出译文本身，不要任何解释或原文重复。",
+    "summarize": "你是科研文献阅读助手。用中文对用户提供的内容做要点总结：提炼核心观点、方法与结论，输出为简洁的 Markdown 列表；只依据给定内容，不得编造其中不存在的信息。",
+    "organize": "你是科研知识整理助手。把用户提供的内容整理为结构化中文知识笔记（Markdown 分节）：核心要点、关键术语、方法/数据、可引用结论；条目化并保留关键数字与公式；只依据给定内容，不得编造。",
+    "polish": "你是科研笔记编辑助手。整理润色用户提供的文献笔记（Markdown）：统一为清晰的结构（如 摘要/要点/方法/结论/摘录），修正错别字与冗余表达；必须保留用户笔记中的全部原有信息，不得删改实质内容，不得添加虚构内容。",
+}
+_MAX_ASSIST_CHARS = 24_000  # 默认输入上限，可经 设置→文献/PDF→AI 阅读助手 调整（1000–60000）
+
+
+def assist(action: str, text: str, instruction: str = "", image: str = "") -> dict[str, Any]:
+    """v260929 · PDF 阅读区 AI 助手（无会话状态的一次性补全）：
+    复用 设置→Agent/LLM 的模型档案；行为参数（启用/请求模式/翻译目标语言/附加风格指令/输入上限/
+    自定义动作）来自 设置→文献/PDF→AI 阅读助手（config/app.json llm.assist）。
+    v260929c · image：页面/框选截图 data URL，代替选中文本交多模态模型处理（需在 Agent/LLM 开启多模态）。"""
+    action = str(action or "").strip() or "custom"
+    instruction = str(instruction or "").strip()
+    text = str(text or "").strip()
+    image = str(image or "").strip()
+    if not text and not image:
+        raise ValueError("没有可处理的文本或截图")
+    cfg = _llm_cfg()
+    if image:  # v260929c · 截图模式：多模态门控 + 数据校验
+        if not cfg.get("vision_enabled"):
+            raise ValueError("多模态未开启：可在 设置 → Agent / LLM 开启「多模态 / 截图识别」，并确认当前模型支持图片输入")
+        if not image.startswith("data:image/") or ";base64," not in image[:64]:
+            raise ValueError("截图数据无效")
+        if len(image) > 10 * 1024 * 1024:
+            raise ValueError("截图过大（超过 10 MB），请缩小截图范围或降低页面缩放后重试")
+    st = cfg.get("assist") if isinstance(cfg.get("assist"), dict) else {}
+    if st.get("enabled") is False:
+        raise ValueError("AI 阅读助手已在 设置 → 文献 / PDF 中关闭")
+    try:
+        max_chars = max(1000, min(60000, int(st.get("max_chars") or _MAX_ASSIST_CHARS)))
+    except Exception:
+        max_chars = _MAX_ASSIST_CHARS
+    if len(text) > max_chars:
+        text = text[:max_chars]
+    action_label = ""  # v260929b · 自定义动作的显示名（用于报错信息）
+    custom = next((x for x in (st.get("custom_actions") if isinstance(st.get("custom_actions"), list) else [])
+                   if isinstance(x, dict) and str(x.get("id") or "") == action), None)  # v260929b · 自定义阅读动作：id 匹配则用其提示词
+    if custom:
+        action_label = str(custom.get("name") or "自定义动作")
+        system_prompt = str(custom.get("prompt") or "").strip()
+        if not system_prompt:
+            raise ValueError(f"自定义动作「{action_label}」尚未配置提示词，可在 设置 → 文献 / PDF → AI 阅读助手 中补充")
+    elif action in _ASSIST_PROMPTS:
+        # v260929x · 预设动作提示词可覆盖（设置→文献/PDF→AI 阅读助手），留空用内置默认
+        overrides = st.get("prompts") if isinstance(st.get("prompts"), dict) else {}
+        system_prompt = str(overrides.get(action) or "").strip() or _ASSIST_PROMPTS[action]
+        if action == "translate":
+            lang = str(st.get("target_language") or "中文").strip() or "中文"
+            system_prompt += f"\n目标语言：{lang}。"
+    else:
+        if not instruction:
+            raise ValueError("自定义指令不能为空")
+        system_prompt = "你是科研工作台里的 AI 助手，严格按用户给出的指令处理提供的文本，输出中文 Markdown。"
+    style = str(st.get("style_instruction") or "").strip()
+    if style:
+        system_prompt += "\n\n附加要求：\n" + style
+    if image:  # v260929c · 截图模式：提示模型先做精确的图内识别，提高公式/表格提取正确率
+        system_prompt += "\n用户以截图提供内容：请先从图片中精确识别文字、公式与图表信息（保持 LaTeX 形式），再按上述要求处理。"
+    presets = cfg.get("request_presets") if isinstance(cfg.get("request_presets"), list) else []  # v260929b · 阅读助手未指定请求模式时直接用第一个，不走 Agent 默认解析
+    first = presets[0] if presets and isinstance(presets[0], dict) else {}
+    preset_id, preset_label, preset_model, preset_temperature, request_params = _request_preset(cfg, str(st.get("request_preset") or str(first.get("id") or "default")))
+    model_override = str(st.get("model_override") or "").strip()  # v260929 · 阅读助手可无视所选请求模式，直接覆盖模型/温度/附加参数
+    if model_override:
+        preset_model = model_override
+    if not preset_model:
+        raise ValueError(f"请求模式 {preset_label} 尚未配置模型名称，可在 设置 → 文献/PDF → AI 阅读助手 的「模型覆盖」中填写")
+    request_cfg = dict(cfg)
+    request_cfg["model"] = preset_model
+    resolved_temp = preset_temperature
+    if st.get("temperature_override") is not None:
+        try:
+            resolved_temp = float(st.get("temperature_override"))
+        except Exception:
+            pass
+    if resolved_temp is not None:
+        request_cfg["temperature"] = resolved_temp
+    extra = st.get("extra_params") if isinstance(st.get("extra_params"), dict) else {}
+    if extra:
+        request_params = _deep_merge_request(request_params, extra, {"model", "messages", "stream"})
+    user_text = (text + (f"\n\n---\n指令：{instruction}" if instruction and action == "custom" else "")) or ("请处理这张截图中的内容。" if image else "")
+    content, reasoning = _chat_completions(request_cfg, system_prompt, [], user_text, None, request_params, [image] if image else None)
+    return {"ok": True, "action": action, "label": action_label, "content": content, "model": preset_model,
+            "reasoning": reasoning if cfg.get("show_reasoning", True) else ""}
 
 
 def test_connection() -> dict[str, Any]:

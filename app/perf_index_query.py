@@ -65,7 +65,7 @@ def list_docs(
         total = int(conn.execute(f"SELECT COUNT(*) FROM documents d WHERE {sql_where}", params).fetchone()[0])
         rows = conn.execute(
             f"SELECT d.* FROM documents d WHERE {sql_where} "
-            "ORDER BY COALESCE(NULLIF(d.updated,''),d.created) DESC, d.id DESC LIMIT ? OFFSET ?",
+            "ORDER BY d.pinned DESC, COALESCE(NULLIF(d.updated,''),d.created) DESC, d.id DESC LIMIT ? OFFSET ?",  # v260924i · 置顶条目排头显示
             [*params, page_size, (page - 1) * page_size],
         ).fetchall()
     items = [_row_doc(r) for r in rows]
@@ -120,7 +120,7 @@ def search_docs(query: str, limit: int = 60) -> list[dict[str, Any]]:
                     SELECT d.* FROM documents_fts f
                     JOIN documents d ON d.id=f.doc_id
                     WHERE documents_fts MATCH ?
-                    ORDER BY bm25(documents_fts), COALESCE(NULLIF(d.updated,''),d.created) DESC
+                    ORDER BY d.pinned DESC, bm25(documents_fts), COALESCE(NULLIF(d.updated,''),d.created) DESC
                     LIMIT ?
                     """,
                     (phrase, limit),
@@ -134,7 +134,7 @@ def search_docs(query: str, limit: int = 60) -> list[dict[str, Any]]:
                 JOIN documents_fts f ON f.doc_id=d.id
                 WHERE lower(f.title) LIKE ? OR lower(f.body) LIKE ?
                    OR lower(f.tags) LIKE ? OR lower(f.projects) LIKE ?
-                ORDER BY COALESCE(NULLIF(d.updated,''),d.created) DESC
+                ORDER BY d.pinned DESC, COALESCE(NULLIF(d.updated,''),d.created) DESC  -- v260924k · 搜索结果同样置顶优先
                 LIMIT ?
                 """,
                 (like, like, like, like, limit),
