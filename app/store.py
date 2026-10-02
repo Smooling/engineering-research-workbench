@@ -268,6 +268,53 @@ def get_doc(doc_id: str) -> dict[str, Any]:
     raise FileNotFoundError(doc_id)
 
 
+def get_docs_by_ids(doc_ids) -> dict[str, dict[str, Any]]:
+    """v260929 · 批量按 id 取 doc：一次目录遍历按 stem 预筛、仅命中文件读盘（O(N) 次读取），
+    替代逐条 get_doc 的 O(N×M) 全库扫描；stem 未命中再按 get_doc 兜底（几乎不触发）。"""
+    id_set = {str(x) for x in (doc_ids or []) if str(x)}
+    out: dict[str, dict[str, Any]] = {}
+    if not id_set:
+        return out
+    hit: dict[str, tuple[str, Path]] = {}
+    for kind, path in _iter_docs():
+        if path.stem in id_set and path.stem not in hit:
+            hit[path.stem] = (kind, path)
+    for doc_id, (kind, path) in hit.items():
+        try:
+            out[doc_id] = _doc_from_path(kind, path, include_body=True)
+        except Exception:
+            pass
+    for doc_id in id_set - set(out):
+        try:
+            out[doc_id] = get_doc(doc_id)
+        except Exception:
+            pass
+    return out
+
+
+def resolve_attachment(meta: dict[str, Any]) -> Path | None:
+    """v260923 · 解析文献 PDF 附件路径：绝对路径直接用，相对路径相对 Workspace。
+    仅接受 .pdf 且文件真实存在，其余一律视为无附件。"""
+    raw = str(meta.get("attachment") or "").strip().strip('"').strip("'")
+    if not raw:
+        return None
+    path = Path(raw)
+    if not path.is_absolute():
+        path = ensure_workspace() / raw
+    try:
+        path = path.resolve()
+    except OSError:
+        return None
+    if path.suffix.lower() != ".pdf" or not path.is_file():
+        return None
+    return path
+
+
+def attachment_file(doc_id: str) -> Path | None:
+    """v260923 · 取指定文献的 PDF 附件文件（不存在或配置无效时返回 None）。"""
+    return resolve_attachment(get_doc(doc_id))
+
+
 def _make_default_body(kind: str, title: str, payload: dict[str, Any]) -> str:
     if kind == "idea":
         return f"# {title}\n\n## 想法\n\n\n## 为什么值得记录\n\n\n## 下一步\n\n- [ ] \n"
@@ -318,7 +365,7 @@ def create_doc(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
     if kind == "summary":
         meta["summary_type"] = payload.get("summary_type") or "阶段总结"
     if kind == "literature":
-        for key in ("authors", "year", "venue", "doi", "url", "cite_key"):
+        for key in ("authors", "year", "venue", "doi", "url", "cite_key", "attachment"):
             meta[key] = payload.get(key) or ""
         if not meta["cite_key"]:
             meta["cite_key"] = _slug(title).replace("-", "_")[:48]
@@ -341,7 +388,7 @@ def update_doc(doc_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     meta, body = _frontmatter_parse(text)
     allowed = {
         "title", "status", "project", "projects", "tags", "kind_marks", "pinned", "record_date", "due", "added_date",
-        "summary_type", "authors", "year", "venue", "doi", "url", "cite_key"
+        "summary_type", "authors", "year", "venue", "doi", "url", "cite_key", "attachment"
     }
     for key in allowed:
         if key in payload:
@@ -811,7 +858,7 @@ def dashboard() -> dict[str, Any]:
     for name in project_names:
         project_docs = [d for d in docs if name in (d.get("projects") or ([d.get("project")] if d.get("project") else []))]
         project_todos = [t for t in todo_items if str(t.get("project") or "").strip() == name and not t.get("done")]
-        project_milestones = [d for d in project_docs if d.get("kind") == "milestone" and d.get("status") != "完成"]
+        project_milestones = [d for d in project_docs if d.get("kind") == "milestone"]
         timestamps = [str(d.get("updated") or d.get("created") or "") for d in project_docs]
         timestamps += [str(t.get("updated") or t.get("created") or "") for t in todo_items if str(t.get("project") or "").strip() == name]
         last_updated = max([x for x in timestamps if x], default="")
@@ -819,7 +866,7 @@ def dashboard() -> dict[str, Any]:
             "name": name,
             "docs": len(project_docs),
             "open_todos": len(project_todos),
-            "open_milestones": len(project_milestones),
+            "milestones": len(project_milestones),
             "literature": sum(1 for d in project_docs if d.get("kind") == "literature"),
             "notes": sum(1 for d in project_docs if d.get("kind") in {"note", "journal", "idea"}),
             "last_updated": last_updated,

@@ -1,2 +1,7 @@
 # Python backend uses the standard library only.
 # Recommended: Python 3.11+
+#
+# Desktop client build extras (v260923):
+#   pyinstaller  – bundle client.py into ResearchWorkbench.exe at project root (build_client.bat)
+#   pywebview    – native window shell (Edge WebView2) used by client.py
+#   pillow       – build-time only, converts web/favicon.png to .ico
