@@ -225,6 +225,112 @@ def _excerpt(body: str, limit: int = 180) -> str:
     return cleaned[:limit]
 
 
+_EN_STOPWORDS = {
+    "the", "a", "an", "in", "on", "of", "for", "and", "or", "to", "with", "by", "from", "as", "at",
+    "is", "are", "be", "been", "was", "were", "that", "this", "it", "its", "into", "than", "then",
+    "there", "here", "we", "our", "not", "can", "will", "would", "which", "when", "where", "how",
+    "what", "who", "their", "them", "these", "those", "over", "under", "between", "within",
+    "without", "through", "during", "before", "after", "based", "using", "via", "etc", "novel",
+}  # v260930d · M5 英文虚词停用表：文献标题拆词后大量介词/冠词会误命中页面文本
+
+
+def _title_terms(title: str, kind: str) -> list[str]:
+    """v260930d · M5 从条目标题提取匹配候选词：知识类取名称段（去掉 知识-<类别>- 前缀），
+    其他类去掉单段前缀。文献类论文原题只整题参与、不拆词——论文名单词（detection 等）
+    与页面文本撞词太常见，噪声远大于信号；整题命中仅发生在"页面正来自这篇文献"时，才是真相关。"""
+    t = str(title or "").strip()
+    if not t:
+        return []
+    name = t
+    if kind == "note" and t.startswith("知识-"):
+        parts = t.split("-")
+        if len(parts) >= 3:
+            name = "-".join(parts[2:])
+    else:
+        for prefix in ("总结-", "灵感-", "日志-", "里程碑-", "文献-", "知识-"):
+            if t.startswith(prefix):
+                name = t[len(prefix):]
+                break
+    name = name.strip()
+    if not name:
+        return []
+    terms = [name]
+    if kind != "literature":  # 非文献类才拆词补充短词候选
+        for w in re.split(r"[\s/、,，;；()（）]+", name):
+            w = w.strip()
+            lw = w.lower()
+            if lw in _EN_STOPWORDS:
+                continue
+            if re.fullmatch(r"[A-Za-z]+", w) and len(w) < 4 and not w.isupper():
+                continue  # 短英文介词/冠词排除；全大写缩写（SCR/CW）保留
+            if len(w) >= 2 and w not in terms:
+                terms.append(w)
+    return terms
+
+
+def _term_in_text(term: str, low_text: str) -> bool:
+    """v260930i · 英文纯字母词按整词匹配（SCR 不得命中 description），容忍简单词形变化
+    （filters/filtering/estimated 这类 s/es/ed/ing 后缀），中文/混合词保留子串。"""
+    tl = term.lower()
+    if tl.isascii() and tl.isalpha():
+        stem = tl[:-1] if tl.endswith("e") else tl  # estimate → estimated/estimates/estimating
+        return re.search(rf"(?<![a-z0-9]){re.escape(stem)}e?(?:s|es|ed|ing)?(?![a-z0-9])", low_text) is not None
+    return tl in low_text
+
+
+def match_related(page_text: str, limit: int = 8) -> list[dict[str, Any]]:
+    """v260930d · M5 阅读中知识关联：把页面正文与全库条目的标题名称段/标签做文本匹配，
+    返回本页出现过的知识条目（纯字符串匹配，不依赖 LLM）。命中按权重降序：
+    整名称段命中 > 长 token > 多 token；返回 hits 供前端高亮。
+    v260930i · 抗噪：英文整词匹配 + 最低相关门槛（整段命中必进；否则需 score≥4 或 ≥2 个独立命中）。"""
+    text = str(page_text or "")
+    if len(text.strip()) < 4:
+        return []
+    low = text.lower()
+    scored: dict[str, dict[str, Any]] = {}
+    for kind, path in _iter_docs():
+        try:
+            doc = _doc_from_path(kind, path, include_body=False)
+        except Exception:
+            continue
+        candidates: list[str] = _title_terms(doc.get("title"), kind)
+        n_title = len(candidates)
+        for tag in (doc.get("tags") or []):
+            t = str(tag).strip()
+            if len(t) >= 2 and t not in candidates:
+                candidates.append(t)
+        hits: list[str] = []
+        score = 0
+        full = False
+        for i, term in enumerate(candidates):
+            tl = term.lower()
+            if tl and _term_in_text(term, low):
+                hits.append(term)
+                # v260930d · 权重：整名称段命中强加权；标题 token 按词长；tags 命中为弱信号（半权）
+                if i == 0:
+                    full = True
+                    score += 50 + len(term) // 2
+                elif i < n_title:
+                    score += len(term)
+                else:
+                    score += max(1, len(term) // 2)
+        if not hits:
+            continue
+        if len(hits) >= 2:
+            score += 2
+        if not full and score < 4 and len(hits) < 2:  # v260930i · 单个弱命中不足以构成关联
+            continue
+        scored[doc["id"]] = {
+            "id": doc["id"], "title": doc.get("title"), "kind": kind,
+            "kind_marks": doc.get("kind_marks") or [], "excerpt": doc.get("excerpt", ""),
+            "hits": hits[:4], "score": score,
+        }
+    out = sorted(scored.values(), key=lambda x: (-x["score"], x["kind"] != "note", str(x["title"])))  # v260930d · 同分时知识条目优先（M5 场景主体是术语解释）
+    for x in out:
+        x.pop("score", None)
+    return out[:max(1, min(int(limit or 8), 20))]
+
+
 def list_docs(kind: str | None = None, query: str = "", status: str = "", project: str = "", mark: str = "") -> list[dict[str, Any]]:
     kinds = [kind] if kind else None
     q = query.strip().lower()
@@ -266,6 +372,53 @@ def get_doc(doc_id: str) -> dict[str, Any]:
         if meta.get("id") == doc_id or path.stem == doc_id:
             return _doc_from_path(kind, path, include_body=True)
     raise FileNotFoundError(doc_id)
+
+
+def get_docs_by_ids(doc_ids) -> dict[str, dict[str, Any]]:
+    """v260929 · 批量按 id 取 doc：一次目录遍历按 stem 预筛、仅命中文件读盘（O(N) 次读取），
+    替代逐条 get_doc 的 O(N×M) 全库扫描；stem 未命中再按 get_doc 兜底（几乎不触发）。"""
+    id_set = {str(x) for x in (doc_ids or []) if str(x)}
+    out: dict[str, dict[str, Any]] = {}
+    if not id_set:
+        return out
+    hit: dict[str, tuple[str, Path]] = {}
+    for kind, path in _iter_docs():
+        if path.stem in id_set and path.stem not in hit:
+            hit[path.stem] = (kind, path)
+    for doc_id, (kind, path) in hit.items():
+        try:
+            out[doc_id] = _doc_from_path(kind, path, include_body=True)
+        except Exception:
+            pass
+    for doc_id in id_set - set(out):
+        try:
+            out[doc_id] = get_doc(doc_id)
+        except Exception:
+            pass
+    return out
+
+
+def resolve_attachment(meta: dict[str, Any]) -> Path | None:
+    """v260923 · 解析文献 PDF 附件路径：绝对路径直接用，相对路径相对 Workspace。
+    仅接受 .pdf 且文件真实存在，其余一律视为无附件。"""
+    raw = str(meta.get("attachment") or "").strip().strip('"').strip("'")
+    if not raw:
+        return None
+    path = Path(raw)
+    if not path.is_absolute():
+        path = ensure_workspace() / raw
+    try:
+        path = path.resolve()
+    except OSError:
+        return None
+    if path.suffix.lower() != ".pdf" or not path.is_file():
+        return None
+    return path
+
+
+def attachment_file(doc_id: str) -> Path | None:
+    """v260923 · 取指定文献的 PDF 附件文件（不存在或配置无效时返回 None）。"""
+    return resolve_attachment(get_doc(doc_id))
 
 
 def _make_default_body(kind: str, title: str, payload: dict[str, Any]) -> str:
@@ -318,7 +471,7 @@ def create_doc(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
     if kind == "summary":
         meta["summary_type"] = payload.get("summary_type") or "阶段总结"
     if kind == "literature":
-        for key in ("authors", "year", "venue", "doi", "url", "cite_key"):
+        for key in ("authors", "year", "venue", "doi", "url", "cite_key", "attachment"):
             meta[key] = payload.get(key) or ""
         if not meta["cite_key"]:
             meta["cite_key"] = _slug(title).replace("-", "_")[:48]
@@ -341,7 +494,7 @@ def update_doc(doc_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     meta, body = _frontmatter_parse(text)
     allowed = {
         "title", "status", "project", "projects", "tags", "kind_marks", "pinned", "record_date", "due", "added_date",
-        "summary_type", "authors", "year", "venue", "doi", "url", "cite_key"
+        "summary_type", "authors", "year", "venue", "doi", "url", "cite_key", "attachment"
     }
     for key in allowed:
         if key in payload:
@@ -811,7 +964,7 @@ def dashboard() -> dict[str, Any]:
     for name in project_names:
         project_docs = [d for d in docs if name in (d.get("projects") or ([d.get("project")] if d.get("project") else []))]
         project_todos = [t for t in todo_items if str(t.get("project") or "").strip() == name and not t.get("done")]
-        project_milestones = [d for d in project_docs if d.get("kind") == "milestone" and d.get("status") != "完成"]
+        project_milestones = [d for d in project_docs if d.get("kind") == "milestone"]
         timestamps = [str(d.get("updated") or d.get("created") or "") for d in project_docs]
         timestamps += [str(t.get("updated") or t.get("created") or "") for t in todo_items if str(t.get("project") or "").strip() == name]
         last_updated = max([x for x in timestamps if x], default="")
@@ -819,7 +972,7 @@ def dashboard() -> dict[str, Any]:
             "name": name,
             "docs": len(project_docs),
             "open_todos": len(project_todos),
-            "open_milestones": len(project_milestones),
+            "milestones": len(project_milestones),
             "literature": sum(1 for d in project_docs if d.get("kind") == "literature"),
             "notes": sum(1 for d in project_docs if d.get("kind") in {"note", "journal", "idea"}),
             "last_updated": last_updated,

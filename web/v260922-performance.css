@@ -1,10 +1,11 @@
 /* Large-workspace performance affordances. Data behavior lives in v260922-performance.js. */
 .perf-doc-pager {
-  display:flex; align-items:center; justify-content:center; gap:10px;
-  padding:10px 8px; border-top:1px solid var(--line); font-size:12px;
+  display:flex; align-items:center; justify-content:center; flex-wrap:nowrap; gap:8px; /* v260924g · 窄栏单行布局 */
+  padding:10px 8px; border-top:1px solid var(--line); font-size:11px; /* v260924g · 12→11，窄栏容纳单行 */
   color:var(--text-2, #667085); background:var(--panel, transparent);
 }
-.perf-doc-pager button { min-width:72px; }
+.perf-doc-pager span { white-space:nowrap; } /* v260924g · 「N/M 页 · 共 X 条」一行显示 */
+.perf-doc-pager button { min-width:56px; white-space:nowrap; flex:0 0 auto; } /* v260924g · 按钮文字禁折行、禁 flex 收缩 */
 .perf-doc-pager button:disabled { opacity:.45; cursor:default; }
 .perf-graph-status {
   margin-left:auto; display:flex; align-items:center; gap:8px; flex-wrap:wrap;

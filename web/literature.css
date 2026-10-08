@@ -1,4 +1,4 @@
-.lit-shell{display:grid;grid-template-columns:minmax(250px,310px) minmax(480px,1fr) minmax(260px,340px);gap:12px;height:calc(100vh - 112px);min-height:620px}.lit-library,.lit-reader,.lit-side{min-height:0;overflow:hidden}.lit-library{display:flex;flex-direction:column;padding:12px}.lit-library-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}.lit-library-head h3{margin:2px 0}.lit-filters,.lit-two{display:grid;grid-template-columns:1fr 1fr;gap:7px}.lit-filters{margin:7px 0}.lit-list{overflow:auto;min-height:0;padding-right:3px}.lit-item{padding:10px;border:1px solid var(--border);border-radius:10px;margin:6px 0;cursor:pointer}.lit-item:hover,.lit-item.active{border-color:var(--accent);background:var(--accent-soft)}.lit-item-title{font-weight:700;line-height:1.35}.lit-item-meta{font-size:12px;color:var(--muted);margin:5px 0}.lit-item-foot{display:flex;gap:5px;align-items:center;flex-wrap:wrap}.lit-status,.lit-chip{font-size:11px;border:1px solid var(--border);padding:2px 6px;border-radius:999px}.lit-status.reading{border-color:#b98422}.lit-status.done{border-color:var(--accent)}.lit-reader{position:relative;background:var(--surface-2)}.lit-reader-empty{height:100%;display:grid;place-items:center}.lit-toolbar{height:44px;display:flex;align-items:center;gap:4px;padding:0 8px;border-bottom:1px solid var(--border);background:var(--surface);overflow-x:auto}.lit-toolbar button,.lit-side-tabs button{border:0;background:transparent;padding:6px 8px;border-radius:6px;cursor:pointer;color:inherit;white-space:nowrap}.lit-toolbar button.active,.lit-side-tabs button.active{background:var(--accent-soft);color:var(--accent);font-weight:700}.lit-sep{width:1px;height:20px;background:var(--border);margin:0 3px}.lit-canvas-scroll{height:calc(100% - 44px);overflow:auto;padding:18px}.lit-page{position:relative;margin:0 auto;background:#fff;box-shadow:0 3px 18px #0002}.lit-page canvas{display:block}.lit-text-layer,.lit-annotation-layer{position:absolute;inset:0}.lit-text-layer{overflow:hidden;line-height:1;opacity:.01}.lit-text-layer span{position:absolute;white-space:pre;transform-origin:0 0;color:transparent;cursor:text}.lit-annotation-layer{pointer-events:none;width:100%;height:100%}.lit-annotation-layer rect.ann-highlight{fill:#ffeb3b;fill-opacity:.35}.lit-annotation-layer rect.ann-underline{fill:#2196f3;fill-opacity:.12;stroke:#2196f3;stroke-width:.002}.lit-annotation-layer rect.ann-strikeout{fill:#ef5350;fill-opacity:.16;stroke:#ef5350;stroke-width:.002}.lit-side{padding:0;display:flex;flex-direction:column}.lit-side-tabs{display:grid;grid-template-columns:repeat(3,1fr);padding:8px;border-bottom:1px solid var(--border)}#lit-side-body{overflow:auto;padding:12px}.lit-info label{display:block;font-size:12px;color:var(--muted);margin-bottom:9px}.lit-info input,.lit-info select,.lit-note{width:100%;box-sizing:border-box;margin-top:4px}.lit-info input,.lit-info select{padding:8px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:inherit}.lit-favorite{display:flex!important;align-items:center;gap:6px}.lit-favorite input{width:auto;margin:0}.lit-ann{border:1px solid var(--border);border-radius:8px;padding:9px;margin-bottom:8px}.lit-ann>div{display:flex;justify-content:space-between}.lit-ann button{border:0;background:transparent;cursor:pointer}.lit-ann blockquote{margin:7px 0;padding-left:8px;border-left:2px solid var(--accent);font-size:12px}.lit-ann p{font-size:12px}.lit-note{min-height:calc(100vh - 245px);resize:vertical;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:inherit;font-family:ui-monospace,monospace}.lit-note-actions{display:flex;align-items:center;justify-content:space-between;margin-top:8px;font-size:11px;color:var(--muted)}.lit-empty{text-align:center;color:var(--muted);padding:28px 12px}@media(max-width:1100px){.lit-shell{grid-template-columns:260px 1fr}.lit-side{position:fixed;right:12px;top:92px;bottom:12px;width:330px;z-index:15;box-shadow:0 8px 30px #0003}}.lit-annotation-layer rect.ann-rect{fill:#42a5f5;fill-opacity:.08;stroke:#1e88e5;stroke-width:.002}.lit-annotation-layer .ann-ink{fill:none;stroke:#e53935;stroke-width:.003;stroke-linecap:round;stroke-linejoin:round}
+.lit-shell{display:grid;grid-template-columns:276px minmax(480px,1fr) minmax(260px,340px);gap:12px;height:calc(100vh - 112px);min-height:620px}.lit-library,.lit-reader,.lit-side{min-height:0;overflow:hidden}.lit-library{display:flex;flex-direction:column;padding:0}.lit-library-head{display:grid;gap:7px;padding:9px 9px 0}.lit-head-actions{display:flex;gap:6px}.lit-library-head h3{margin:2px 0}.lit-filters,.lit-two{display:grid;grid-template-columns:1fr 1fr;gap:7px}.lit-filters{margin:0}.lit-list{min-height:0}/* v260929 · 阅读区列表容器/条目复用 .doc-list/.doc-item（含紧凑密度变体），仅保留阅读状态色 */.lit-item .lit-status{flex:0 0 auto}.lit-status.reading{border-color:#b98422}.lit-status.done{border-color:var(--accent)}.lit-reader{position:relative;background:var(--surface-2)}.lit-reader-empty{height:100%;display:grid;place-items:center}.lit-toolbar{height:44px;display:flex;align-items:center;gap:4px;padding:0 8px;border-bottom:1px solid var(--border);background:var(--surface);overflow-x:auto}.lit-toolbar button,.lit-side-tabs button{border:0;background:transparent;padding:6px 8px;border-radius:6px;cursor:pointer;color:inherit;white-space:nowrap}.lit-toolbar button.active,.lit-side-tabs button.active{background:var(--accent-soft);color:var(--accent);font-weight:700}.lit-sep{width:1px;height:20px;background:var(--border);margin:0 3px}.lit-canvas-scroll{height:calc(100% - 44px);overflow:auto;padding:18px}.lit-page{position:relative;margin:0 auto;background:#fff;box-shadow:0 3px 18px #0002}.lit-page canvas{display:block}.lit-text-layer,.lit-annotation-layer{position:absolute;inset:0}.lit-text-layer{overflow:hidden;line-height:1;opacity:.01}.lit-text-layer span{position:absolute;white-space:pre;transform-origin:0 0;color:transparent;cursor:text}.lit-annotation-layer{pointer-events:none;width:100%;height:100%}.lit-annotation-layer rect.ann-highlight{fill:#ffeb3b;fill-opacity:.35}.lit-annotation-layer rect.ann-underline{fill:#2196f3;fill-opacity:.12;stroke:#2196f3;stroke-width:.002}.lit-annotation-layer rect.ann-strikeout{fill:#ef5350;fill-opacity:.16;stroke:#ef5350;stroke-width:.002}.lit-side{padding:0;display:flex;flex-direction:column}.lit-side-tabs{display:grid;grid-template-columns:repeat(4,1fr);padding:8px;border-bottom:1px solid var(--border)}#lit-side-body{overflow:auto;padding:12px}.lit-info label{display:block;font-size:12px;color:var(--muted);margin-bottom:9px}.lit-info input,.lit-info select,.lit-note{width:100%;box-sizing:border-box;margin-top:4px}.lit-info input,.lit-info select{padding:8px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:inherit}.lit-favorite{display:flex!important;align-items:center;gap:6px}.lit-favorite input{width:auto;margin:0}.lit-ann{border:1px solid var(--border);border-radius:8px;padding:9px;margin-bottom:8px}.lit-ann>div{display:flex;justify-content:space-between}.lit-ann button{border:0;background:transparent;cursor:pointer}.lit-ann blockquote{margin:7px 0;padding-left:8px;border-left:2px solid var(--accent);font-size:12px}.lit-ann p{font-size:12px}.lit-note{min-height:calc(100vh - 245px);resize:vertical;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:inherit;font-family:ui-monospace,monospace}.lit-note-actions{display:flex;align-items:center;justify-content:space-between;margin-top:8px;font-size:11px;color:var(--muted)}.lit-empty{text-align:center;color:var(--muted);padding:28px 12px}@media(max-width:1100px){.lit-shell{grid-template-columns:276px 1fr}.lit-side{position:fixed;right:12px;top:92px;bottom:12px;width:330px;z-index:15;box-shadow:0 8px 30px #0003}}.lit-annotation-layer rect.ann-rect{fill:#42a5f5;fill-opacity:.08;stroke:#1e88e5;stroke-width:.002}.lit-annotation-layer .ann-ink{fill:none;stroke:#e53935;stroke-width:.003;stroke-linecap:round;stroke-linejoin:round}
 /* Keep native hidden state authoritative; component display rules must not override it. */
 .lit-reader [hidden]{display:none!important}
 
@@ -47,6 +47,9 @@
 .lit-ann-editor blockquote{margin:8px 0;padding-left:8px;border-left:2px solid var(--accent);font-size:12px}
 .lit-ann-editor label{display:block;font-size:12px}
 .lit-ann-editor textarea{width:100%;min-height:96px;margin:6px 0 8px;padding:8px;box-sizing:border-box;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:inherit;resize:vertical}
+.lit-ann-editor-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:2px} /* v260929f · 保存批注 / 加入笔记 / 附带截图 同行 */
+.lit-ann-editor .lit-ann-shot-check{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap} /* v260929f · 附带截图勾选：原生小尺寸复选框（特异性须高于 .lit-ann-editor label 的 display:block） */
+.lit-ann-shot-check input{width:14px;height:14px;margin:0;padding:0;accent-color:var(--accent);flex:0 0 auto}
 
 /* repeat-selection + click-through annotation fix */
 .lit-page-shell .lit-text-layer{z-index:5;pointer-events:auto}
@@ -93,3 +96,51 @@
   color:var(--accent);
   box-shadow:inset 0 0 0 1px var(--accent);
 }
+
+/* v260929 · 批注内容防出格：PDF 摘录常含长英文串/DOI/URL，默认不换行会撑破侧栏卡片；
+   摘录与批注文本按任意字符断行，卡片自身收住溢出 */
+.lit-ann,.lit-ann-editor{min-width:0;overflow:hidden}
+.lit-ann blockquote,.lit-ann p,.lit-ann-editor blockquote,.lit-ann-editor p{
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
+.lit-ann>div,.lit-ann-editor-head{gap:6px}
+.lit-ann>div strong,.lit-ann-editor-head strong{min-width:0;overflow-wrap:anywhere}
+
+/* v260929 · 阅读区左侧列表与文献列表页保持一致：面板头在紧凑密度下同步收窄内边距（doc-filter/doc-list 由 styles.css 的紧凑变体接管） */
+html[data-density="compact"] .lit-library-head{padding:6px 6px 0}
+html[data-density="compact"] .lit-head-actions .primary-btn,
+html[data-density="compact"] .lit-head-actions .ghost-btn{min-height:26px;padding:0 10px;border-radius:7px;font-size:12px}
+
+/* v260929 · 阅读区信息栏「分类标记」chips：右侧栏较窄，改为换行（编辑区仍为单行横向滚动） */
+.lit-info .lit-marks-label{margin-bottom:5px}
+.lit-info .mark-chip-box{flex-wrap:wrap;overflow:visible;min-height:0;gap:5px}
+.lit-info .project-chip-box{flex-wrap:wrap;overflow:visible;min-height:34px;height:auto;align-items:center}
+
+/* v260929 · PDF 阅读区 AI 助手面板：来源预览 / 动作按钮 / 自定义指令 / 结果与写入笔记 */
+.lit-ai{display:grid;gap:8px}
+.lit-ai-src{display:grid;gap:4px}
+.lit-ai-src-head{font-size:11px;color:var(--muted)}
+.lit-ai-src-text{max-height:96px;overflow:auto;font-size:11px;line-height:1.5;color:var(--muted);border:1px dashed var(--border);border-radius:6px;padding:6px 8px;white-space:pre-wrap;word-break:break-word}
+.lit-ai-img{width:100%;display:block;border:1px solid var(--border);border-radius:6px} /* v260929c · 待处理截图预览 */
+.lit-ai-capture{display:flex;gap:6px;flex-wrap:wrap} /* v260929c · 截图入口（多模态开启时显示） */
+.lit-ai-capture .secondary-btn{min-height:28px;padding:0 12px;font-size:12px}
+.lit-ai-capture .ghost-btn{min-height:28px;padding:0 10px;font-size:12px}
+.lit-ai-actions{display:flex;gap:6px;flex-wrap:wrap}
+.lit-ai-actions .secondary-btn{min-height:28px;padding:0 12px;font-size:12px}
+.lit-ai-custom{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;align-items:center}
+.lit-ai-custom input{width:100%;box-sizing:border-box;padding:8px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:inherit}
+.lit-ai-custom .primary-btn{min-height:34px;padding:0 14px;white-space:nowrap}
+.lit-ai-result{border:1px solid var(--border);border-radius:8px;padding:10px;background:var(--surface);font-size:12px;line-height:1.65;overflow:auto;max-height:calc(100vh - 430px);min-height:120px;word-break:break-word}
+.lit-ai-result.busy{color:var(--muted);display:grid;place-items:center;animation:lit-ai-pulse 1.2s ease-in-out infinite}
+.lit-ai-result.err{border-color:#e53935;color:#c62828}
+.lit-ai-result h4{margin:.55em 0 .25em;font-size:12px}
+.lit-ai-result p{margin:.35em 0}
+.lit-ai-result ul{margin:.4em 0;padding-left:1.25em}
+.lit-ai-result li{margin:2px 0}
+.lit-ai-result code{font-family:Consolas,monospace;background:var(--surface-3);padding:1px 4px;border-radius:4px}
+.lit-ai-result pre{background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:8px;overflow:auto}
+.lit-ai-result pre code{background:transparent;padding:0}
+.lit-ai-foot{display:flex;gap:6px;flex-wrap:wrap}
+.lit-ai-foot .primary-btn,.lit-ai-foot .secondary-btn{min-height:28px;padding:0 12px;font-size:12px}
+@keyframes lit-ai-pulse{0%,100%{opacity:.55}50%{opacity:1}}

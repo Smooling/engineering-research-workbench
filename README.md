@@ -2,7 +2,7 @@
 
 > 一个面向科研人员的本地优先、Markdown-first 工科科研工作台：项目管理、研究笔记、文献卡片、知识图谱、科研时间线、全文检索、RSS 资讯与可引用本地知识的 LLM Agent，统一在一个轻量 Web 界面中完成。
 
-**当前版本：`workbench-v260922.3`**
+**当前版本：`workbench-v260924.1`**
 
 ---
 
@@ -320,6 +320,19 @@ Agent 是工作台中的本地会话层，用于把外部 LLM 与本地研究资
 - 显示模型请求等待状态与耗时；
 - 可选显示兼容接口返回的 reasoning 内容。
 
+### 已接入的模型服务
+
+设置 → Agent / LLM 的「Agent API 配置」可保存多套 OpenAI-compatible 配置（只存本机 `config/secret.json`，已被 `.gitignore` 排除）：
+
+| 配置 | Base URL | 默认模型 |
+| --- | --- | --- |
+| Qianwen3.8-Flash | `https://maas.qianwenaiapi.com/compatible-mode/v1` | `qwen3.8-flash` |
+| OpenCode Go · 本地代理 | `http://127.0.0.1:9355/zen/go/v1` | `deepseek-v4.1-flash` |
+| OpenCode Go · 直连 Zen | `https://opencode.ai/zen/go/v1` | `deepseek-v4.1-flash` |
+| 火山方舟 · Agent Plan | `https://ark.cn-beijing.volces.com/api/plan/v3` | `deepseek-v4.1-flash` |
+
+每套配置可带多个请求模式（模型 / 思考开关 / 温度 / 附加参数），在对话框里逐轮切换；切换整套配置用 Agent 页顶部的「API 配置」下拉，或在设置页中「设为当前配置」。两套 OpenCode Go 分别是「走本机反代理」与「直连 `opencode.ai`」；直连一套靠配置里的**自定义请求头**满足上游的 `x-opencode-session` 要求（设置页「Agent API 配置」里可直接编辑 JSON）。
+
 ### 手动引用本地知识
 
 Agent 不会默认把整个 Workspace 发给模型。
@@ -372,6 +385,24 @@ OPENAI_API_KEY
 ```
 
 运行模型调用时，Python 进程从操作系统环境变量中读取真实值。
+
+### 方式一（推荐）：本地私密文件 config/secrets.json
+
+该文件已被 `.gitignore` 排除，不会上传 git。在 `env` 对象中填入 `"环境变量名": "密钥值"`：
+
+```json
+{
+  "env": {
+    "OPENAI_API_KEY": "你的密钥"
+  }
+}
+```
+
+服务运行中保存后自动注入环境变量（按文件修改时间热重载，无需重启），`run.bat` 启动无需每次手动设置 Key。若设置页填写的是其它变量名（如 `DASHSCOPE_API_KEY`），在 `env` 中添加对应条目即可。
+
+> `config/secrets.json` 只存在于本机；工作台不会把 Key 回写到 `config/app.json`、Workspace 或任何接口返回中。
+
+### 方式二：临时环境变量（仅当前会话有效）
 
 ### Windows PowerShell
 
@@ -1201,12 +1232,23 @@ RSS、天气或外部模型不可用时，不应影响 Markdown 和 Workspace �
 │  └─ styles.css
 │
 ├─ Workspace/
+├─ .scratch/          # 操作临时数据：仅本地，不入库，7 天自动清理
 ├─ CHANGELOG.md
 ├─ VERSION
 ├─ run.bat
 ├─ run.sh
 └─ server.py
 ```
+
+### 操作临时数据 `.scratch/`
+
+`server.py` 启动时会初始化 `.scratch/` 作为专属的本地操作临时空间，并按保留期清理过期文件：
+
+- **不入库**：`.gitignore` 白名单模式下显式声明 `/.scratch/`；`_verify_*` / `_preview_*` / `_timing_*` 三类临时产物在任意目录都不入库。
+- **不入同步**：Syncthing 只同步 `Workspace/`（该目录下有 `.stfolder`），`.scratch/` 不会被带到其他机器。
+- **自动清理**：默认保留 7 天（按文件 mtime 判定），骨架目录与 `.scratch/README.md` 永不删除；可用环境变量 `ERW_SCRATCH_RETENTION_DAYS` 覆盖保留期。
+- **一键清理**：双击 `tools\scratch_clean.bat`；`python tools/scratch_clean.py --dry-run` 预览，`--status` 查看占用。
+- 目录约定（`tmp/ verify/ preview/ logs/`）与注意事项见 `.scratch/README.md`。
 
 ---
 

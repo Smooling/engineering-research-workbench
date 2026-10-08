@@ -17,7 +17,7 @@
   const debounce = (fn, ms=250) => { let t; return (...args) => { clearTimeout(t); t=setTimeout(()=>fn(...args),ms); }; };
   const readAsDataUrl = (file) => new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file)});
   const storedArray = (key, fallback) => { try { const x=JSON.parse(localStorage.getItem(key)||'null'); return Array.isArray(x)?x:fallback; } catch { return fallback; } };
-  const storedInt = (key, fallback, min, max) => { const n=Number(localStorage.getItem(key)); return Number.isFinite(n)?Math.max(min,Math.min(max,Math.round(n))):fallback; };
+  const storedInt = (key, fallback, min, max) => { const raw=localStorage.getItem(key); const n=Number(raw); return raw!=null&&Number.isFinite(n)?Math.max(min,Math.min(max,Math.round(n))):fallback; };
 
   const savedFocusMinutes = storedInt('focusMinutes', 25, 1, 240);
   const savedBreakMinutes = storedInt('breakMinutes', 5, 1, 120);
@@ -28,7 +28,7 @@
     graphKinds: new Set(storedArray('graphKinds', ['idea','journal','note','milestone','summary','literature','project','tag'])),
     graphRelations: new Set(storedArray('graphRelations', ['wikilink','tag','project'])),
     agentSession: null, agentRefs: [], agentImages: [], agentPreset: localStorage.getItem('agentRequestPreset') || '', agentSending:false,
-    heatmapMonths: storedInt('heatmapMonths', 12, 1, 12), heatmapObserver: null,
+    heatmapMonths: storedInt('heatmapMonths', 12, 1, 12), heatmapObserver: null, uiScale: storedInt('uiScale', 100, 80, 125), density: localStorage.getItem('pageDensity')==='cozy'?'cozy':'compact', /* v260922h · 默认紧凑型（并排一屏收纳） */
     focus: {mode:'专注', focusMinutes:savedFocusMinutes, breakMinutes:savedBreakMinutes, seconds:savedFocusMinutes*60, total:savedFocusMinutes*60, timer:null, running:false},
     sidebarPinned: new Set(storedArray('sidebarPinned', ['core'])),
     sidebarOpen: new Set(storedArray('sidebarOpen', ['core','resources','system'])),
@@ -44,26 +44,37 @@
       ['milestones','里程碑','⚑'], ['summaries','工作总结','▣'], ['literature','文献','◫'], ['graph','知识图谱','⌬']
     ]},
     {id:'resources', label:'资源', items:[['folders','文件夹','▱']]},
-    {id:'system', label:'系统', items:[['settings','设置','⚙']]}
+    {id:'system', label:'系统', items:[['billing','用量','▩'], ['settings','设置','⚙']]}
   ];
 
   const PAGE_META = {
     overview:['CORE WORK','概览'], todos:['CORE WORK','待办'], focus:['CORE WORK','专注'], agent:['CORE WORK','科研 Agent'], news:['CORE WORK','资讯'],
     'research-overview':['RESEARCH KNOWLEDGE','研究 · 知识总览'], ideas:['RESEARCH KNOWLEDGE','灵感'], journals:['RESEARCH KNOWLEDGE','研究日志'],
     notes:['RESEARCH KNOWLEDGE','笔记'], milestones:['RESEARCH KNOWLEDGE','里程碑'], summaries:['RESEARCH KNOWLEDGE','工作总结'],
-    literature:['RESEARCH KNOWLEDGE','文献'], graph:['RESEARCH KNOWLEDGE','知识图谱'], folders:['RESOURCES','文件夹'], settings:['SYSTEM','设置']
+    literature:['RESEARCH KNOWLEDGE','文献'], graph:['RESEARCH KNOWLEDGE','知识图谱'], folders:['RESOURCES','文件夹'], settings:['SYSTEM','设置'],
+    billing:['SYSTEM','用量统计'] /* v261008 · 用量计费仪表盘 */
   };
 
   const KIND_ROUTE = {ideas:'idea', journals:'journal', notes:'note', milestones:'milestone', summaries:'summary', literature:'literature'};
   const KIND_LABEL = {idea:'灵感', journal:'研究日志', note:'笔记', milestone:'里程碑', summary:'工作总结', literature:'文献'};
 
-  /* v260921 · 固定分类标记（不依赖自定义类型） */
+  /* v260923 · 内置分类标记 + 自定义标记（localStorage 持久化） */
   const KIND_MARKS=[
     {id:'knowledge',icon:'◈',label:'知识',color:'#2a9d8f'},
     {id:'synthesis',icon:'◎',label:'归类',color:'#845ec2'},
     {id:'method',icon:'⚒',label:'方法',color:'#e76f51'},
-    {id:'question',icon:'？',label:'问题',color:'#bc4749'}
+    {id:'question',icon:'？',label:'问题',color:'#bc4749'},
+    {id:'thinking',icon:'✦',label:'思路',color:'#e9b44c'},
+    {id:'architecture',icon:'▤',label:'架构',color:'#4a6fa5'},
+    {id:'experiment',icon:'⚗',label:'实验',color:'#d1569a'},
+    {id:'data',icon:'⊞',label:'数据',color:'#2f7d6d'},
+    /* v260924 · 新增两个内置标记：模型（可建模对象）、原理（方法的具体原理与公式） */
+    {id:'model',icon:'⬡',label:'模型',color:'#8a6d3b'},
+    {id:'principle',icon:'∑',label:'原理',color:'#6a994e'}
   ];
+  function customMarks(){ try{ const v=JSON.parse(localStorage.getItem('customMarks')||'[]'); return Array.isArray(v)?v:[]; }catch{ return []; } }
+  function saveCustomMarks(v){ localStorage.setItem('customMarks', JSON.stringify(v)); }
+  function allMarks(){ return KIND_MARKS.concat(customMarks()); }
   function kindLabel(kind){ return KIND_LABEL[kind] || kind; }
 
   async function api(url, opts={}) {
@@ -128,10 +139,12 @@
   }
 
   async function navigate(route){
-    if (state.dirty && !confirm('当前 Markdown 有未保存修改，确定离开吗？')) return;
+    if (state.dirty && !confirm('当前 Markdown 有未保存修改，确定离开吗？')) return false; /* v260930g9c · 返回 false 供 ERWNav 等调用方感知取消 */
     state.dirty=false; state.route=route; location.hash=route; renderSidebar(); setHeader(route);
     if(state.heatmapObserver){try{state.heatmapObserver.disconnect();}catch{} state.heatmapObserver=null;}
-    $('#main').innerHTML='<div class="empty"><div><div class="empty-symbol">LOADING</div>正在加载…</div></div>';
+    /* v260923u · 切页不再先清空主区为 LOADING：保留旧页面内容直到新页数据就绪后一次性替换，
+     * 消除「白一下→加载→跳变」的重新加载感。navSeq 序号守卫：快速连点时丢弃过期渲染的收尾动画/错误覆盖。 */
+    const seq=state.navSeq=(state.navSeq||0)+1;
     try {
       if(route==='overview') await renderOverview();
       else if(route==='todos') await renderTodos();
@@ -141,11 +154,17 @@
       else if(route==='research-overview') await renderResearchOverview();
       else if(route==='graph') await renderGraphPage();
       else if(route==='folders') await renderFolders();
+      else if(route==='billing') await renderBillingPage(); /* v261008 · 用量计费 */
       else if(route==='settings') await renderSettings();
       else if(KIND_ROUTE[route]) await renderDocsPage(KIND_ROUTE[route]);
       else await renderOverview();
+      if(seq!==state.navSeq) return false; /* v260930g9c · 已被更新导航取代：视为未完成 */
       animateMain();
-    } catch(err){ console.error(err); $('#main').innerHTML=`<div class="card card-pad danger">加载失败：${esc(err.message)}</div>`; animateMain(); }
+    } catch(err){
+      if(seq!==state.navSeq) return false;
+      console.error(err); $('#main').innerHTML=`<div class="card card-pad danger">加载失败：${esc(err.message)}</div>`; animateMain();
+    }
+    return true; /* v260930g9c · 导航成功完成 */
   }
 
   function animateMain(){
@@ -175,37 +194,40 @@
     const dateTitle=d.toLocaleDateString('zh-CN',{month:'long',day:'numeric',weekday:'long'});
     const recentToday=(activity.days||[]).find(x=>x.date===dash.today)?.count||0;
     $('#main').innerHTML = `<div class="overview-dashboard">
-      <section class="card overview-today">
-        <div>
-          <div class="card-kicker">TODAY / RESEARCH DESK</div>
-          <h3>今天 · ${esc(dateTitle)}</h3>
-          <p>把学业周期、科研资产、任务与研究节奏放在同一张仪表盘里。</p>
+      <div class="overview-top-row">
+        ${researchHeatmapCard(activity)}
+        <div class="overview-academic-grid">
+          ${academicProgressCard(academic)}
+          ${graduationConditionsCard(academic)}
         </div>
-        <div class="today-metrics">
-          <div><strong>${todosList.filter(x=>!x.done).length}</strong><span>未完成待办</span></div>
-          <div><strong>${activity.active_days_month||0}</strong><span>本月活跃日</span></div>
-          <div><strong>${activity.events_month||0}</strong><span>本月科研记录</span></div>
-          <div><strong>${recentToday}</strong><span>今日科研记录</span></div>
-        </div>
-      </section>
-
-      <section class="card quick-capture-card">
-        <div class="quick-capture-copy"><div class="card-kicker">QUICK CAPTURE</div><h3>快速记录</h3><p>把临时想法及时沉淀到 Workspace，减少页面跳转。</p></div>
-        <div class="quick-capture-actions">
-          <button class="quick-action" data-quick-doc="ideas"><span>✦</span><b>灵感</b><small>Idea</small></button>
-          <button class="quick-action" data-quick-doc="journals"><span>▤</span><b>研究日志</b><small>Journal</small></button>
-          <button class="quick-action" data-quick-doc="notes"><span>▧</span><b>笔记</b><small>Note</small></button>
-          <button class="quick-action" data-quick-doc="literature"><span>◫</span><b>文献</b><small>Paper</small></button>
-          <button class="quick-action" data-quick-doc="milestones"><span>⚑</span><b>里程碑</b><small>Milestone</small></button>
-        </div>
-      </section>
-
-      <div class="overview-academic-grid">
-        ${academicProgressCard(academic)}
-        ${graduationConditionsCard(academic)}
       </div>
 
-      ${researchHeatmapCard(activity)}
+      <div class="overview-mid-row">
+        <section class="card overview-today">
+          <div>
+            <div class="card-kicker">TODAY / RESEARCH DESK</div>
+            <h3>今天 · ${esc(dateTitle)}</h3>
+            <p>把学业周期、科研资产、任务与研究节奏放在同一张仪表盘里。</p>
+          </div>
+          <div class="today-metrics">
+            <div><strong>${todosList.filter(x=>!x.done).length}</strong><span>未完成待办</span></div>
+            <div><strong>${activity.active_days_month||0}</strong><span>本月活跃日</span></div>
+            <div><strong>${activity.events_month||0}</strong><span>本月科研记录</span></div>
+            <div><strong>${recentToday}</strong><span>今日科研记录</span></div>
+          </div>
+        </section>
+
+        <section class="card quick-capture-card">
+          <div class="quick-capture-copy"><div class="card-kicker">QUICK CAPTURE</div><h3>快速记录</h3><p>把临时想法及时沉淀到 Workspace，减少页面跳转。</p></div>
+          <div class="quick-capture-actions">
+            <button class="quick-action" data-quick-doc="ideas"><span>✦</span><b>灵感</b><small>Idea</small></button>
+            <button class="quick-action" data-quick-doc="journals"><span>▤</span><b>研究日志</b><small>Journal</small></button>
+            <button class="quick-action" data-quick-doc="notes"><span>▧</span><b>笔记</b><small>Note</small></button>
+            <button class="quick-action" data-quick-doc="literature"><span>◫</span><b>文献</b><small>Paper</small></button>
+            <button class="quick-action" data-quick-doc="milestones"><span>⚑</span><b>里程碑</b><small>Milestone</small></button>
+          </div>
+        </section>
+      </div>
 
       <div class="grid grid-3 overview-ops-grid">
         ${researchRhythmCard(activity,academic)}
@@ -215,15 +237,15 @@
 
       ${projectPulseCard(dash.project_stats||[])}
 
+      <div class="section-title"><div><h3>最近研究活动</h3><p>快速回到最近产生的科研内容</p></div><button class="secondary-btn" data-go="research-overview">研究总览</button></div>
+      <div class="grid grid-3">${recentCard('最近灵感',dash.recent.ideas,'ideas')}${recentCard('最近笔记',dash.recent.notes,'notes')}${recentCard('最近工作总结',dash.recent.summaries,'summaries')}</div>
+
       <div class="grid grid-4 overview-stats">
         ${stat('笔记',dash.counts.note||0,'NOTES')}
         ${stat('文献',dash.counts.literature||0,'LITERATURE')}
         ${stat('里程碑',dash.counts.milestone||0,'MILESTONES')}
         ${stat('研究日志',dash.counts.journal||0,'JOURNALS')}
       </div>
-
-      <div class="section-title"><div><h3>最近研究活动</h3><p>快速回到最近产生的科研内容</p></div><button class="secondary-btn" data-go="research-overview">研究总览</button></div>
-      <div class="grid grid-3">${recentCard('最近灵感',dash.recent.ideas,'ideas')}${recentCard('最近笔记',dash.recent.notes,'notes')}${recentCard('最近工作总结',dash.recent.summaries,'summaries')}</div>
     </div>`;
     wireGo();
     fitResearchHeatmap();
@@ -252,6 +274,7 @@
 
   function formatMetric(v){ const n=Number(v); return Number.isFinite(n)&&Math.abs(n%1)>1e-9?n.toFixed(1):String(Number.isFinite(n)?n:(v||0)); }
 
+  const HEATMAP_MONTH_OPTIONS=[2,4,6,12];
   const ACTIVITY_LABELS={doc_create:'新建文档',doc_update:'更新文档',doc_delete:'归档文档',todo_create:'新增任务',todo_update:'更新任务',todo_done:'完成任务',project_create:'新建项目',knowledge_export:'知识汇总',bibtex_export:'BibTeX导出',agent_chat:'Agent对话'};
   function researchHeatmapCard(activity){
     const rows=activity.days||[];
@@ -286,7 +309,8 @@
       if(monthIndex>0) monthBoundaries.push(`<i class="heatmap-month-boundary" data-col0="${Math.max(0,col0)}" data-row="${row}" aria-hidden="true"></i>`);
       monthCursor=next; monthIndex++;
     }
-    const options=Array.from({length:12},(_,i)=>i+1).map(n=>`<option value="${n}" ${n===months?'selected':''}>近 ${n} 个月</option>`).join('');
+    const monthChoices=HEATMAP_MONTH_OPTIONS.includes(months)?HEATMAP_MONTH_OPTIONS:[...HEATMAP_MONTH_OPTIONS,months].sort((a,b)=>a-b);
+    const options=monthChoices.map(n=>`<option value="${n}" ${n===months?'selected':''}>近 ${n} 个月</option>`).join('');
     return `<section class="card heatmap-card" data-heatmap-weeks="${weeks}"><div class="card-head"><div><div class="card-kicker">RESEARCH HEATMAP / ${months} MONTHS</div><h3>科研热力图</h3><p>根据 Markdown 创建/更新、任务完成与知识整理等本地活动自动累计。</p></div><div class="heatmap-head-tools"><div class="heatmap-summary"><strong>${activity.events_month||0}</strong><span>本月记录</span><strong>${activity.active_days_month||0}</strong><span>活跃日</span></div><select class="mini-select" id="heatmap-month-select" aria-label="科研热力图显示月份">${options}</select></div></div>
       <div class="heatmap-scroll"><div class="heatmap-plot"><div class="heatmap-axis"><div class="heatmap-axis-cap">星期</div><div class="heatmap-weekdays"><span>一</span><span></span><span>三</span><span></span><span>五</span><span></span><span>日</span></div></div><div class="heatmap-stage"><div class="heatmap-months" style="--heat-weeks:${weeks}">${monthLabels.join('')}</div><div class="heatmap-month-boundaries">${monthBoundaries.join('')}</div><div class="heatmap-cells" style="--heat-weeks:${weeks}">${cells.join('')}</div></div></div></div>
       <div class="heatmap-footer"><span>少</span><i class="heat-cell level-0"></i><i class="heat-cell level-1"></i><i class="heat-cell level-2"></i><i class="heat-cell level-3"></i><i class="heat-cell level-4"></i><span>多</span><span class="heatmap-hint">鼠标悬停查看当天活动</span></div>
@@ -295,12 +319,55 @@
 
   function fitResearchHeatmap(){
     const card=$('.heatmap-card'); const scroll=$('.heatmap-scroll'); if(!card||!scroll) return;
+    /* v260923s · 一次性挂载窗口 resize 与 1080px 断点监听：RO 只观察 .heatmap-scroll，
+     * 窗口尺寸/断点跨越变化时不会触发，这里兜底重算（state 标志防监听器堆积）。 */
+    if(!state.heatmapResizeHooked){
+      state.heatmapResizeHooked=true;
+      const reapply=debounce(()=>{ if(state.route==='overview') fitResearchHeatmap(); },80);
+      window.addEventListener('resize',reapply);
+      window.matchMedia('(min-width:1080px)').addEventListener?.('change',reapply);
+    }
+    const topRow=card.closest('.overview-top-row');
+    const academicGrid=$('.overview-academic-grid');
     const apply=()=>{
-      const weeks=Math.max(1,Number(card.dataset.heatmapWeeks)||1), gap=4, axis=48;
-      const available=Math.max(240,scroll.clientWidth-axis-10);
-      const ideal=Math.floor((available-gap*(weeks-1))/weeks);
-      const maxSize=state.heatmapMonths<=2?26:state.heatmapMonths<=4?23:state.heatmapMonths<=8?20:18;
-      const size=Math.max(10,Math.min(maxSize,ideal));
+      const weeks=Math.max(1,Number(card.dataset.heatmapWeeks)||1), gap=2, axis=54;
+      const csp=getComputedStyle(card), ssp=getComputedStyle(scroll);
+      const chrome=axis+parseFloat(csp.paddingLeft)+parseFloat(csp.paddingRight)+parseFloat(ssp.paddingLeft)+parseFloat(ssp.paddingRight);
+      const compact=document.documentElement.dataset.density==='compact';
+      const wide=!!topRow&&window.matchMedia('(min-width:1080px)').matches; /* v260922h3 · 宽屏两种密度都并排：宽松=原样式，紧凑=并排+学业两卡再并排保一屏 */
+      const totalW=topRow?topRow.clientWidth:scroll.clientWidth+chrome; /* v260922f · 用轨道宽度做基准，缩卡后无循环依赖 */
+      /* v260923s · 防护：测量未就绪或异常窄时清空内联样式回退 CSS 默认并解除一屏锁定，等下一轮 rAF/RO 重测 */
+      if(topRow&&(!Number.isFinite(totalW)||totalW<600)){
+        topRow.style.gridTemplateColumns=''; card.style.maxWidth='';
+        if(academicGrid) academicGrid.classList.remove('is-row');
+        card.closest('.overview-dashboard')?.classList.remove('one-screen');
+        return;
+      }
+      const widthSize=Math.floor((totalW-chrome-gap*(weeks-1))/weeks);
+      /* v260922k3 · 宽松型格子不设固定上限：按可用宽度自动放大铺满，
+       * 仅保留学业区 330px 保底以维持并排。 */
+      const cozyMax=Math.floor((totalW-10-330-chrome-gap*(weeks-1))/weeks);
+      /* v260923s · 紧凑型：格子 16px 上限（用户既定规格），并以 11px 为保底让
+       * 「热力图|学业区」并排在 ~1420px 视口下依然成立；低于保底则放弃并排。 */
+      const maxSize=compact?Math.max(11,Math.min(16,cozyMax)):Math.max(6,cozyMax);
+      const size=Math.max(6,Math.min(maxSize,widthSize));
+      const needW=Math.round(chrome+weeks*size+gap*(weeks-1));
+      const canDual=wide&&size<widthSize&&totalW-needW-10>=330; /* v260922k · 学业区最小宽度 420→330，让热力图多占横向空间；学业区变窄时进度/毕业条件自动改纵向堆叠 */
+      let dualAcademic=wide&&!canDual; /* 宽松型维持原行为：仅热力图全宽时进度/毕业条件两卡并排 */
+      if(compact) dualAcademic=wide&&canDual&&(totalW-needW-16>=640); /* v260922k · 双列门槛 680→640，配合热力图加宽后学业区仍可保持两卡并排 */
+      /* v260923s · 一屏锁定仅在紧凑型并排成立时生效；堆叠/窄屏回退自然流式布局+整页滚动，杜绝卡片区溢出重叠
+       * v260923t · 追加纵向门槛：四行下限 350+106+150+260=866 + 3×10 行距 + 顶部工具栏 chrome 预算 100，
+       * 视口有效高度（按根 zoom 折算）<996 时同样解除锁定回退流式滚动，防止 fr 压缩行轨道导致卡片重叠 */
+      const effH=window.innerHeight/(parseFloat(document.documentElement.style.zoom)||1);
+      card.closest('.overview-dashboard')?.classList.toggle('one-screen',compact&&canDual&&effH>=996);
+      if(topRow){
+        if(wide){topRow.style.gridTemplateColumns=canDual?`${needW}px minmax(0,1fr)`:'minmax(0,1fr)';}
+        else{topRow.style.gridTemplateColumns='';}
+      }
+      if(academicGrid) academicGrid.classList.toggle('is-row',dualAcademic);
+      card.style.maxWidth=wide&&size<widthSize?`${needW}px`:''; /* v260922h6 · maxWidth 仅在宽屏并排管线收紧；窄屏一律放开，防热力图卡被压成窄条 */
+      const cardW=wide&&canDual?needW:scroll.clientWidth+chrome;
+      card.classList.toggle('is-narrow',cardW<700);
       card.style.setProperty('--heat-cell-size',`${size}px`); card.style.setProperty('--heat-gap',`${gap}px`);
       const step=size+gap;
       $$('.heatmap-month-boundary',card).forEach(line=>{
@@ -311,7 +378,12 @@
       });
     };
     apply();
-    if(window.ResizeObserver){state.heatmapObserver=new ResizeObserver(debounce(apply,80));state.heatmapObserver.observe(scroll);}
+    requestAnimationFrame(apply);
+    if(window.ResizeObserver){
+      state.heatmapObserver?.disconnect();
+      state.heatmapObserver=new ResizeObserver(debounce(apply,80));
+      state.heatmapObserver.observe(scroll);
+    }
   }
 
   async function setHeatmapMonths(value){
@@ -319,9 +391,38 @@
     if(state.config?.app){state.config.app.ui={...(state.config.app.ui||{}),heatmap_months:months}; try{await api('/api/config/app',{method:'POST',body:state.config.app});}catch(e){console.warn('heatmap preference save failed',e);}}
   }
 
+  function syncViewportVars(){
+    /* v260929g · Chrome 的 100vh/100vw 不随根元素 zoom 折算（恒等于设备像素视口尺寸），
+     * 应用内非 100% 缩放时依赖 100vh 的 sticky 全高布局会失配（设置页栏目条滚动时被推走）。
+     * 这里把按 zoom 折算后的 CSS 像素视口尺寸写入变量，styles.css 的 settings-nav 高度改用该变量。 */
+    const z=parseFloat(document.documentElement.style.zoom)||1;
+    const s=document.documentElement.style;
+    s.setProperty('--vw-px',(window.innerWidth/z)+'px');
+    s.setProperty('--vh-px',(window.innerHeight/z)+'px');
+  }
+
+  function applyUiScale(pct){
+    const v=Math.max(80,Math.min(125,Math.round(Number(pct)||100)));
+    state.uiScale=v; localStorage.setItem('uiScale',String(v));
+    document.documentElement.style.zoom=v===100?'':String(v/100);
+    syncViewportVars(); /* v260929g · zoom 变化后重算折算视口变量 */
+    /* v260923s · 根元素 zoom 变化时 ResizeObserver 不触发（局部坐标系尺寸不变），
+     * 必须手动重跑热力图适配，否则 one-screen 类与内联样式残留导致小屏卡片重叠。 */
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{ if(state.route==='overview') fitResearchHeatmap(); }));
+    const btn=$('#zoom-btn'); if(btn) btn.textContent=v+'%';
+    $$('#zoom-menu button').forEach(b=>b.classList.toggle('active',Number(b.dataset.zoom)===v));
+  }
+
+  function applyDensity(mode){
+    const v=mode==='cozy'?'cozy':'compact';
+    state.density=v;
+    document.documentElement.dataset.density=v;
+    const btn=$('#density-btn'); if(btn){btn.textContent=v==='cozy'?'宽松型':'紧凑型';btn.title=v==='cozy'?'当前：宽松型（各卡片纵向排布、页面可下拉滚动）。点击切换为紧凑型':'当前：紧凑型（热力图与学业卡并排、一屏收纳免滚动）。点击切换为宽松型';}
+  }
+
   function projectPulseCard(items){
     const rows=(items||[]).slice(0,6);
-    return `<section class="card card-pad project-pulse-card"><div class="card-head"><div><div class="card-kicker">PROJECT PULSE</div><h3>项目推进</h3><p>把项目中的知识资产、待办和近期里程碑汇总到同一处。</p></div><div class="card-head-actions"><button class="primary-btn" id="overview-new-project">＋ 新建项目</button><button class="secondary-btn" data-go="folders">项目目录</button></div></div>${rows.length?`<div class="project-pulse-grid">${rows.map(x=>`<div class="project-pulse-item"><div class="project-pulse-name"><strong>${esc(x.name)}</strong><span>${x.last_updated?`更新 ${esc(fmtDate(x.last_updated))}`:'暂无更新记录'}</span></div><div class="project-pulse-metrics"><span><b>${x.docs||0}</b> 文档</span><span><b>${x.open_todos||0}</b> 待办</span><span><b>${x.open_milestones||0}</b> 里程碑</span><span><b>${x.literature||0}</b> 文献</span></div></div>`).join('')}</div>`:`<div class="academic-empty compact"><strong>还没有科研项目</strong><span>点击“新建项目”后会自动创建标准工程目录，并可用于灵感、笔记、文献等条目的项目关联。</span></div>`}</section>`;
+    return `<section class="card card-pad project-pulse-card"><div class="card-head"><div><div class="card-kicker">PROJECT PULSE</div><h3>项目推进</h3><p>把项目中的知识资产、待办和近期里程碑汇总到同一处。</p></div><div class="card-head-actions"><button class="primary-btn" id="overview-new-project">＋ 新建项目</button><button class="secondary-btn" data-go="folders">项目目录</button></div></div>${rows.length?`<div class="project-pulse-grid">${rows.map(x=>`<div class="project-pulse-item"><div class="project-pulse-name"><strong>${esc(x.name)}</strong><span>${x.last_updated?`更新 ${esc(fmtDate(x.last_updated))}`:'暂无更新记录'}</span></div><div class="project-pulse-metrics"><span><b>${x.docs||0}</b> 文档</span><span><b>${x.open_todos||0}</b> 待办</span><span><b>${x.milestones||0}</b> 里程碑</span><span><b>${x.literature||0}</b> 文献</span></div></div>`).join('')}</div>`:`<div class="academic-empty compact"><strong>还没有科研项目</strong><span>点击“新建项目”后会自动创建标准工程目录，并可用于灵感、笔记、文献等条目的项目关联。</span></div>`}</section>`;
   }
 
   function researchRhythmCard(activity,academic){
@@ -416,8 +517,8 @@
     paintAgentContext(); paintAgentImages(); if(state.agentSession)await loadAgentSession(state.agentSession);
   }
   async function loadAgentSession(id){try{const s=await api('/api/agent/sessions/'+encodeURIComponent(id));if(state.route!=='agent'||state.agentSession!==id)return;$('#agent-chat-title').textContent=s.title||'科研 Agent';const root=$('#agent-messages');root.innerHTML=(s.messages||[]).length?(s.messages||[]).map(agentMessageHtml).join(''):'<div class="empty">暂无消息。你可以直接提问，或先引用研究资料。</div>';for(const el of $$('.agent-message-body',root))await renderMarkdownInto(el,el.dataset.raw||'');for(const el of $$('.agent-reasoning-body',root))await renderMarkdownInto(el,el.dataset.raw||'');root.scrollTop=root.scrollHeight}catch(e){toast(e.message,true)}}
-  function agentMessageHtml(m){const refs=(m.refs||[]).map(r=>`<span class="badge">${esc(r.title)}</span>`).join('');const imgs=(m.images||[]).map(p=>`<img src="/workspace-file/${esc(typeof p==='string'?p:(p.path||''))}" alt="对话图片">`).join('');const showReasoning=state.config?.app?.llm?.show_reasoning!==false;const reasoning=showReasoning&&String(m.reasoning||'').trim()?`<details class="agent-reasoning"><summary>模型思考过程</summary><div class="agent-reasoning-body" data-raw="${esc(m.reasoning||'')}"></div></details>`:'';return `<article class="agent-message ${m.role==='assistant'?'assistant':'user'}"><div class="agent-avatar">${m.role==='assistant'?'AI':'YOU'}</div><div class="agent-bubble">${refs?`<div class="agent-msg-refs">${refs}</div>`:''}${imgs?`<div class="agent-msg-images">${imgs}</div>`:''}${reasoning}<div class="agent-message-body" data-raw="${esc(m.content||'')}"></div><div class="agent-msg-meta">${esc(m.model||'')}${m.request_preset_label?` · ${esc(m.request_preset_label)}`:''} · ${esc(fmtTime(m.created))}</div></div></article>`}
-  async function renderMarkdownInto(out,raw){const seq=++state.previewSeq;let html='';if(window.marked&&window.DOMPurify){const renderer=new marked.Renderer();renderer.code=(tokenOrCode,info)=>{let code='',lang='';if(tokenOrCode&&typeof tokenOrCode==='object'){code=tokenOrCode.text||'';lang=tokenOrCode.lang||''}else{code=String(tokenOrCode||'');lang=String(info||'')}lang=lang.trim();if(lang==='mermaid')return `<div class="mermaid">${esc(code)}</div>`;return `<pre><code class="language-${esc(lang)}">${esc(code)}</code></pre>`};try{html=marked.parse(raw||'',{gfm:true,renderer})}catch{html=basicMarkdown(raw)}}else html=basicMarkdown(raw);out.innerHTML=window.DOMPurify?DOMPurify.sanitize(html,{ADD_TAGS:['mjx-container']}):html;$$('pre code',out).forEach(el=>{try{window.hljs?.highlightElement(el)}catch{}});await renderMermaidBlocks(out,seq);if(window.MathJax?.typesetPromise){try{await MathJax.typesetPromise([out])}catch{}}}
+  function agentMessageHtml(m){const refs=(m.refs||[]).map(r=>`<span class="badge">${esc(r.title)}</span>`).join('');const imgs=(m.images||[]).map(p=>`<img src="/workspace-file/${esc(typeof p==='string'?p:(p.path||''))}" alt="对话图片">`).join('');const showReasoning=state.config?.app?.llm?.show_reasoning!==false;const reasoning=showReasoning&&String(m.reasoning||'').trim()?`<details class="agent-reasoning"><summary>模型思考过程</summary><div class="agent-reasoning-body" data-raw="${esc(m.reasoning||'')}"></div></details>`:'';const tlHtml=(m.role==='assistant'&&window.ERWFabTimeline?.html)?window.ERWFabTimeline.html(m):''; /* v261008b · 复用悬浮球的时间条（工具耗时 + 总耗时 + 过程明细） */const metaParts=(window.ERWFabTimeline?.metaParts?window.ERWFabTimeline.metaParts(m):[String(m.model||'').trim(),String(m.request_preset_label||'').trim()].filter(Boolean)); /* v261008b · 元信息去重：标签已含模型名时不再重复显示 model */return `<article class="agent-message ${m.role==='assistant'?'assistant':'user'}"><div class="agent-avatar">${m.role==='assistant'?'AI':'YOU'}</div><div class="agent-bubble">${refs?`<div class="agent-msg-refs">${refs}</div>`:''}${imgs?`<div class="agent-msg-images">${imgs}</div>`:''}${reasoning}<div class="agent-message-body" data-raw="${esc(m.content||'')}"></div>${tlHtml}<div class="agent-msg-meta">${[...metaParts.map(esc),esc(fmtTime(m.created))].join(' · ')}</div></div></article>`}
+  async function renderMarkdownInto(out,raw){const seq=++state.previewSeq;let html='';if(window.marked&&window.DOMPurify){const renderer=new marked.Renderer();renderer.code=(tokenOrCode,info)=>{let code='',lang='';if(tokenOrCode&&typeof tokenOrCode==='object'){code=tokenOrCode.text||'';lang=tokenOrCode.lang||''}else{code=String(tokenOrCode||'');lang=String(info||'')}lang=lang.trim();if(lang==='mermaid')return `<div class="mermaid">${esc(code)}</div>`;return `<pre><code class="language-${esc(lang)}">${esc(code)}</code></pre>`};try{html=marked.parse(raw||'',{gfm:true,renderer})}catch{html=basicMarkdown(raw)}}else html=basicMarkdown(raw);out.innerHTML=window.DOMPurify?DOMPurify.sanitize(html,{ADD_TAGS:['mjx-container']}):html;out.innerHTML=out.innerHTML.replace(/<table[\s\S]*?<\/table>/gi,m=>`<div class="fab-tbl">${m}</div>`); /* v261008b · 宽表格套气泡内滚动层，避免撑破容器 */$$('pre code',out).forEach(el=>{try{window.hljs?.highlightElement(el)}catch{}});await renderMermaidBlocks(out,seq);if(window.MathJax?.typesetPromise){try{await MathJax.typesetPromise([out])}catch{}}}
   function paintAgentContext(){const root=$('#agent-context-strip');if(!root)return;root.innerHTML=state.agentRefs.length?`<span class="row-meta">已引用</span>${state.agentRefs.map((r,i)=>`<button type="button" class="context-chip" data-ref-remove="${i}">${esc(r.title)}</button>`).join('')}`:'<span class="row-meta">未引用本地知识；点击“引用研究 · 知识”可手动选择上下文。</span>';$$('[data-ref-remove]',root).forEach(b=>b.onclick=()=>{state.agentRefs.splice(+b.dataset.refRemove,1);paintAgentContext()})}
   function paintAgentImages(){const root=$('#agent-image-strip');if(!root)return;root.innerHTML=state.agentImages.map((x,i)=>`<div class="agent-image-thumb"><img src="${esc(x.url)}"><button type="button" data-agent-image-remove="${i}">×</button></div>`).join('');$$('[data-agent-image-remove]',root).forEach(b=>b.onclick=()=>{state.agentImages.splice(+b.dataset.agentImageRemove,1);paintAgentImages()})}
   async function openAgentReferencePicker(){modal('引用研究 · 知识',`<div class="global-search"><div class="global-search-box"><span>⌕</span><input id="agent-ref-search" placeholder="搜索要引用的 Markdown 条目…"></div><div class="row-meta" style="margin:8px 0">只会把你最终勾选的条目发送给模型。</div><div class="agent-ref-results" id="agent-ref-results"><div class="empty">输入关键词检索研究资料</div></div></div>`,`<button class="secondary-btn" id="agent-ref-cancel">取消</button><button class="primary-btn" id="agent-ref-done">引用所选</button>`);let rows=[];const selected=new Map(state.agentRefs.map(x=>[x.id,x]));const run=debounce(async()=>{const q=$('#agent-ref-search').value.trim();if(!q){$('#agent-ref-results').innerHTML='<div class="empty">输入关键词检索研究资料</div>';return}rows=(await api('/api/docs?q='+encodeURIComponent(q))).slice(0,50);$('#agent-ref-results').innerHTML=rows.length?rows.map(x=>`<label class="bundle-item"><input type="checkbox" data-ref-id="${x.id}" ${selected.has(x.id)?'checked':''}><span class="badge">${esc(KIND_LABEL[x.kind]||x.kind)}</span><span><strong>${esc(x.title)}</strong><br><span class="row-meta">${esc(x.project||'未归属项目')} · ${esc(x.excerpt||'')}</span></span></label>`).join(''):'<div class="empty">未找到条目</div>';$$('[data-ref-id]').forEach(c=>c.onchange=()=>{const d=rows.find(x=>x.id===c.dataset.refId);if(c.checked&&d)selected.set(d.id,{id:d.id,title:d.title,kind:d.kind,project:d.project||''});else selected.delete(c.dataset.refId)})},180);$('#agent-ref-search').oninput=run;$('#agent-ref-cancel').onclick=closeModal;$('#agent-ref-done').onclick=()=>{state.agentRefs=[...selected.values()];closeModal();paintAgentContext()};setTimeout(()=>$('#agent-ref-search').focus(),20)}
@@ -425,6 +526,39 @@
   async function uploadAgentFile(file){if(!file?.type?.startsWith('image/'))return;const data=await readAsDataUrl(file);try{const r=await api('/api/agent/assets',{method:'POST',body:{data_url:data,name:file.name}});state.agentImages.push(r);paintAgentImages()}catch(e){toast(e.message,true)}}
   function onAgentPasteImage(e){const files=[...e.clipboardData.items].filter(i=>i.kind==='file').map(i=>i.getAsFile()).filter(Boolean);if(files.length){e.preventDefault();files.slice(0,6).forEach(uploadAgentFile)}}
   function onAgentDropImage(e){e.preventDefault();[...e.dataTransfer.files].filter(f=>f.type.startsWith('image/')).slice(0,6).forEach(uploadAgentFile)}
+  /* v261008 · /api/agent/send 自 v260930k 起是 SSE（event: round|delta|tool|done|error），
+     而 app.js 的 Agent 页仍是旧 JSON 契约（`r.session.id`），对着流式响应必然抛
+     「Cannot read properties of undefined (reading 'id')」——这里补上流式消费。
+     done 负载自 v260930m 起只回 assistant，会话对象由调用方回读补齐。 */
+  async function streamAgentSend(payload, onDelta, onStatus){
+    const res=await fetch('/api/agent/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    if(!res.ok||!res.body){let d={};try{d=await res.json()}catch{};throw new Error(d.message||d.error||`HTTP ${res.status}`)}
+    const reader=res.body.getReader(),dec=new TextDecoder('utf-8');
+    let buf='',ev='',doneData=null,text='';
+    for(;;){
+      const {value,done}=await reader.read();
+      if(done)break;
+      buf+=dec.decode(value,{stream:true});
+      let i;
+      while((i=buf.indexOf('\n\n'))>=0){
+        const frame=buf.slice(0,i);buf=buf.slice(i+2);
+        let dataStr='';
+        for(const line of frame.split('\n')){
+          if(line.startsWith('event:'))ev=line.slice(6).trim();
+          else if(line.startsWith('data:'))dataStr+=line.slice(5).trim();
+        }
+        let data={};try{data=JSON.parse(dataStr||'{}')}catch{data={}}
+        if(ev==='delta'){text+=data.text||'';if(onDelta)onDelta(text)}
+        else if(ev==='round'){text='';if(onStatus)onStatus(`第 ${(data.i|0)+1} 轮 · 模型思考中…`)}
+        else if(ev==='tool'){if(onStatus)onStatus(`工具 ${data.name||''} ${data.ok?'已完成':'失败'}`)}
+        else if(ev==='done'){doneData=data}
+        else if(ev==='error'){throw new Error(data.message||'请求失败')}
+      }
+    }
+    if(!doneData)throw new Error('流式响应中断（未收到 done 事件）');
+    return doneData.assistant;
+  }
+
   async function sendAgentMessage(){
     const input=$('#agent-input'),text=input.value.trim();if(state.agentSending||(!text&&!state.agentImages.length))return;
     const btn=$('#agent-send');state.agentSending=true;btn.disabled=true;btn.textContent='思考中…';
@@ -435,7 +569,23 @@
       const root=$('#agent-messages');
       if(root){$('.empty',root)?.remove();root.insertAdjacentHTML('beforeend',agentMessageHtml({role:'user',content:text,created:new Date().toISOString(),refs,images:images.map(x=>x.path),request_preset_label:($('#agent-preset')?.selectedOptions?.[0]?.textContent||'')}));for(const el of $$('.agent-message-body',root).slice(-1))await renderMarkdownInto(el,el.dataset.raw||'');const showReasoning=state.config?.app?.llm?.show_reasoning!==false;root.insertAdjacentHTML('beforeend',`<article class="agent-message assistant agent-thinking" id="agent-thinking"><div class="agent-avatar">AI</div><div class="agent-bubble"><div class="agent-thinking-line"><span class="thinking-dots"><i></i><i></i><i></i></span><strong>${showReasoning?'模型正在思考':'模型正在生成回复'}</strong><span class="row-meta" id="agent-thinking-time">0.0 s</span></div>${showReasoning?'<div class="agent-thinking-hint">若接口返回 reasoning / reasoning_content，将在最终回复中以可折叠区域显示。</div>':''}</div></article>`);root.scrollTop=root.scrollHeight}
       const started=performance.now();const timer=setInterval(()=>{const el=$('#agent-thinking-time');if(el)el.textContent=((performance.now()-started)/1000).toFixed(1)+' s'},100);
-      try{const r=await api('/api/agent/send',{method:'POST',body:{session_id:state.agentSession,message:text,refs:refs.map(x=>x.id),images:images.map(x=>x.path),request_preset:preset}});state.agentSession=r.session.id;clearInterval(timer);await renderAgent()}catch(e){clearInterval(timer);$('#agent-thinking')?.remove();if(root){root.insertAdjacentHTML('beforeend',`<article class="agent-message assistant"><div class="agent-avatar">AI</div><div class="agent-bubble"><div class="agent-error">请求失败：${esc(e.message)}</div></div></article>`);root.scrollTop=root.scrollHeight}toast(e.message,true)}
+      try{ /* v261008 · 走 SSE 流式（原 `api(...)` 读 JSON 的写法对流式响应会返回 {}，随后 r.session.id 抛错） */
+        const r0=await streamAgentSend({session_id:state.agentSession,message:text,refs:refs.map(x=>x.id),images:images.map(x=>x.path),request_preset:preset},
+          (streamText)=>{const el=$('#agent-thinking');if(el){const b=el.querySelector('.agent-bubble');if(b)b.innerHTML=`<div class="agent-bubble-body" style="white-space:pre-wrap">${esc(streamText)}</div>`}},
+          (note)=>{const el=$('#agent-thinking');if(el){const b=el.querySelector('.agent-bubble');if(b)b.innerHTML=`<div class="agent-thinking-line"><span class="thinking-dots"><i></i><i></i><i></i></span><strong>${esc(note)}</strong></div>`}});
+        clearInterval(timer);
+        const r={assistant:r0,session:await api('/api/agent/sessions/'+encodeURIComponent(state.agentSession))};
+        /* v260929c · 提速：就地替换思考气泡为新回复并轻量更新侧栏条目，不再整页重渲染（省去重拉全部会话与全部消息重排版） */
+        const think=$('#agent-thinking'),mroot=$('#agent-messages');
+        if(think)think.outerHTML=agentMessageHtml(r.assistant);else if(mroot)mroot.insertAdjacentHTML('beforeend',agentMessageHtml(r.assistant));
+        if(mroot&&state.route==='agent'){
+          const bs=$$('.agent-message-body',mroot),lb=bs[bs.length-1];if(lb)await renderMarkdownInto(lb,lb.dataset.raw||'');
+          const rbs=$$('.agent-reasoning-body',mroot),lrb=rbs[rbs.length-1];if(lrb)await renderMarkdownInto(lrb,lrb.dataset.raw||'');
+          mroot.scrollTop=mroot.scrollHeight;
+          const sb=qa('[data-agent-session]').find(b=>b.dataset.agentSession===r.session.id);
+          if(sb){const st=sb.querySelector('strong'),sm=sb.querySelector('small');if(st)st.textContent=r.session.title||'Agent 对话';if(sm)sm.textContent=fmtTime(r.session.updated)+' · '+(r.session.messages?.length||0)+' 条'}
+        }
+      }catch(e){clearInterval(timer);$('#agent-thinking')?.remove();if(root){root.insertAdjacentHTML('beforeend',`<article class="agent-message assistant"><div class="agent-avatar">AI</div><div class="agent-bubble"><div class="agent-error">请求失败：${esc(e.message)}</div></div></article>`);root.scrollTop=root.scrollHeight}toast(e.message,true)}
     }finally{state.agentSending=false;const b=$('#agent-send');if(b){b.disabled=false;b.textContent='发送'}}
   }
 
@@ -444,11 +594,23 @@
     async function load(force=false){
       try { const data=await api('/api/rss'+(force?'?force=1':''));
         if(state.route!=='news')return;
-        const statusHtml=(data.sources||[]).length?`<div class="rss-status-grid">${data.sources.map(x=>`<div class="rss-status ${x.ok?'ok':'bad'}"><strong>${x.ok?'✓':'!'} ${esc(x.source||'RSS')}</strong><span>${x.ok?`${x.count||0} 条${x.fallback?' · 已启用备用接口':''}`:esc(x.error||'获取失败')}</span></div>`).join('')}</div>`:'';
-        const stale=data.stale?`<div class="rss-alert warn"><strong>当前显示缓存内容</strong><span>本次强制刷新未能访问任何资讯源；旧内容没有被空结果覆盖。</span></div>`:'';
-        const failure=!data.items?.length&&data.errors?.length?`<div class="rss-alert danger"><strong>资讯源全部获取失败</strong><span>这通常是网络 / DNS / 代理或源站连接问题。空失败结果不会再缓存，下一次强制刷新会立即重试。</span><details><summary>查看诊断</summary>${data.errors.map(e=>`<div class="rss-error"><b>${esc(e.source||'')}</b><code>${esc(e.error||'')}</code>${(e.attempts||[]).map(a=>`<small>${esc(a)}</small>`).join('')}</div>`).join('')}</details></div>`:'';
-        $('#main').innerHTML=`<div class="card card-pad"><div class="card-head"><div><div class="card-kicker">RSS / INFORMATION</div><h3>资讯</h3><div class="row-meta">${data.stale?'缓存更新':'最近抓取'} ${fmtTime(data.updated||data.refresh_failed_at)}</div></div><div style="display:flex;gap:8px"><button class="secondary-btn" id="news-settings">资讯源设置</button><button class="primary-btn" id="news-refresh">强制刷新</button></div></div>${stale}${failure}${statusHtml}<div class="news-grid">${data.items?.length?data.items.map(n=>`<article class="card news-card"><div class="news-meta">${esc(n.source)} · ${esc(n.published||'')}</div><h3><a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.title)}</a></h3><p>${esc(n.summary||'')}</p></article>`).join(''):'<div class="empty">当前没有可显示的资讯。请查看上方源状态与诊断信息。</div>'}</div></div>`;
-        $('#news-refresh').onclick=()=>load(true);$('#news-settings').onclick=async()=>{await navigate('settings');setTimeout(()=>document.querySelector('[data-set-tab="rss"]')?.click(),40)};
+        const render=()=>{ /* v260923 · 资讯源卡片即筛选标签：点击只看该源文章，再点或点「全部」恢复 */
+          const filter=localStorage.getItem('newsFilter')||'';
+          const sources=data.sources||[];
+          const total=data.items?.length||0;
+          const statusHtml=sources.length?`<div class="rss-status-grid"><div class="rss-status ${!filter?'ok active':'ok pickable'}" data-news-src="" title="显示全部资讯源"><strong>≡ 全部</strong><span>${total} 条</span></div>${sources.map(x=>{
+            const pickable=x.ok&&(x.count||0)>0;
+            const sel=filter&&filter===x.source?' active':'';
+            return `<div class="rss-status ${pickable?'ok pickable':(x.ok?'ok':'bad')}${sel}"${pickable?` data-news-src="${esc(x.source)}" title="点击只看该资讯源的文章"`:''}><strong>${x.ok?'✓':'!'} ${esc(x.source||'RSS')}</strong><span>${x.ok?`${x.count||0} 条${x.fallback?' · 已启用备用接口':''}`:esc(x.error||'获取失败')}</span></div>`;
+          }).join('')}</div>`:'';
+          const stale=data.stale?`<div class="rss-alert warn"><strong>当前显示缓存内容</strong><span>本次强制刷新未能访问任何资讯源；旧内容没有被空结果覆盖。</span></div>`:'';
+          const failure=!data.items?.length&&data.errors?.length?`<div class="rss-alert danger"><strong>资讯源全部获取失败</strong><span>这通常是网络 / DNS / 代理或源站连接问题。空失败结果不会再缓存，下一次强制刷新会立即重试。</span><details><summary>查看诊断</summary>${data.errors.map(e=>`<div class="rss-error"><b>${esc(e.source||'')}</b><code>${esc(e.error||'')}</code>${(e.attempts||[]).map(a=>`<small>${esc(a)}</small>`).join('')}</div>`).join('')}</details></div>`:'';
+          const items=(data.items||[]).filter(n=>!filter||n.source===filter);
+          $('#main').innerHTML=`<div class="card card-pad"><div class="card-head"><div><div class="card-kicker">RSS / INFORMATION</div><h3>资讯</h3><div class="row-meta">${data.stale?'缓存更新':'最近抓取'} ${fmtTime(data.updated||data.refresh_failed_at)}${filter?` · 只看「${esc(filter)}」`:''}</div></div><div style="display:flex;gap:8px"><button class="secondary-btn" id="news-settings">资讯源设置</button><button class="primary-btn" id="news-refresh">强制刷新</button></div></div>${stale}${failure}${statusHtml}<div class="news-grid">${items.length?items.map(n=>`<article class="card news-card"><div class="news-meta">${esc(n.source)} · ${esc(n.published||'')}</div><h3><a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.title)}</a></h3><p>${esc(n.summary||'')}</p></article>`).join(''):`<div class="empty">${filter?'该资讯源暂无条目，点击上方「≡ 全部」查看其他内容。':'当前没有可显示的资讯。请查看上方源状态与诊断信息。'}</div>`}</div></div>`;
+          $$('#main .rss-status[data-news-src]').forEach(el=>el.onclick=()=>{const cur=localStorage.getItem('newsFilter')||'';localStorage.setItem('newsFilter',cur===el.dataset.newsSrc?'':el.dataset.newsSrc);render();});
+          $('#news-refresh').onclick=()=>load(true);$('#news-settings').onclick=async()=>{await navigate('settings');setTimeout(()=>document.querySelector('[data-set-tab="rss"]')?.click(),40)};
+        };
+        render();
       } catch(e){ if(state.route!=='news')return; $('#main').innerHTML=`<div class="card card-pad"><div class="card-head"><h3>资讯</h3><button class="secondary-btn" id="news-refresh">重试</button></div><div class="rss-alert danger"><strong>资讯接口调用失败</strong><span>${esc(e.message)}</span></div></div>`; $('#news-refresh').onclick=()=>load(true); }
     }
     load(false);
@@ -467,51 +629,181 @@
   }
 
   async function renderDocsPage(kind){
-    if(kind==='literature' && window.ERWLiterature){ state.selectedDoc=null; state.dirty=false; return window.ERWLiterature.start(); }
+    /* v260929 · 文献页保留原有列表/编辑器（BibTeX 同步、自动 cite_key、元数据表单均在此），
+       PDF 阅读工作区不整体接管，改由列表页头部按钮进入（openLiteratureWorkspace），两套 UI 共存 */
     const [docs,projects] = await Promise.all([api('/api/docs?kind='+encodeURIComponent(kind)), api('/api/projects')]); state.docs=docs; state.projects=projects; state.selectedDoc=null;
     if(kind==='milestone') return renderMilestoneShell(docs,projects);
     $('#main').innerHTML=docsShell(kind,docs,projects);
     wireDocList(kind); wireDocFilters(kind); $('#new-doc').onclick=()=>createAndSelect(kind);
-    if(kind==='literature') $('#export-bib').onclick=exportBibtex;
+    if(kind==='literature'){$('#export-bib').onclick=exportBibtex;const ws=$('#open-lit-workspace');if(ws)ws.onclick=openLiteratureWorkspace;}
     if(docs.length) selectDoc(docs[0].id); else showEmptyEditor(kind);
   }
-  function docsShell(kind,docs,projects){return `<div class="docs-layout"><aside class="card doc-list-panel"><div class="doc-filter"><div style="display:flex;gap:6px"><input class="search-input" id="doc-search" placeholder="搜索标题、正文、标签、项目、分类…"><button class="secondary-btn" id="new-doc">＋</button></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px"><select class="search-input" id="doc-status"><option value="">全部状态</option>${(state.statuses[kind]||[]).map(s=>`<option>${esc(s)}</option>`).join('')}</select><select class="search-input" id="doc-project"><option value="">全部项目</option>${projects.map(p=>`<option>${esc(p)}</option>`).join('')}</select><select class="search-input" id="doc-mark" style="grid-column:span 2"><option value="">全部分类</option>${KIND_MARKS.map(k=>`<option value="${esc(k.id)}">${esc(k.icon)} ${esc(k.label)}</option>`).join('')}</select></div>${kind==='literature'?'<button class="secondary-btn" id="export-bib">批量导出 BibTeX</button>':''}</div><div class="doc-list" id="doc-list">${docItems(docs)}</div></aside><section class="card doc-editor empty-editor" id="doc-editor"></section></div>`}
-  function markBadges(d){return (d.kind_marks||[]).slice(0,2).map(id=>{const c=KIND_MARKS.find(k=>k.id===id);if(!c)return '';const col=esc(c.color);return `<span class="badge mark-badge" style="color:${col};border-color:${col};background:${col}1a">${esc(c.icon)} ${esc(c.label)}</span>`}).join('')}
-  function docItems(docs){return docs.length?docs.map(d=>`<article class="doc-item" data-doc-id="${d.id}"><div class="title">${esc(d.title)}</div><div class="excerpt">${esc(d.excerpt||'')}</div><div class="tags"><span class="badge">${esc(d.status||'')}</span>${markBadges(d)}${(d.projects||[]).slice(0,2).map(p=>`<span class="badge accent">${esc(p)}</span>`).join('') || (d.project?`<span class="badge accent">${esc(d.project)}</span>`:'')}${dateBadge(d)}</div></article>`).join(''):'<div class="empty" style="min-height:140px">暂无内容</div>'}
-  function dateBadge(d){ const val=d.due||d.record_date||d.added_date; return val?`<span class="badge mono">${fmtDate(val)}</span>`:''; }
-  function wireDocList(kind){ $$('[data-doc-id]').forEach(x=>x.onclick=()=>selectDoc(x.dataset.docId)); }
+  /* v260929 · 文献列表页 → PDF 阅读工作区入口：编辑中先提示保存；进入后清选中态，
+     工作区头部自带返回按钮（literature.js shell），返回时重新渲染文献列表 */
+  async function openLiteratureWorkspace(){
+    if(!window.ERWLiterature){toast('PDF 阅读工作区未加载',true);return}
+    if(state.dirty){toast('请先保存当前条目',true);return}
+    state.selectedDoc=null; await window.ERWLiterature.start();
+  }
+  /* v260929 · 附件入口统一：徽章点击一律跳 PDF 阅读区（原新窗口直开功能并入工作区）；
+     未登记的附件先自动单条登记（迁移入 Knowledge/Literature/PDF/）再重试，仍失败才提示 */
+  async function openAttachmentInWorkspace(d){
+    if(!window.ERWLiterature)throw new Error('PDF 阅读工作区未加载');
+    if(state.dirty)throw new Error('请先保存当前条目');
+    if(!d||!d.attachment)throw new Error('该条目未配置 PDF 附件');
+    try{await window.ERWLiterature.openByAttachment(d.attachment);return}
+    catch(e){
+      const r=await api('/api/literature/rebuild',{method:'POST',body:{doc_id:d.id}});
+      const att=r.attachment||d.attachment;
+      if(!att)throw new Error('附件文件不存在或无法登记到 PDF 工作区');
+      try{await window.ERWLiterature.openByAttachment(att);return}
+      catch(e2){throw new Error('附件文件不存在或无法登记到 PDF 工作区')}
+    }
+  }
+  /* v260929 · 重建关联（真值归一）：以文献 md 条目为准补齐 PDF 工作区登记——
+     未登记的附件 PDF 迁入 PDF 存放目录（设置 · 文献 / PDF 可配置）统一存放并建立双向关联；幂等可重复执行 */
+  async function rebuildLiteratureLinks(){
+    if(!confirm('将以文献条目为准重建 PDF 工作区关联：未登记的附件 PDF 会迁入 PDF 存放目录（默认 Workspace/Knowledge/Literature/PDF，可在设置 · 文献 / PDF 中修改）统一存放（Workspace 内为移动，外部路径保留原件复制）并建立关联。继续？'))return;
+    const r=await api('/api/literature/rebuild',{method:'POST',body:{}});
+    toast(`重建完成：补关联 ${r.linked||0} 篇，新登记 ${r.registered||0} 篇，补建条目 ${r.ensured||0} 篇`);
+    if(state.route==='settings')renderSettings();else renderDocsPage('literature');
+  }
+  function docsShell(kind,docs,projects){return `<div class="docs-layout"><aside class="card doc-list-panel"><div class="doc-filter"><div style="display:flex;gap:6px"><input class="search-input" id="doc-search" placeholder="搜索标题、正文、标签、项目、分类…"><button class="secondary-btn" id="new-doc">＋</button></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px"><select class="search-input" id="doc-status"><option value="">全部状态</option>${(state.statuses[kind]||[]).map(s=>`<option>${esc(s)}</option>`).join('')}</select><select class="search-input" id="doc-project"><option value="">全部项目</option>${projects.map(p=>`<option>${esc(p)}</option>`).join('')}</select><select class="search-input" id="doc-mark" style="grid-column:span 2"><option value="">全部分类</option>${allMarks().map(k=>`<option value="${esc(k.id)}">${esc(k.icon)} ${esc(k.label)}</option>`).join('')}</select></div>${kind==='literature'?'<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="secondary-btn" id="export-bib">批量导出 BibTeX</button><button class="secondary-btn" id="open-lit-workspace">PDF 阅读工作区</button></div>':''}</div><div class="doc-list" id="doc-list">${docItems(docs)}</div></aside><section class="card doc-editor empty-editor" id="doc-editor"></section></div>`}
+  function markBadges(d){return (d.kind_marks||[]).slice(0,4).map(id=>{const c=allMarks().find(k=>k.id===id);if(!c)return '';const col=esc(c.color);return `<span class="badge mark-badge" style="color:${col};border-color:${col};background:${col}1a">${esc(c.icon)} ${esc(c.label)}</span>`}).join('')}
+  /* v260929 · 暴露给 PDF 阅读工作区复用同一套标记徽章渲染，避免标记目录二次维护 */
+  window.ERWMarkBadges = markBadges;
+  /* v260929 · 分类标记 chips 暴露给 PDF 阅读工作区复用（html 渲染 + 自定义标记管理）；onChanged 供调用方重渲染自己的 chips 盒 */
+  window.ERWMarkChips = {html:markChipsHtml, openManager:openMarkManager};
+  window.ERWMarkList = allMarks; /* v260929 · 标记目录（含自定义）供阅读区筛选项等复用 */
+  /* v260929b · 阅读区 AI 助手自定义动作目录（设置 → 文献/PDF 维护），供 AI 面板渲染个性化按钮 */
+  window.ERWAssistCustomActions = () => { const a = state.config?.app?.llm?.assist; return Array.isArray(a?.custom_actions) ? a.custom_actions : []; };
+  /* v260929c · 多模态开关（设置 → Agent/LLM 维护），阅读区 AI 面板据此显示截图入口 */
+  window.ERWVisionEnabled = () => state.config?.app?.llm?.vision_enabled === true;
+  /* v260929d · 配置热同步：Agent API 配置页（独立脚本）保存后回写 state.config.app，免刷新生效 */
+  window.ERWConfigSync = app => { if (state.config && app) state.config.app = app; };
+  /* v260930 · M2 悬浮球助手：LLM 是否已启用（未启用时悬浮球发送前给出设置指引） */
+  window.ERWLLMReady = () => state.config?.app?.llm?.enabled === true;
+  /* v260930d · M5 阅读中知识关联：悬浮球/气泡跳转到指定知识条目（导航+选中跨脚本桥） */
+  /* v260930g9c · 关联知识「打开条目」跳转：六类→对应路由并选中；literature 额外自动进 PDF 阅读工作区（引用跳文献即看原文） */
+  window.ERWNav = { open: async (kind, id) => {
+    const ok=await navigate(routeForKind(kind));
+    if(ok===false)return; /* 用户在未保存确认框点了取消：中止，不在旧页面执行 selectDoc */
+    setTimeout(()=>selectDoc(id),30);
+    if(kind==='literature'){ setTimeout(async()=>{
+      const doc=(state.docs||[]).find(x=>x.id===id);
+      if(!doc)return; /* 列表未含该条目（分页/过滤）则停在选中态 */
+      try{state.selectedDoc=doc;await openAttachmentInWorkspace(doc)}catch(e){toast(e.message,true)}
+    },80); }
+  } };
+  /* v260923 · 分类标记 chips 渲染 / 事件 / 重渲染（含「＋ 自定义」入口） */
+  function markChipsHtml(selected){return allMarks().map(k=>`<button type="button" class="mark-chip${(selected||[]).includes(k.id)?' on':''}" data-mark="${esc(k.id)}" style="--mark-color:${esc(k.color)}" title="点击标记为${esc(k.label)}，可多选">${esc(k.icon)} ${esc(k.label)}</button>`).join('')+'<button type="button" class="mark-chip add-mark" id="f-mark-add" title="添加自定义标记">＋ 自定义</button>'}
+  function wireMarkChips(){
+    $$('#f-marks .mark-chip:not(.add-mark)').forEach(b=>b.onclick=()=>{b.classList.toggle('on');state.dirty=true});
+    const add=$('#f-mark-add'); if(add)add.onclick=openMarkManager;
+  }
+  function refreshMarkChips(){
+    const box=$('#f-marks'); if(!box)return;
+    const on=$$('#f-marks .mark-chip.on').map(b=>b.dataset.mark);
+    const saved=(state.selectedDoc&&state.selectedDoc.kind_marks)||[];
+    box.innerHTML=markChipsHtml([...new Set([...on,...saved])]);
+    wireMarkChips();
+  }
+  function openMarkManager(onChanged){
+    const ICON_CHOICES=['★','✦','◆','●','■','▲','◈','◎','⚑','✿','☾','⚗']; /* v260923 · 预设标记形状 */
+    const renderList=()=>{
+      const list=customMarks();
+      $('#f-mark-manage-list').innerHTML=list.length?list.map(m=>`<span class="mark-chip" style="--mark-color:${esc(m.color)}">${esc(m.icon)} ${esc(m.label)}<button type="button" class="mark-del" data-del="${esc(m.id)}" title="删除该标记">×</button></span>`).join(''):'<span class="row-meta">暂无自定义标记</span>';
+      $$('#f-mark-manage-list .mark-del').forEach(b=>b.onclick=()=>{
+        const m=customMarks().find(x=>x.id===b.dataset.del);
+        if(m&&!confirm(`删除自定义标记「${m.label}」？已打标的内容将不再显示该标记。`))return;
+        saveCustomMarks(customMarks().filter(x=>x.id!==b.dataset.del)); toast('已删除'); refreshMarkChips(); renderList(); if(onChanged)onChanged();
+      });
+    };
+    modal('自定义分类标记',`<div class="row-meta" style="margin-bottom:12px">选择形状、填写名称并挑一个颜色；标记保存在本浏览器，可在所有文档类型中使用与筛选。</div><div class="mark-icon-pick" id="f-mark-icon-pick" style="margin-bottom:12px">${ICON_CHOICES.map((ic,i)=>`<button type="button"${i===0?' class="on"':''} data-icon="${ic}">${ic}</button>`).join('')}</div><div class="mark-mgr-row" style="margin-bottom:12px"><input id="f-mark-label" class="mark-name" maxlength="8" placeholder="名称，如：思路"><label class="color-swatch" title="颜色"><input id="f-mark-color" type="color" value="#4a6fa5"><span id="f-mark-color-dot" style="background:#4a6fa5"></span></label><button class="primary-btn" id="f-mark-save">添加</button></div><div class="mark-chip-box" id="f-mark-manage-list"></div>`,`<button class="secondary-btn" id="mark-mgr-close">关闭</button>`);
+    $('#mark-mgr-close').onclick=closeModal;
+    $$('#f-mark-icon-pick button').forEach(b=>b.onclick=()=>$$('#f-mark-icon-pick button').forEach(x=>x.classList.toggle('on',x===b)));
+    $('#f-mark-color').oninput=e=>{$('#f-mark-color-dot').style.background=e.target.value};
+    $('#f-mark-save').onclick=()=>{
+      const label=$('#f-mark-label').value.trim();
+      if(!label){toast('请填写标记名称',true);return;}
+      const marks=customMarks();
+      if(marks.some(m=>m.label===label)||KIND_MARKS.some(m=>m.label===label)){toast('该名称已存在',true);return;}
+      if(marks.length>=8){toast('自定义标记最多 8 个',true);return;}
+      const picked=$('#f-mark-icon-pick button.on');
+      marks.push({id:'c_'+Date.now().toString(36),icon:(picked&&picked.dataset.icon)||'★',label,color:$('#f-mark-color').value});
+      saveCustomMarks(marks); toast(`已添加「${label}」`); refreshMarkChips(); renderList(); if(onChanged)onChanged();
+    };
+    renderList();
+  }
+  /* v260923 · 笔记卡片格式统一：状态/分类一行；时间与项目名同排，项目名过长固定宽度省略 */
+  /* v260924i · 置顶条目卡片显示置顶徽章并加 pinned 类 */
+  function docItems(docs){return docs.length?docs.map(d=>{const projBadges=(d.projects||[]).map(p=>`<span class="badge accent proj-badge"><span class="proj-text">${esc(p)}</span></span>`).join('')||(d.project?`<span class="badge accent proj-badge"><span class="proj-text">${esc(d.project)}</span></span>`:'');const dateB=dateBadge(d);const projRow=(projBadges||dateB)?`<div class="doc-projects">${projBadges}${dateB}</div>`:'';const attB=d.attachment_exists?`<span class="badge att-badge" title="在 PDF 阅读区打开附件">⧉ 附件</span>`:'';const pinB=d.pinned?`<span class="badge pin-badge" title="已置顶，优先显示在列表最前">📌 置顶</span>`:'';return `<article class="doc-item${d.pinned?' pinned':''}" data-doc-id="${d.id}"><div class="title">${esc(d.title)}</div><div class="excerpt">${esc(d.excerpt||'')}</div><div class="tags"><span class="badge">${esc(d.status||'')}</span>${attB}${pinB}${markBadges(d)}</div>${projRow}</article>`}).join(''):'<div class="empty" style="min-height:140px">暂无内容</div>'}
+  function dateBadge(d){ const val=d.due||d.record_date||d.added_date; if(val)return `<span class="badge mono">${fmtDate(val)}</span>`; return d.updated?`<span class="badge mono" title="更新时间">更新 ${fmtDate(d.updated)}</span>`:''; }
+  function wireDocList(kind){ $$('[data-doc-id]').forEach(x=>x.onclick=e=>{ /* v260929 · 附件入口统一：徽章点击一律跳 PDF 阅读区（自动登记未入库附件），不再新窗口直开 */ const att=e.target.closest('.att-badge'); if(att){const d=state.docs.find(v=>v.id===x.dataset.docId);openAttachmentInWorkspace(d).catch(err=>toast(err.message||'附件打开失败',true));return;} selectDoc(x.dataset.docId); }); }
   function wireDocFilters(kind){ const run=debounce(async()=>{const q=$('#doc-search').value,status=$('#doc-status').value,project=$('#doc-project').value,mark=$('#doc-mark')?.value||'';const url=`/api/docs?kind=${kind}&q=${encodeURIComponent(q)}&status=${encodeURIComponent(status)}&project=${encodeURIComponent(project)}&mark=${encodeURIComponent(mark)}`;state.docs=await api(url);$('#doc-list').innerHTML=docItems(state.docs);wireDocList(kind);},180); $('#doc-search').oninput=run;$('#doc-status').onchange=run;$('#doc-project').onchange=run;if($('#doc-mark'))$('#doc-mark').onchange=run; }
   async function createAndSelect(kind){ const doc=await api('/api/docs',{method:'POST',body:{kind,title:`未命名${kindLabel(kind)}`}}); await renderDocsPage(kind); setTimeout(()=>selectDoc(doc.id),10); }
   function showEmptyEditor(kind){ $('#doc-editor').className='card doc-editor empty-editor'; $('#doc-editor').innerHTML=`<div class="empty"><div><div class="empty-symbol">${esc(kindLabel(kind).toUpperCase())}</div>选择一条${kindLabel(kind)}，或点击左侧 ＋ 新建</div></div>`; }
   async function selectDoc(id){
     if(state.dirty && !confirm('当前 Markdown 有未保存修改，确定切换吗？'))return;
     state.dirty=false; const doc=await api('/api/docs/'+encodeURIComponent(id)); state.selectedDoc=doc;
+    window.ERWCurrentDoc=doc.id; /* v260930 · M2 悬浮球上下文桥：当前打开条目 id */
     $$('[data-doc-id]').forEach(x=>x.classList.toggle('active',x.dataset.docId===id));
     renderDocEditor(doc);
+  }
+  /* v260929 · 条目信息（填写一次即固定）可收起：收起后只留一行摘要，腾出正文撰写/阅读空间；收起状态按条目类型分别记忆 */
+  function metaCollapsed(kind){try{return localStorage.getItem('erwMetaCollapsed:'+kind)==='1'}catch{return false}}
+  function metaSummary(doc){
+    const parts=String(doc.authors||'').split(/[;,，；]/).map(x=>x.trim()).filter(Boolean);
+    const authors=parts.length?parts.length>1?parts[0]+' 等':parts[0]:'';
+    return [doc.title,authors,doc.year?String(doc.year):'',doc.venue||''].filter(Boolean).join(' · ');
   }
   function renderDocEditor(doc){
     const kind=doc.kind, special=kind==='literature';
     const dateField=kind==='milestone'?'due':(kind==='summary'||kind==='journal'?'record_date':kind==='literature'?'added_date':'');
     $('#doc-editor').className='card doc-editor';
     const tagsSpan=special||kind==='summary'?'span-4':(dateField?'span-2':'span-3');
-    $('#doc-editor').innerHTML=`<div class="form-grid">
+    const metaFold=metaCollapsed(kind);
+    $('#doc-editor').innerHTML=`<div class="meta-block${metaFold?' collapsed':''}" id="meta-block">
+      <div class="meta-head"><span class="meta-head-title">条目信息</span><span class="meta-summary">${esc(metaSummary(doc))}</span><button type="button" class="ghost-btn meta-toggle" id="meta-toggle">${metaFold?'展开':'收起'}</button></div>
+      <div class="form-grid">
       <div class="field span-2"><label>标题</label><input id="f-title" value="${esc(doc.title)}"></div>
       <div class="field span-2"><div class="field-label-row"><label>项目</label><span class="field-help">默认为空；点击 ＋ 从已有项目中勾选，可同时关联多个项目。</span></div><div class="project-picker-row"><div class="project-chip-box" id="f-projects" data-projects="${esc(JSON.stringify(doc.projects||[]))}"></div><button type="button" class="secondary-btn project-add-btn" id="f-project-add" title="从已有项目中添加">＋</button></div></div>
       <div class="field"><label>状态</label><select id="f-status">${(state.statuses[kind]||[]).map(s=>`<option ${s===doc.status?'selected':''}>${esc(s)}</option>`).join('')}</select></div>
       ${dateField?`<div class="field"><label>${dateField==='due'?'截止日期':'日期'}</label><input id="f-date" type="date" value="${esc(doc[dateField]||today())}"></div>`:''}
       ${kind==='summary'?`<div class="field"><label>总结类型</label><select id="f-summary-type">${['日总结','周总结','月总结','阶段总结'].map(s=>`<option ${s===doc.summary_type?'selected':''}>${s}</option>`).join('')}</select></div>`:''}
       ${special?literatureFields(doc):''}
-      <div class="field ${tagsSpan}"><label>标签（逗号分隔）</label><input id="f-tags" value="${esc((doc.tags||[]).join(', '))}" placeholder="标签1, 标签2, 标签3"></div>
-      <div class="field span-4"><label>分类标记</label><div class="mark-chip-box" id="f-marks">${KIND_MARKS.map(k=>`<button type="button" class="mark-chip${(doc.kind_marks||[]).includes(k.id)?' on':''}" data-mark="${esc(k.id)}" style="--mark-color:${esc(k.color)}" title="点击标记为${esc(k.label)}，可多选">${esc(k.icon)} ${esc(k.label)}</button>`).join('')}</div></div>
+      <div class="field ${tagsSpan}"><div class="field-label-row"><label>标签</label><span class="field-help">点击 ＋ 添加：可勾选已有标签或输入新标签。</span></div><div class="project-picker-row"><div class="project-chip-box" id="f-tags" data-tags="${esc(JSON.stringify(doc.tags||[]))}"></div><button type="button" class="secondary-btn project-add-btn" id="f-tag-add" title="添加标签">＋</button></div></div>
+      <!-- v260924k · 置顶开关与分类标记同行：标签行右侧，不另占一行 -->
+      <div class="field span-4"><div class="field-label-row"><label>分类标记</label><label class="pin-toggle" title="勾选后该条目固定显示在列表最前"><input id="f-pinned" type="checkbox" ${doc.pinned?'checked':''}>📌 置顶显示</label></div><div class="mark-chip-box" id="f-marks">${markChipsHtml(doc.kind_marks||[])}</div></div>
+      </div>
     </div>
-    <div style="margin-top:12px">${editorHtml(doc.body||'')}</div>
-    <div class="editor-actions"><span class="row-meta">${esc(doc.path)} · 更新 ${fmtTime(doc.updated)}</span><div class="right"><button class="secondary-btn" id="doc-delete">删除</button><button class="primary-btn" id="doc-save">保存</button></div></div>`;
+    <div class="editor-wrap">${editorHtml(doc.body||'')}</div>
+    <div class="editor-actions"><span class="row-meta">${esc(doc.path)} · 更新 ${fmtTime(doc.updated)}</span><div class="right"><button class="secondary-btn" id="doc-open-file" title="在外部编辑器中打开该 Markdown 原文件">↗ 打开原文件</button><button class="secondary-btn" id="doc-delete">删除</button><button class="primary-btn" id="doc-save">保存</button></div></div>`;
     wireEditor();
-    ['f-title','f-status','f-date','f-tags','f-summary-type','f-authors','f-year','f-venue','f-doi','f-url','f-cite-key','f-bibtex'].forEach(id=>{const el=$('#'+id);if(el)el.addEventListener('input',()=>state.dirty=true)});
+    const metaBtn=$('#meta-toggle'); /* v260929 · 条目信息收起/展开：只切类名不动输入值，保存仍带全部字段 */
+    if(metaBtn)metaBtn.onclick=()=>{
+      const folded=$('#meta-block').classList.toggle('collapsed');
+      metaBtn.textContent=folded?'展开':'收起';
+      try{localStorage.setItem('erwMetaCollapsed:'+kind,folded?'1':'0')}catch{}
+    };
+    ['f-title','f-status','f-date','f-summary-type','f-pinned','f-authors','f-year','f-venue','f-doi','f-url','f-cite-key','f-bibtex'].forEach(id=>{const el=$('#'+id);if(el)el.addEventListener('input',()=>state.dirty=true)}); /* v260924i · 含置顶开关脏标记 */
+    const lookupBtn=$('#f-lookup-btn'); if(lookupBtn)lookupBtn.onclick=autoFillLiterature; /* v260929 · 自动填写按钮（文献编辑器） */
     paintEditorProjects(doc.projects||[]); $('#f-project-add').onclick=openEditorProjectPicker;
-    $$('.mark-chip').forEach(b=>b.onclick=()=>{b.classList.toggle('on');state.dirty=true});
+    paintEditorTags(doc.tags||[]); $('#f-tag-add').onclick=openEditorTagPicker;
+    wireMarkChips();
     $('#doc-save').onclick=()=>saveCurrentDoc(doc,dateField); $('#doc-delete').onclick=()=>deleteCurrentDoc(doc);
+    $('#doc-open-file').onclick=()=>openSourceFile(doc);
     renderMarkdownPreview();
+  }
+  /* v261008 · 打开原文件：选择外部编辑器（VS Code / Typora）打开该条目的 Markdown 原文件（服务端按编辑器解析可执行文件） */
+  function openSourceFile(doc){
+    const editors=[{id:'vscode',label:'VS Code'},{id:'typora',label:'Typora'}];
+    modal('打开原文件',`<div class="row-meta" style="margin-bottom:10px">选择编辑器打开该条目的 Markdown 原文件：<br><code>${esc(doc.path)}</code></div><div style="display:flex;gap:8px;flex-wrap:wrap">${editors.map(e=>`<button type="button" class="secondary-btn" data-editor="${e.id}">${e.label}</button>`).join('')}</div>`);
+    $$('#modal-body [data-editor]').forEach(b=>b.onclick=async()=>{
+      closeModal();
+      try{ await api('/api/workspace/open-with',{method:'POST',body:{path:doc.path,editor:b.dataset.editor}}); toast('已用 '+b.textContent+' 打开原文件'); }
+      catch(err){ toast(err.message||'打开失败',true); }
+    });
   }
   function editorProjects(){
     const box=$('#f-projects');if(!box)return [];try{const v=JSON.parse(box.dataset.projects||'[]');return Array.isArray(v)?v:[]}catch{return []}
@@ -519,6 +811,41 @@
   function paintEditorProjects(projects){
     const box=$('#f-projects');if(!box)return;const list=[...new Set((projects||[]).map(x=>String(x).trim()).filter(Boolean))];box.dataset.projects=JSON.stringify(list);box.innerHTML=list.length?list.map((p,i)=>`<span class="project-chip">${esc(p)}<button type="button" data-project-remove="${i}" title="移除项目">×</button></span>`).join(''):'<span class="row-meta">未关联项目</span>';$$('[data-project-remove]',box).forEach(b=>b.onclick=()=>{const now=editorProjects();now.splice(+b.dataset.projectRemove,1);paintEditorProjects(now);state.dirty=true});
   }
+  /* v260923 · 标签 chip 化：与项目一致的交互（× 移除 + ＋ 弹窗添加） */
+  function editorTags(){
+    const box=$('#f-tags');if(!box)return [];try{const v=JSON.parse(box.dataset.tags||'[]');return Array.isArray(v)?v:[]}catch{return []}
+  }
+  function paintEditorTags(tags){
+    const box=$('#f-tags');if(!box)return;const list=[...new Set((tags||[]).map(x=>String(x).trim()).filter(Boolean))];box.dataset.tags=JSON.stringify(list);box.innerHTML=list.length?list.map((t,i)=>`<span class="project-chip tag-chip">${esc(t)}<button type="button" data-tag-remove="${i}" title="移除标签">×</button></span>`).join(''):'<span class="row-meta">暂无标签</span>';$$('[data-tag-remove]',box).forEach(b=>b.onclick=()=>{const now=editorTags();now.splice(+b.dataset.tagRemove,1);paintEditorTags(now);state.dirty=true});
+  }
+  /* v260929 · 标签选择器通用化（入参：当前标签 / 已有标签来源 / 应用回调），文献编辑区与 PDF 阅读区共用 */
+  function openTagPicker(current, known, onApply){
+    const selected=new Set(current||[]);
+    let query=''; /* v260923 · 搜索与新建合并：输入即过滤，回车选中已有或创建新标签 */
+    const allKnown=()=>[...new Set(typeof known==='function'?known():(known||[]))];
+    const renderList=()=>{
+      const q=query.trim().toLowerCase();
+      const known=allKnown().filter(t=>!selected.has(t)).filter(t=>!q||t.toLowerCase().includes(q)).sort((a,b)=>a.localeCompare(b,'zh'));
+      const picked=[...selected];
+      $('#f-tag-pick-list').innerHTML=(picked.map(t=>`<label class="bundle-item"><input type="checkbox" data-tag-pick="${esc(t)}" checked><span><strong>${esc(t)}</strong><span class="row-meta">新选择</span></span></label>`).join('')+(known.length?known.map(t=>`<label class="bundle-item"><input type="checkbox" data-tag-pick="${esc(t)}"><span><strong>${esc(t)}</strong></span></label>`).join(''):(q?`<div class="empty">没有匹配的标签，回车将创建「${esc(query.trim())}」</div>`:(picked.length?'':'<div class="empty">暂无已有标签，直接输入即可创建。</div>'))));
+    };
+    const commitQuery=()=>{
+      const v=$('#f-tag-query').value.trim();if(!v)return;
+      const hit=allKnown().find(t=>t.toLowerCase()===v.toLowerCase());
+      const val=hit||v;
+      if(selected.has(val)){toast('该标签已在列表中',true);return;}
+      selected.add(val);$('#f-tag-query').value='';query='';renderList();
+    };
+    modal('添加标签',`<div class="row-meta" style="margin-bottom:10px">输入即实时搜索已有标签；没有匹配时回车或点「添加」将创建为新标签。</div><div class="mark-mgr-row" style="margin-bottom:10px"><input id="f-tag-query" class="mark-name" maxlength="24" placeholder="搜索已有标签，或输入新标签"><button class="primary-btn" id="f-tag-query-add">添加</button></div><div class="project-pick-list" id="f-tag-pick-list"></div>`,`<button class="secondary-btn" id="tag-pick-cancel">取消</button><button class="primary-btn" id="tag-pick-done">应用</button>`);
+    $('#tag-pick-cancel').onclick=closeModal;
+    $('#f-tag-query-add').onclick=commitQuery;
+    $('#f-tag-query').oninput=e=>{query=e.target.value;renderList();};
+    $('#f-tag-query').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();commitQuery();}};
+    $('#tag-pick-done').onclick=()=>{const list=$$('[data-tag-pick]:checked').map(x=>x.dataset.tagPick);onApply(list);closeModal()};
+    renderList();
+  }
+  function openEditorTagPicker(){ openTagPicker(editorTags(), ()=>[...new Set(state.docs.flatMap(d=>d.tags||[]))], list=>{paintEditorTags(list);state.dirty=true}) }
+  window.ERWTagPicker = openTagPicker;
   function openEditorProjectPicker(){
     const selected=new Set(editorProjects());
     modal('添加已有项目',`<div class="row-meta" style="margin-bottom:10px">勾选要关联到当前条目的已有项目。项目本身请在概览“项目推进”或资源页创建。</div><div class="project-pick-list">${state.projects.length?state.projects.map(p=>`<label class="bundle-item"><input type="checkbox" data-project-pick="${esc(p)}" ${selected.has(p)?'checked':''}><span><strong>${esc(p)}</strong></span></label>`).join(''):'<div class="empty">暂无已有项目，请先新建项目。</div>'}</div>`,`<button class="secondary-btn" id="project-pick-new">＋ 新建项目</button><button class="secondary-btn" id="project-pick-cancel">取消</button><button class="primary-btn" id="project-pick-done">应用</button>`);
@@ -527,7 +854,28 @@
     $('#project-pick-done').onclick=()=>{const list=$$('[data-project-pick]:checked').map(x=>x.dataset.projectPick);paintEditorProjects(list);state.dirty=true;closeModal()};
   }
 
-  function literatureFields(d){return `<div class="field span-2"><label>作者</label><input id="f-authors" value="${esc(d.authors||'')}"></div><div class="field"><label>年份</label><input id="f-year" value="${esc(d.year||'')}"></div><div class="field"><label>引用键 Cite Key</label><input id="f-cite-key" value="${esc(d.cite_key||'')}"></div><div class="field span-2"><label>期刊 / 会议</label><input id="f-venue" value="${esc(d.venue||'')}"></div><div class="field"><label>DOI</label><input id="f-doi" value="${esc(d.doi||'')}"></div><div class="field"><label>URL</label><input id="f-url" value="${esc(d.url||'')}"></div><div class="field span-4"><label>BibTeX（会与正文中的 bibtex 代码块同步）</label><textarea id="f-bibtex" class="mono bibtex-input" placeholder="@article{...}">${esc(d.bibtex||'')}</textarea></div>`}
+  function literatureFields(d){return `<div class="field span-4"><div class="field-label-row"><label>自动填写</label><span class="field-help">粘贴 DOI 或 arXiv 编号联网抓取；直接粘贴一段 BibTeX 则本地解析回填。抓取/解析后请核对再保存。</span></div><div class="field-input-row"><input id="f-lookup" placeholder="如 10.1109/TGRS.2023.1234567、2401.02345 或 @article{…}"><button type="button" class="secondary-btn" id="f-lookup-btn">填写</button></div></div><div class="field span-2"><label>作者</label><input id="f-authors" value="${esc(d.authors||'')}"></div><div class="field"><label>年份</label><input id="f-year" value="${esc(d.year||'')}"></div><div class="field"><label>引用键 Cite Key</label><input id="f-cite-key" value="${esc(d.cite_key||'')}"></div><div class="field span-2"><label>期刊 / 会议</label><input id="f-venue" value="${esc(d.venue||'')}"></div><div class="field"><label>DOI</label><input id="f-doi" value="${esc(d.doi||'')}"></div><div class="field"><label>URL</label><input id="f-url" value="${esc(d.url||'')}"></div><div class="field span-2"><div class="field-label-row"><label>PDF 附件路径</label><span class="field-help">绝对路径或相对 Workspace 的路径，仅 .pdf；文件存在时列表会显示附件图标。</span></div><input id="f-attachment" value="${esc(d.attachment||'')}" placeholder="如 Knowledge/Attachments/xxx.pdf"></div><div class="field span-4"><label>BibTeX（会与正文中的 bibtex 代码块同步）</label><textarea id="f-bibtex" class="mono bibtex-input" placeholder="@article{...}">${esc(d.bibtex||'')}</textarea></div>`}
+  /* v260929 · 自动填写（阶段 4）：DOI/arXiv 走后端 lookup（CrossRef/arXiv API），
+     BibTeX 文本则前端本地解析；回填仅覆盖非空字段，不动用户已填内容 */
+  function parseBibtexFields(bib){
+    const out={bibtex:bib.trim()};
+    const km=bib.match(/@\w+\s*\{\s*([^,\s]+)\s*,/); if(km)out.cite_key=km[1];
+    const grab=f=>{const m=bib.match(new RegExp(f+'\\s*=\\s*\\{((?:[^{}]|\\{[^{}]*\\})*)\\}','i'));return m?m[1].replace(/\s+/g,' ').trim():''};
+    out.title=grab('title'); out.authors=grab('author'); out.year=grab('year');
+    out.venue=grab('journal')||grab('booktitle')||grab('publisher'); out.doi=grab('doi'); out.url=grab('url');
+    return out;
+  }
+  async function autoFillLiterature(){
+    const raw=($('#f-lookup')?.value||'').trim();
+    if(!raw)return toast('请输入 DOI、arXiv 编号或一段 BibTeX',true);
+    let m=null;
+    if(raw.startsWith('@'))m=parseBibtexFields(raw);
+    if(!m){try{m=await api('/api/literature/lookup',{method:'POST',body:{identifier:raw}})}catch(e){return toast(e.message||e.error||'抓取失败',true)}}
+    const map={'f-title':m.title,'f-authors':m.authors,'f-year':m.year,'f-venue':m.venue,'f-doi':m.doi,'f-url':m.url,'f-cite-key':m.cite_key,'f-bibtex':m.bibtex};
+    let n=0; for(const [id,val] of Object.entries(map)){const el=$('#'+id);if(el&&val){el.value=val;n++}}
+    if(m.bibtex){const ta=$('#md-input');if(ta){const block='```bibtex\n'+m.bibtex+'\n```';ta.value=/```bibtex\s*\n[\s\S]*?```/i.test(ta.value)?ta.value.replace(/```bibtex\s*\n[\s\S]*?```/i,block):ta.value;debouncedPreview()}}
+    state.dirty=true; toast(n?('已回填 '+n+' 项，请核对后保存'):'未解析到可回填字段',!n);
+  }
   function editorHtml(body){return `<div class="toolbar">
     <button type="button" data-md="h1" title="一级标题">H1</button><button type="button" data-md="h2" title="二级标题">H2</button><button type="button" data-md="h3" title="三级标题">H3</button><span class="sep"></span>
     <button type="button" data-md="bold"><b>B</b></button><button type="button" data-md="italic"><i>I</i></button><button type="button" data-md="strike"><s>S</s></button><button type="button" data-md="inlinecode">&#96;</button><span class="sep"></span>
@@ -540,17 +888,105 @@
   function wireEditor(){
     const ta=$('#md-input'); if(!ta)return;
     const bib=$('#f-bibtex'); let syncingBib=false;
-    ta.addEventListener('input',()=>{state.dirty=true;if(bib&&!syncingBib){const m=ta.value.match(/```bibtex\s*\n([\s\S]*?)```/i);if(m&&bib.value.trim()!==m[1].trim()){syncingBib=true;bib.value=m[1].trim();syncingBib=false;}}debouncedPreview();});
+    /* v260924b · 分屏滚动同步（精确版）：预览按 top-level 块渲染并记录源行号锚点（见 renderMarkdownPreview），
+       编辑侧用 canvas 量宽估算软换行的物理行→逻辑行映射；两侧任一滚动，另一侧先落到所在块、再按块内比例对齐。 */
+    const pv=$('#md-preview'); let syncLock=false, syncLockTimer=0;
+    /* v260924g · 锁改由「被写侧的 scroll 事件」释放：旧实现用 rAF 解锁，但渲染帧内 rAF 回调先于 scroll 事件派发，
+     * 锁在回声事件到来前已失效 → 编辑器↔预览互相写入形成无限互滚（滚动条自动滑动）。
+     * 事件驱动释放 + 150ms 兜底定时器（写入未引起滚动时防锁死）。 */
+    const bindScrollSync=(src,dst,fn)=>src.addEventListener('scroll',()=>{
+      if(syncLock){syncLock=false;clearTimeout(syncLockTimer);return;}
+      if(state.editorMode!=='split')return;
+      if(src.scrollHeight-src.clientHeight<=1||dst.scrollHeight-dst.clientHeight<=1)return;
+      syncLock=true; fn();
+      clearTimeout(syncLockTimer); syncLockTimer=setTimeout(()=>{syncLock=false},150);
+    });
+    if(pv){bindScrollSync(ta,pv,syncEdToPv);bindScrollSync(pv,ta,syncPvToEd);}
+    ta.addEventListener('input',()=>{state.dirty=true;state._mdSyncVer=(state._mdSyncVer||0)+1;if(bib&&!syncingBib){const m=ta.value.match(/```bibtex\s*\n([\s\S]*?)```/i);if(m&&bib.value.trim()!==m[1].trim()){syncingBib=true;bib.value=m[1].trim();syncingBib=false;}}debouncedPreview();});
     if(bib)bib.addEventListener('input',()=>{if(syncingBib)return;syncingBib=true;const block='```bibtex\n'+bib.value.trim()+'\n```';if(/```bibtex\s*\n[\s\S]*?```/i.test(ta.value))ta.value=ta.value.replace(/```bibtex\s*\n[\s\S]*?```/i,block);else ta.value='## BibTeX\n\n'+block+'\n\n'+ta.value;syncingBib=false;state.dirty=true;debouncedPreview();});
     ta.addEventListener('paste',onPasteImage); ta.addEventListener('dragover',e=>e.preventDefault()); ta.addEventListener('drop',onDropImage);
     $$('[data-edit-mode]').forEach(b=>b.onclick=()=>{state.editorMode=b.dataset.editMode; const p=$('#editor-pane');p.className='editor-pane '+(state.editorMode==='edit'?'edit-only':state.editorMode==='preview'?'preview-only':'');$$('[data-edit-mode]').forEach(x=>x.classList.toggle('active',x.dataset.editMode===state.editorMode)); if(state.editorMode!=='edit')renderMarkdownPreview();});
     $$('[data-md]').forEach(b=>b.onclick=()=>applyMdCommand(b.dataset.md));
   }
   const debouncedPreview=debounce(renderMarkdownPreview,250);
+  /* ---------- v260924b · 分屏滚动同步核心 ---------- */
+  let _mdMeasureCtx=null;
+  /* 用 canvas 逐行量宽，估算 textarea 软换行后的物理行累计表 cum[k] = 前 k 个逻辑行占用的物理行数 */
+  function ensureMdSyncMap(ta){
+    const ver=state._mdSyncVer||0,c=state._mdSyncCache;
+    /* v260924b · 缓存键含文本长度：setRangeText/直接赋值不触发 input 事件，长度变化时强制重建 */
+    if(c&&c.ver===ver&&c.w===ta.clientWidth&&c.len===ta.value.length)return c;
+    const cs=getComputedStyle(ta);
+    const lineH=parseFloat(cs.lineHeight)||parseFloat(cs.fontSize)*1.65||21;
+    const wrapW=Math.max(40,ta.clientWidth-parseFloat(cs.paddingLeft||0)-parseFloat(cs.paddingRight||0));
+    if(!_mdMeasureCtx)_mdMeasureCtx=document.createElement('canvas').getContext('2d');
+    try{_mdMeasureCtx.font=`${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize}/${cs.lineHeight==='normal'?'normal':cs.lineHeight} ${cs.fontFamily}`;}catch(e){_mdMeasureCtx.font=`${cs.fontSize} ${cs.fontFamily}`;}
+    const lines=ta.value.split('\n'),cum=[0];
+    for(const ln of lines){const w=ln?_mdMeasureCtx.measureText(ln).width:0;cum.push(cum[cum.length-1]+(w<=0?1:Math.max(1,Math.ceil(w/wrapW))));}
+    state._mdSyncCache={ver,w:ta.clientWidth,len:ta.value.length,cum,lineH};
+    return state._mdSyncCache;
+  }
+  /* 物理行位置 → 逻辑行号（浮点） */
+  function mdPhysToLogical(m,p){
+    const cum=m.cum; p=Math.max(0,Math.min(p,cum[cum.length-1]));
+    let lo=0,hi=cum.length-1;
+    while(lo<hi-1){const mid=(lo+hi)>>1;if(p<cum[mid])hi=mid;else lo=mid;}
+    const span=Math.max(1,cum[lo+1]-cum[lo]);
+    return Math.min(lo+(p-cum[lo])/span,cum.length-2);
+  }
+  /* 逻辑行号（浮点） → 物理行位置 */
+  function mdLogicalToPhys(m,L){
+    const cum=m.cum,n=cum.length-1;
+    let k=Math.max(0,Math.min(Math.floor(L),n-1));
+    const frac=Math.max(0,Math.min(L-k,1));
+    return cum[k]+frac*Math.max(1,cum[k+1]-cum[k]);
+  }
+  /* 取当前滚动位置所在的锚点块：返回像素区间（pStart/pEnd）与逻辑行区间（lStart/lEnd），blocks 与 anchors 一一对应 */
+  function mdAnchorAt(pv,anchors,blocks,pos,isPixel){
+    if(!anchors||!blocks.length||anchors.length!==blocks.length)return null;
+    const pvTop=pv.getBoundingClientRect().top;
+    const tops=blocks.map(el=>el.getBoundingClientRect().top-pvTop+pv.scrollTop);
+    let i=0;
+    if(isPixel){for(let k=0;k<blocks.length;k++){if(tops[k]<=pos)i=k;else break;}}
+    else{for(let k=0;k<anchors.length;k++){if(anchors[k].line<=pos)i=k;else break;}}
+    const pStart=tops[i],pEnd=(i+1<blocks.length?tops[i+1]:tops[i]+blocks[i].offsetHeight);
+    const lStart=anchors[i].line,lEnd=(i+1<anchors.length?anchors[i+1].line:anchors[i].end);
+    return {i,pStart,pEnd,lStart,lEnd,el:blocks[i]};
+  }
+  function syncEdToPv(){
+    const ta=$('#md-input'),pv=$('#md-preview'); if(!ta||!pv)return;
+    const sh=ta.scrollHeight-ta.clientHeight,dh=pv.scrollHeight-pv.clientHeight; if(sh<=1||dh<=1)return;
+    const anchors=state._mdAnchors,blocks=$$('.md-block',pv);
+    let target;
+    if(anchors&&blocks.length===anchors.length){
+      const m=ensureMdSyncMap(ta);
+      const L=mdPhysToLogical(m,ta.scrollTop/m.lineH);
+      const iv=mdAnchorAt(pv,anchors,blocks,L,false); if(!iv)return;
+      const frac=iv.lEnd>iv.lStart?(L-iv.lStart)/(iv.lEnd-iv.lStart):0;
+      target=iv.pStart+frac*(iv.pEnd-iv.pStart)-2;
+    }else target=ta.scrollTop/sh*dh;
+    pv.scrollTop=Math.max(0,Math.min(dh,target));
+  }
+  function syncPvToEd(){
+    const ta=$('#md-input'),pv=$('#md-preview'); if(!ta||!pv)return;
+    const sh=ta.scrollHeight-ta.clientHeight,dh=pv.scrollHeight-pv.clientHeight; if(sh<=1||dh<=1)return;
+    const anchors=state._mdAnchors,blocks=$$('.md-block',pv);
+    let target;
+    if(anchors&&blocks.length===anchors.length){
+      const m=ensureMdSyncMap(ta);
+      const iv=mdAnchorAt(pv,anchors,blocks,pv.scrollTop+2,true); if(!iv)return;
+      const frac=iv.pEnd>iv.pStart?(pv.scrollTop+2-iv.pStart)/(iv.pEnd-iv.pStart):0;
+      const L=iv.lStart+frac*(iv.lEnd-iv.lStart);
+      target=mdLogicalToPhys(m,L)*m.lineH-2;
+    }else target=pv.scrollTop/dh*sh;
+    ta.scrollTop=Math.max(0,Math.min(sh,target));
+  }
   function normalizePreviewPaths(html){
     return html
       .replace(/(src|href)="\.\.\/Attachments\//g, '$1="/workspace-file/Knowledge/Attachments/')
-      .replace(/(src|href)="\.\.\/\.\.\/Attachments\//g, '$1="/workspace-file/Knowledge/Attachments/');
+      .replace(/(src|href)="\.\.\/\.\.\/Attachments\//g, '$1="/workspace-file/Knowledge/Attachments/')
+      /* v260929w · Workspace 相对路径图片（批注截图 / 笔记插图 Knowledge/... 等）：img src 统一经 /workspace-file/ 服务；href 不动，避免干扰 wiki 内部相对链接 */
+      .replace(/src="(?!https?:|data:|\/|#)([^"]+)"/g,(m,p)=>'src="/workspace-file/'+p.replace(/^\.?\//,"")+'"');
   }
   function basicMarkdown(raw){
     // Offline-safe fallback. Full Marked is preferred when available.
@@ -586,9 +1022,34 @@
     if(window.marked && window.DOMPurify){
       const renderer=new marked.Renderer();
       renderer.code=(tokenOrCode,info)=>{let code='',lang='';if(tokenOrCode&&typeof tokenOrCode==='object'){code=tokenOrCode.text||'';lang=tokenOrCode.lang||'';}else{code=String(tokenOrCode||'');lang=String(info||'');}lang=lang.trim();if(lang==='mermaid')return `<div class="mermaid">${esc(code)}</div>`;return `<pre><code class="language-${esc(lang)}">${esc(code)}</code></pre>`;};
-      try{html=marked.parse(raw,{gfm:true,breaks:false,renderer});}catch(e){console.warn('marked failed, fallback',e);html=basicMarkdown(raw);}
-    } else html=basicMarkdown(raw);
+      const opts={gfm:true,breaks:false,renderer};
+      /* v260924b · 按 top-level token 分块渲染并记录源行号锚点（供分屏滚动同步）；
+         链接引用定义（[x]: url）注入每个分块，避免跨块引用失效 */
+      try{
+        const tokens=marked.lexer(raw);
+        const parts=[],anchors=[];let lineNo=0,defsRaw='';
+        for(const tk of tokens){
+          const startLine=lineNo;lineNo+=tk.raw.split('\n').length-1;
+          if(tk.type==='def'){defsRaw+=tk.raw;continue;}
+          if(tk.type==='space'||!tk.raw.trim())continue;
+          anchors.push({line:startLine,end:0});
+          parts.push(marked.parse((defsRaw?defsRaw+'\n':'')+tk.raw,opts));
+        }
+        const totalLines=Math.max(lineNo,raw.split('\n').length);
+        for(let i=0;i<anchors.length;i++)anchors[i].end=(i+1<anchors.length?anchors[i+1].line:totalLines);
+        state._mdAnchors=anchors.length?anchors:null;
+        html=parts.map((h,i)=>`<div class="md-block" data-line="${anchors[i].line}">${h}</div>`).join('');
+      }catch(e){console.warn('marked chunked parse failed, fallback whole',e);state._mdAnchors=null;html=marked.parse(raw,opts);}
+    } else {html=basicMarkdown(raw);state._mdAnchors=null;}
     html=html.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,(_,target,label)=>`<a href="#" class="wiki-link" data-wiki="${esc(target)}">${esc(label||target)}</a>`);
+    /* v260924 · 关联条目跳转：符合知识库命名前缀的反引号标题（如 `知识-方法-…`、`文献-…`）自动转为
+       可点击链接（点击复用双链逻辑，按目标 kind 路由到笔记/文献/总结等管理页并选中），
+       仅包裹已有文本、不新增界面元素，避免加剧界面拥挤 */
+    html=html.replace(/<code>([^<]{1,160})<\/code>/g,(m,inner)=>{
+      const text=inner.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&amp;/g,'&');
+      if(!/^(知识|总结|灵感|日志|里程碑|文献)-/.test(text))return m;
+      return `<a href="#" class="wiki-link kb-ref" data-wiki="${esc(text)}"><code>${inner}</code></a>`;
+    });
     html=normalizePreviewPaths(html);
     if(seq!==state.previewSeq||!document.body.contains(out))return;
     out.innerHTML=window.DOMPurify?DOMPurify.sanitize(html,{ADD_ATTR:['target','rel','data-wiki','checked','disabled'],ADD_TAGS:['mjx-container']}):html;
@@ -597,7 +1058,7 @@
     if(seq!==state.previewSeq||!document.body.contains(out))return;
     if(window.MathJax?.typesetPromise){try{MathJax.typesetClear?.([out]);await MathJax.typesetPromise([out])}catch(e){console.warn(e)}}
     if(seq!==state.previewSeq||!document.body.contains(out))return;
-    $$('.wiki-link',out).forEach(a=>a.onclick=async e=>{e.preventDefault();const q=a.dataset.wiki;const results=await api('/api/docs?q='+encodeURIComponent(q));const exact=results.find(x=>x.id===q||x.title===q)||results[0];if(exact){const r=routeForKind(exact.kind);await navigate(r);setTimeout(()=>selectDoc(exact.id),10)}else toast(`未找到双链：${q}`,true)});
+    $$('.wiki-link',out).forEach(a=>a.onclick=async e=>{e.preventDefault();const q=a.dataset.wiki;const results=await api('/api/docs?q='+encodeURIComponent(q));const self=state.selectedDoc&&state.selectedDoc.id;const exact=results.find(x=>x.id===q||x.title===q)||results.find(x=>x.id!==self)||null;if(exact){const r=routeForKind(exact.kind);await navigate(r);setTimeout(()=>selectDoc(exact.id),10)}else toast(`未找到关联条目：${q}`,true)});
   }
   function applyMdCommand(cmd){
     const ta=$('#md-input'); const a=ta.selectionStart,b=ta.selectionEnd,sel=ta.value.slice(a,b);
@@ -610,7 +1071,7 @@
   async function onPasteImage(e){ const files=[...e.clipboardData.items].filter(x=>x.type.startsWith('image/')).map(x=>x.getAsFile()).filter(Boolean); if(!files.length)return;e.preventDefault();for(const f of files)await uploadImage(f); }
   async function onDropImage(e){e.preventDefault();const files=[...e.dataTransfer.files].filter(f=>f.type.startsWith('image/'));for(const f of files)await uploadImage(f);}
   async function uploadImage(file){ if(file.size>15*1024*1024)return toast('图片不能超过 15 MB',true); const dataUrl=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file)}); const res=await api('/api/assets',{method:'POST',body:{data_url:dataUrl,name:file.name}});insertAtSelection($('#md-input'),'\n'+res.markdown+'\n');toast('图片已保存到 Workspace/Knowledge/Attachments'); }
-  async function saveCurrentDoc(doc,dateField){ const projects=editorProjects(); const body={title:$('#f-title').value.trim(),project:projects[0]||'',projects,status:$('#f-status').value,tags:$('#f-tags').value.split(/[,，]/).map(x=>x.trim()).filter(Boolean),kind_marks:$$('.mark-chip.on').map(b=>b.dataset.mark),body:$('#md-input').value}; if(dateField)body[dateField]=$('#f-date').value||today(); if(doc.kind==='summary')body.summary_type=$('#f-summary-type').value; if(doc.kind==='literature'){Object.assign(body,{authors:$('#f-authors').value,year:$('#f-year').value,venue:$('#f-venue').value,doi:$('#f-doi').value,url:$('#f-url').value,cite_key:$('#f-cite-key').value,bibtex:$('#f-bibtex').value,added_date:$('#f-date').value||today()});} const saved=await api('/api/docs/'+doc.id,{method:'POST',body});state.dirty=false;toast('已保存 Markdown');state.selectedDoc=saved; await refreshListAfterSave(doc.kind,saved.id); }
+  async function saveCurrentDoc(doc,dateField){ const projects=editorProjects(); const body={title:$('#f-title').value.trim(),project:projects[0]||'',projects,status:$('#f-status').value,tags:editorTags(),kind_marks:$$('#f-marks .mark-chip.on').map(b=>b.dataset.mark),body:$('#md-input').value,pinned:!!($('#f-pinned')&&$('#f-pinned').checked)}; if(dateField)body[dateField]=$('#f-date').value||today(); if(doc.kind==='summary')body.summary_type=$('#f-summary-type').value; if(doc.kind==='literature'){Object.assign(body,{authors:$('#f-authors').value,year:$('#f-year').value,venue:$('#f-venue').value,doi:$('#f-doi').value,url:$('#f-url').value,cite_key:$('#f-cite-key').value,attachment:$('#f-attachment')?.value.trim()||'',bibtex:$('#f-bibtex').value,added_date:$('#f-date').value||today()});} const saved=await api('/api/docs/'+doc.id,{method:'POST',body});state.dirty=false;toast('已保存 Markdown');state.selectedDoc=saved; await refreshListAfterSave(doc.kind,saved.id); }
   async function refreshListAfterSave(kind,id){ state.docs=await api('/api/docs?kind='+kind);const list=$('#doc-list');if(list){list.innerHTML=docItems(state.docs);wireDocList(kind);$$('[data-doc-id]').forEach(x=>x.classList.toggle('active',x.dataset.docId===id));} }
   async function deleteCurrentDoc(doc){ if(!confirm(`删除“${doc.title}”？文件会移入 Workspace/System/Trash。`))return;await api('/api/docs/'+doc.id,{method:'DELETE'});toast('已移入回收目录');state.dirty=false;renderDocsPage(doc.kind); }
   function routeForKind(k){ return {idea:'ideas',journal:'journals',note:'notes',milestone:'milestones',summary:'summaries',literature:'literature'}[k]||'notes'}
@@ -729,8 +1190,13 @@
   function treeHtml(node){const ico=node.type==='dir'?'▱':'·';return `<div class="tree-node"><div class="tree-line"><span>${ico}</span><span class="folder-name" title="${esc(node.path)}">${esc(node.name)}</span>${node.type==='dir'?`<span class="folder-actions"><button data-open-path="${esc(node.path)}">↗</button></span>`:''}</div>${node.children?.length?`<div class="tree-children">${node.children.map(treeHtml).join('')}</div>`:''}</div>`}
   function wireTreeOpen(){$$('[data-open-path]').forEach(b=>b.onclick=e=>{e.stopPropagation();api('/api/workspace/open',{method:'POST',body:{path:b.dataset.openPath}}).catch(x=>toast(x.message,true))})}
 
+  /* v261008 · 用量计费页：渲染主体在独立模块 v261008-billing.js（window.ERWBilling.render） */
+  async function renderBillingPage(){
+    if(!window.ERWBilling){ $('#main').innerHTML='<div class="card card-pad danger">用量模块未加载（v261008-billing.js）</div>'; return; }
+    await window.ERWBilling.render($('#main'));
+  }
   async function renderSettings(){const cfg=await api('/api/config');state.config=cfg;
-    $('#main').innerHTML=`<div class="settings-layout"><aside class="card settings-nav"><button class="active" data-set-tab="general">基础</button><button data-set-tab="service">服务与存储</button><button data-set-tab="academic">学业与目标</button><button data-set-tab="weather">天气</button><button data-set-tab="rss">资讯源</button><button data-set-tab="llm">Agent / LLM</button><button data-set-tab="interface">界面</button></aside><section class="card settings-panel" id="settings-panel"></section></div>`;
+    $('#main').innerHTML=`<div class="settings-layout"><aside class="card settings-nav"><button class="active" data-set-tab="general">基础</button><button data-set-tab="service">服务与存储</button><button data-set-tab="literature">文献 / PDF</button><button data-set-tab="academic">学业与目标</button><button data-set-tab="weather">天气</button><button data-set-tab="rss">资讯源</button><button data-set-tab="llm">Agent / LLM</button><button data-set-tab="interface">界面</button></aside><section class="card settings-panel" id="settings-panel"></section></div>`;
     $$('[data-set-tab]').forEach(b=>b.onclick=()=>{$$('[data-set-tab]').forEach(x=>x.classList.toggle('active',x===b));renderSettingsTab(b.dataset.setTab,cfg)});renderSettingsTab('general',cfg);
   }
   function renderSettingsTab(tab,cfg){const p=$('#settings-panel'),app=cfg.app,rss=cfg.rss;if(tab==='general'){
@@ -756,8 +1222,83 @@
     }
     else if(tab==='weather'){const w=app.weather||{};p.innerHTML=`<div class="card-head"><div><div class="card-kicker">OPEN-METEO</div><h3>天气设置</h3></div><span class="badge accent">无需 API Key</span></div><div class="form-grid"><div class="field"><label>启用天气</label><select id="w-enabled"><option value="1" ${w.enabled!==false?'selected':''}>启用</option><option value="0" ${w.enabled===false?'selected':''}>关闭</option></select></div><div class="field span-2"><label>地点名称</label><input id="w-location" value="${esc(w.location||'')}"></div><div class="field"><label>纬度</label><input id="w-lat" type="number" step="0.0001" value="${w.latitude??''}"></div><div class="field"><label>经度</label><input id="w-lon" type="number" step="0.0001" value="${w.longitude??''}"></div><div class="field span-2"><label>时区</label><input id="w-tz" value="${esc(w.timezone||'Asia/Shanghai')}"></div></div><div style="margin-top:14px;display:flex;gap:7px"><button class="secondary-btn" id="weather-geocode">根据地点搜索坐标</button><button class="primary-btn" id="weather-save">保存并刷新天气</button></div>`;$('#weather-geocode').onclick=async()=>{const r=await api('/api/weather/geocode?name='+encodeURIComponent($('#w-location').value));if(!r.results?.length)return toast('没有找到地点',true);const x=r.results[0];$('#w-lat').value=x.latitude;$('#w-lon').value=x.longitude;$('#w-tz').value=x.timezone||'auto';toast(`已匹配：${x.name} ${x.admin1||''}`)};$('#weather-save').onclick=async()=>{app.weather={...w,enabled:$('#w-enabled').value==='1',location:$('#w-location').value,latitude:+$('#w-lat').value,longitude:+$('#w-lon').value,timezone:$('#w-tz').value};await api('/api/config/app',{method:'POST',body:app});state.config.app=app;toast('天气设置已保存');loadWeather(true);};}
     else if(tab==='rss'){p.innerHTML=`<div class="card-head"><div><div class="card-kicker">RSS SOURCES</div><h3>资讯源</h3></div><button class="secondary-btn" id="rss-add">＋ 添加</button></div><div id="rss-list">${rss.sources.map((s,i)=>sourceRow(s,i)).join('')}</div><div class="field" style="max-width:260px;margin-top:10px"><label>每源最大条数</label><input id="rss-limit" type="number" value="${rss.max_items_per_source||12}"></div><div style="margin-top:14px"><button class="primary-btn" id="rss-save">保存资讯配置</button></div>`;wireSourceRows();$('#rss-add').onclick=()=>{$('#rss-list').insertAdjacentHTML('beforeend',sourceRow({name:'新资讯源',url:'',enabled:true},$$('.source-row').length));wireSourceRows()};$('#rss-save').onclick=async()=>{const sources=$$('.source-row').map(r=>({name:$('[data-rss-name]',r).value,url:$('[data-rss-url]',r).value,enabled:$('[data-rss-enable]',r).checked}));await api('/api/config/rss',{method:'POST',body:{sources,max_items_per_source:+$('#rss-limit').value||12}});toast('资讯配置已保存')};}
-    else if(tab==='llm'){const llm=app.llm||{};const fallbackPresets=[{id:'default',label:'默认（不附加参数）',params:{}},{id:'qwen-low',label:'Qwen · 低思考',params:{enable_thinking:true,thinking_budget:1024}},{id:'qwen-off',label:'Qwen · 无思考',params:{enable_thinking:false}}];const presets=Array.isArray(llm.request_presets)&&llm.request_presets.length?llm.request_presets:fallbackPresets;const presetText=JSON.stringify(presets,null,2);p.innerHTML=`<div class="card-head"><div><div class="card-kicker">RESEARCH AGENT / OPENAI COMPATIBLE</div><h3>Agent 与模型接口</h3><p class="row-meta">API Key 不写入工作台文件。这里只配置环境变量名称；模型调用时由 Python 进程从操作系统环境变量读取。</p></div><span class="badge ${llm.has_api_key?'accent':'warn'}">${llm.has_api_key?'环境变量已读取':'环境变量未设置'}</span></div><div class="form-grid"><div class="field"><label>接口名称</label><input id="llm-provider" value="${esc(llm.provider_label||'OpenAI-compatible')}" placeholder="OpenAI-compatible"></div><div class="field"><label>启用 Agent</label><select id="llm-enabled"><option value="1" ${llm.enabled?'selected':''}>启用</option><option value="0" ${!llm.enabled?'selected':''}>关闭</option></select></div><div class="field"><label>协议</label><select id="llm-protocol"><option value="chat_completions" ${llm.protocol!=='responses'?'selected':''}>OpenAI-compatible Chat Completions</option><option value="responses" ${llm.protocol==='responses'?'selected':''}>OpenAI Responses API</option></select></div><div class="field span-2"><label>Base URL</label><input id="llm-base" value="${esc(llm.base_url||'https://api.openai.com/v1')}" placeholder="https://api.openai.com/v1"></div><div class="field span-2"><label>API Key 环境变量名称</label><input id="llm-key-env" value="${esc(llm.api_key_env||'OPENAI_API_KEY')}" placeholder="OPENAI_API_KEY"><span class="field-help">例如在启动工作台前设置 OPENAI_API_KEY。工作台不会读取后写回 Key，也不会新建本地密钥文件。</span></div><div class="field span-2"><label>模型</label><input id="llm-model" value="${esc(llm.model||'')}" placeholder="模型 ID"></div><div class="field"><label>显示模型思考过程</label><select id="llm-show-reasoning"><option value="1" ${llm.show_reasoning!==false?'selected':''}>显示（接口返回时）</option><option value="0" ${llm.show_reasoning===false?'selected':''}>隐藏</option></select></div><div class="field"><label>超时 / 秒</label><input id="llm-timeout" type="number" min="5" max="600" value="${Number(llm.timeout||120)}"></div><div class="field"><label>最大输出 tokens（可选）</label><input id="llm-max" type="number" min="0" value="${Number(llm.max_output_tokens||0)}" placeholder="0 = 使用模型默认"></div><div class="field"><label>Temperature（可选）</label><input id="llm-temp" type="number" min="0" max="2" step="0.1" value="${llm.temperature==null?'':Number(llm.temperature)}" placeholder="留空 = 不发送"></div><div class="field"><label>默认请求模式 ID</label><input id="llm-default-preset" value="${esc(llm.default_request_preset||presets[0].id||'default')}" placeholder="default"></div><div class="field span-4"><label>动态请求模式（JSON）</label><textarea id="llm-presets" class="mono" style="min-height:280px">${esc(presetText)}</textarea><span class="field-help">默认提供“默认 / Qwen 低思考 / Qwen 无思考”三套。params 会合并到请求 JSON；可按实际接口修改 enable_thinking、thinking_budget、reasoning_effort 等字段。</span></div><div class="field span-4"><label>系统提示词</label><textarea id="llm-system" style="min-height:130px">${esc(llm.system_prompt||'')}</textarea></div></div><div style="margin-top:14px;display:flex;gap:8px"><button class="primary-btn" id="llm-save">保存模型设置</button><button class="secondary-btn" id="llm-test">测试连接</button></div>`;$('#llm-save').onclick=async()=>{let requestPresets;try{requestPresets=JSON.parse($('#llm-presets').value);if(!Array.isArray(requestPresets)||!requestPresets.length)throw new Error('必须是非空 JSON 数组');const ids=new Set();for(const item of requestPresets){if(!item||typeof item!=='object'||!String(item.id||'').trim()||typeof item.params!=='object'||Array.isArray(item.params))throw new Error('每项必须包含 id、label 和 params 对象');if(ids.has(item.id))throw new Error('预设 id 不能重复：'+item.id);ids.add(item.id)}}catch(e){toast('请求模式 JSON 无效：'+e.message,true);return}app.llm={...llm,provider_label:$('#llm-provider').value.trim()||'OpenAI-compatible',enabled:$('#llm-enabled').value==='1',protocol:$('#llm-protocol').value,base_url:$('#llm-base').value.trim(),api_key_env:$('#llm-key-env').value.trim()||'OPENAI_API_KEY',show_reasoning:$('#llm-show-reasoning').value==='1',model:$('#llm-model').value.trim(),timeout:Math.max(5,Math.min(600,+$('#llm-timeout').value||120)),max_output_tokens:Math.max(0,+$('#llm-max').value||0),temperature:$('#llm-temp').value.trim()===''?null:Math.max(0,Math.min(2,+$('#llm-temp').value||0)),default_request_preset:$('#llm-default-preset').value.trim()||requestPresets[0].id,request_presets:requestPresets,system_prompt:$('#llm-system').value};delete app.llm.api_key;delete app.llm.has_api_key;const saved=await api('/api/config/app',{method:'POST',body:app});state.config.app=saved;cfg.app=saved;state.agentPreset=saved.llm?.default_request_preset||requestPresets[0].id;localStorage.setItem('agentRequestPreset',state.agentPreset);toast('Agent / LLM 设置已保存；API Key 将从环境变量读取')};$('#llm-test').onclick=async()=>{try{$('#llm-test').disabled=true;const r=await api('/api/agent/test',{method:'POST',body:{}});toast(r.models?.length?`连接成功 · ${r.models.slice(0,3).join(' / ')}`:'连接成功')}catch(e){toast(e.message,true)}finally{$('#llm-test').disabled=false}};}
-    else {const ui=app.ui||{};const pins=new Set(ui.sidebar_pinned_groups||[]);p.innerHTML=`<div class="card-head"><div><div class="card-kicker">INTERFACE</div><h3>界面设置</h3></div></div><div class="form-grid"><div class="field"><label>默认主题</label><select id="ui-theme"><option value="light" ${ui.theme==='light'?'selected':''}>明亮</option><option value="dark" ${ui.theme==='dark'?'selected':''}>深色</option></select></div><div class="field"><label>里程碑默认视图</label><select id="ui-ms"><option value="timeline">时间轴</option><option value="3d" ${ui.milestone_default_view==='3d'?'selected':''}>3D 时间线</option><option value="docs" ${ui.milestone_default_view==='docs'?'selected':''}>文档</option></select></div><div class="field"><label>图谱默认视图</label><select id="ui-graph"><option value="2d">2D</option><option value="3d" ${ui.graph_default_view==='3d'?'selected':''}>3D 星图</option></select></div><div class="field"><label>动画</label><select id="ui-anim"><option value="1" ${ui.animations!==false?'selected':''}>启用</option><option value="0" ${ui.animations===false?'selected':''}>关闭</option></select></div><div class="field"><label>科研热力图月份</label><select id="ui-heatmap">${Array.from({length:12},(_,i)=>i+1).map(n=>`<option value="${n}" ${Number(ui.heatmap_months||12)===n?'selected':''}>近 ${n} 个月</option>`).join('')}</select></div><div class="field span-4"><label>侧栏默认常驻展开</label><div class="check-grid">${NAV_GROUPS.map(g=>`<label><input type="checkbox" data-pin-default value="${g.id}" ${pins.has(g.id)?'checked':''}> ${g.label}</label>`).join('')}</div><span class="field-help">侧栏中仍可随时用菱形按钮单独固定；这里决定首次使用或重置后的默认状态。</span></div></div><div style="margin-top:14px"><button class="primary-btn" id="ui-save">保存界面设置</button> <button class="secondary-btn" id="ui-reset-sidebar">应用默认侧栏状态</button></div>`;$('#ui-save').onclick=async()=>{app.ui={...ui,theme:$('#ui-theme').value,milestone_default_view:$('#ui-ms').value,graph_default_view:$('#ui-graph').value,animations:$('#ui-anim').value==='1',heatmap_months:Math.max(1,Math.min(12,+$('#ui-heatmap').value||12)),sidebar_pinned_groups:$$('[data-pin-default]:checked').map(x=>x.value)};state.heatmapMonths=app.ui.heatmap_months;localStorage.setItem('heatmapMonths',String(state.heatmapMonths));await api('/api/config/app',{method:'POST',body:app});state.config.app=app;applyTheme(app.ui.theme);toast('界面设置已保存')};$('#ui-reset-sidebar').onclick=()=>{state.sidebarPinned=new Set($$('[data-pin-default]:checked').map(x=>x.value));state.sidebarOpen=new Set([...state.sidebarPinned,'core']);saveSidebarState();renderSidebar();toast('已应用默认侧栏状态')};}
+    else if(tab==='llm'){const llm=app.llm||{};const fallbackPresets=[{id:'default',label:'默认（不附加参数）',params:{}},{id:'qwen-low',label:'Qwen · 低思考',params:{enable_thinking:true,thinking_budget:1024}},{id:'qwen-off',label:'Qwen · 无思考',params:{enable_thinking:false}}];const presets=Array.isArray(llm.request_presets)&&llm.request_presets.length?llm.request_presets:fallbackPresets;const presetText=JSON.stringify(presets,null,2);p.innerHTML=`<div class="card-head"><div><div class="card-kicker">RESEARCH AGENT / OPENAI COMPATIBLE</div><h3>Agent 与模型接口</h3><p class="row-meta">API Key 不写入工作台配置、不会上传 git。推荐填入本地私密文件 config/secrets.json（自动注入环境变量，保存后自动生效），或直接设置系统环境变量。</p></div><span class="badge ${llm.has_api_key?'accent':'warn'}">${llm.has_api_key?'环境变量已读取':'环境变量未设置'}</span></div><div class="form-grid"><div class="field"><label>接口名称</label><input id="llm-provider" value="${esc(llm.provider_label||'OpenAI-compatible')}" placeholder="OpenAI-compatible"></div><div class="field"><label>启用 Agent</label><select id="llm-enabled"><option value="1" ${llm.enabled?'selected':''}>启用</option><option value="0" ${!llm.enabled?'selected':''}>关闭</option></select></div><div class="field"><label>协议</label><select id="llm-protocol"><option value="chat_completions" ${llm.protocol!=='responses'?'selected':''}>OpenAI-compatible Chat Completions</option><option value="responses" ${llm.protocol==='responses'?'selected':''}>OpenAI Responses API</option></select></div><div class="field span-2"><label>Base URL</label><input id="llm-base" value="${esc(llm.base_url||'https://api.openai.com/v1')}" placeholder="https://api.openai.com/v1"></div><div class="field span-2"><label>API Key 环境变量名称</label><input id="llm-key-env" value="${esc(llm.api_key_env||'OPENAI_API_KEY')}" placeholder="OPENAI_API_KEY"><span class="field-help">推荐把密钥填入项目 config/secrets.json 的 env 对象（本地私密、不上传 git，保存后自动生效）；也可以在启动工作台前设置系统环境变量。工作台不会读取后写回 Key。</span></div><div class="field span-2"><label>模型</label><input id="llm-model" value="${esc(llm.model||'')}" placeholder="模型 ID"></div><div class="field"><label>显示模型思考过程</label><select id="llm-show-reasoning"><option value="1" ${llm.show_reasoning!==false?'selected':''}>显示（接口返回时）</option><option value="0" ${llm.show_reasoning===false?'selected':''}>隐藏</option></select></div><div class="field"><label>多模态 / 截图识别</label><select id="llm-vision"><option value="1" ${llm.vision_enabled?'selected':''}>开启</option><option value="0" ${!llm.vision_enabled?'selected':''}>关闭</option></select><span class="field-help">需模型支持图片输入（如 qwen-vl / gpt-4o 系列）。开启后 PDF 阅读区 AI 面板可用「截取当前页 / 框选区域」代替选中文本，公式与表格提取更准。</span></div><div class="field"><label>超时 / 秒</label><input id="llm-timeout" type="number" min="5" max="600" value="${Number(llm.timeout||120)}"></div><div class="field"><label>最大输出 tokens（可选）</label><input id="llm-max" type="number" min="0" value="${Number(llm.max_output_tokens||0)}" placeholder="0 = 使用模型默认"></div><div class="field"><label>Temperature（可选）</label><input id="llm-temp" type="number" min="0" max="2" step="0.1" value="${llm.temperature==null?'':Number(llm.temperature)}" placeholder="留空 = 不发送"></div><div class="field"><label>默认请求模式 ID</label><input id="llm-default-preset" value="${esc(llm.default_request_preset||presets[0].id||'default')}" placeholder="default"></div><div class="field span-4"><label>动态请求模式（JSON）</label><textarea id="llm-presets" class="mono" style="min-height:280px">${esc(presetText)}</textarea><span class="field-help">默认提供“默认 / Qwen 低思考 / Qwen 无思考”三套。params 会合并到请求 JSON；可按实际接口修改 enable_thinking、thinking_budget、reasoning_effort 等字段。</span></div><div class="field span-4"><label>系统提示词</label><textarea id="llm-system" style="min-height:130px">${esc(llm.system_prompt||'')}</textarea></div></div><div style="margin-top:14px;display:flex;gap:8px"><button class="primary-btn" id="llm-save">保存模型设置</button><button class="secondary-btn" id="llm-test">测试连接</button></div>`;$('#llm-save').onclick=async()=>{let requestPresets;try{requestPresets=JSON.parse($('#llm-presets').value);if(!Array.isArray(requestPresets)||!requestPresets.length)throw new Error('必须是非空 JSON 数组');const ids=new Set();for(const item of requestPresets){if(!item||typeof item!=='object'||!String(item.id||'').trim()||typeof item.params!=='object'||Array.isArray(item.params))throw new Error('每项必须包含 id、label 和 params 对象');if(ids.has(item.id))throw new Error('预设 id 不能重复：'+item.id);ids.add(item.id)}}catch(e){toast('请求模式 JSON 无效：'+e.message,true);return}app.llm={...llm,provider_label:$('#llm-provider').value.trim()||'OpenAI-compatible',enabled:$('#llm-enabled').value==='1',protocol:$('#llm-protocol').value,base_url:$('#llm-base').value.trim(),api_key_env:$('#llm-key-env').value.trim()||'OPENAI_API_KEY',show_reasoning:$('#llm-show-reasoning').value==='1',vision_enabled:$('#llm-vision').value==='1',model:$('#llm-model').value.trim(),timeout:Math.max(5,Math.min(600,+$('#llm-timeout').value||120)),max_output_tokens:Math.max(0,+$('#llm-max').value||0),temperature:$('#llm-temp').value.trim()===''?null:Math.max(0,Math.min(2,+$('#llm-temp').value||0)),default_request_preset:$('#llm-default-preset').value.trim()||requestPresets[0].id,request_presets:requestPresets,system_prompt:$('#llm-system').value};delete app.llm.api_key;delete app.llm.has_api_key;const saved=await api('/api/config/app',{method:'POST',body:app});state.config.app=saved;cfg.app=saved;state.agentPreset=saved.llm?.default_request_preset||requestPresets[0].id;localStorage.setItem('agentRequestPreset',state.agentPreset);toast('Agent / LLM 设置已保存；API Key 将从环境变量读取')};$('#llm-test').onclick=async()=>{try{$('#llm-test').disabled=true;const r=await api('/api/agent/test',{method:'POST',body:{}});toast(r.models?.length?`连接成功 · ${r.models.slice(0,3).join(' / ')}`:'连接成功')}catch(e){toast(e.message,true)}finally{$('#llm-test').disabled=false}};}
+    else if(tab==='literature'){renderLiteratureSettings(p);return}
+    else {const ui=app.ui||{};const pins=new Set(ui.sidebar_pinned_groups||[]);p.innerHTML=`<div class="card-head"><div><div class="card-kicker">INTERFACE</div><h3>界面设置</h3></div></div><div class="form-grid cols-5"><div class="field"><label>默认主题</label><select id="ui-theme"><option value="light" ${ui.theme==='light'?'selected':''}>明亮</option><option value="dark" ${ui.theme==='dark'?'selected':''}>深色</option></select></div><div class="field"><label>里程碑默认视图</label><select id="ui-ms"><option value="timeline">时间轴</option><option value="3d" ${ui.milestone_default_view==='3d'?'selected':''}>3D 时间线</option><option value="docs" ${ui.milestone_default_view==='docs'?'selected':''}>文档</option></select></div><div class="field"><label>图谱默认视图</label><select id="ui-graph"><option value="2d">2D</option><option value="3d" ${ui.graph_default_view==='3d'?'selected':''}>3D 星图</option></select></div><div class="field"><label>动画</label><select id="ui-anim"><option value="1" ${ui.animations!==false?'selected':''}>启用</option><option value="0" ${ui.animations===false?'selected':''}>关闭</option></select></div><div class="field"><label>科研热力图月份</label><select id="ui-heatmap">${(()=>{const hm=Number(ui.heatmap_months||12);const cs=HEATMAP_MONTH_OPTIONS.includes(hm)?HEATMAP_MONTH_OPTIONS:[...HEATMAP_MONTH_OPTIONS,hm].sort((a,b)=>a-b);return cs.map(n=>`<option value="${n}" ${hm===n?'selected':''}>近 ${n} 个月</option>`).join('')})()}</select></div><div class="field span-4"><label>侧栏默认常驻展开</label><div class="check-grid">${NAV_GROUPS.map(g=>`<label><input type="checkbox" data-pin-default value="${g.id}" ${pins.has(g.id)?'checked':''}> ${g.label}</label>`).join('')}</div><span class="field-help">侧栏中仍可随时用菱形按钮单独固定；这里决定首次使用或重置后的默认状态。</span></div></div><div style="margin-top:14px"><button class="primary-btn" id="ui-save">保存界面设置</button> <button class="secondary-btn" id="ui-reset-sidebar">应用默认侧栏状态</button></div>`;$('#ui-save').onclick=async()=>{app.ui={...ui,theme:$('#ui-theme').value,milestone_default_view:$('#ui-ms').value,graph_default_view:$('#ui-graph').value,animations:$('#ui-anim').value==='1',heatmap_months:Math.max(1,Math.min(12,+$('#ui-heatmap').value||12)),sidebar_pinned_groups:$$('[data-pin-default]:checked').map(x=>x.value)};state.heatmapMonths=app.ui.heatmap_months;localStorage.setItem('heatmapMonths',String(state.heatmapMonths));await api('/api/config/app',{method:'POST',body:app});state.config.app=app;applyTheme(app.ui.theme);toast('界面设置已保存')};$('#ui-reset-sidebar').onclick=()=>{state.sidebarPinned=new Set($$('[data-pin-default]:checked').map(x=>x.value));state.sidebarOpen=new Set([...state.sidebarPinned,'core']);saveSidebarState();renderSidebar();toast('已应用默认侧栏状态')};}
+  }
+  /* v260929 · 设置 · 文献 / PDF：PDF 存放路径查看/修改/迁移、打开文件夹、重建关联入口 + AI 阅读助手（启用/请求模式/目标语言/风格指令/输入上限） */
+  /* v260929x · 预设动作内置提示词（与 agent.py _ASSIST_PROMPTS 同源，仅作占位提示与「恢复默认」参照；实际默认以后端为准） */
+  const LIT_PROMPT_DEFAULTS={
+    translate:'你是科研文献翻译助手。将用户提供的学术内容准确翻译为目标语言：专业术语首次出现时在括号内保留原文；公式、变量、单位、人名保持原样。只输出译文本身，不要任何解释或原文重复。',
+    summarize:'你是科研文献阅读助手。用中文对用户提供的内容做要点总结：提炼核心观点、方法与结论，输出为简洁的 Markdown 列表；只依据给定内容，不得编造其中不存在的信息。',
+    organize:'你是科研知识整理助手。把用户提供的内容整理为结构化中文知识笔记（Markdown 分节）：核心要点、关键术语、方法/数据、可引用结论；条目化并保留关键数字与公式；只依据给定内容，不得编造。',
+    polish:'你是科研笔记编辑助手。整理润色用户提供的文献笔记（Markdown）：统一为清晰的结构（如 摘要/要点/方法/结论/摘录），修正错别字与冗余表达；必须保留用户笔记中的全部原有信息，不得删改实质内容，不得添加虚构内容。'
+  };
+  /* v260929b · 自定义 AI 动作编辑行：名称 + 提示词 + 删除；id 藏在隐藏域，保存时保持稳定 */
+  function litCaRow(x={}){return `<div class="lit-ca-row" data-ca-row><input type="hidden" data-ca-id value="${esc(x.id||'')}"><input class="search-input" data-ca-name value="${esc(x.name||'')}" placeholder="动作名称（如：提取公式）" style="max-width:200px"><textarea class="search-input" data-ca-prompt rows="2" style="min-height:52px" placeholder="提示词：写明任务要求与输出格式，如「提取选文中的全部公式，逐条给出 LaTeX 与一句说明」">${esc(x.prompt||'')}</textarea><button class="ghost-btn danger" type="button" data-ca-del>删除</button></div>`}
+  async function renderLiteratureSettings(p){
+    let st={pdf_dir:'',is_default:true,file_count:0,total_bytes:0,note_images_dir:'',note_images_is_default:true,note_images_count:0};
+    try{st=await api('/api/literature/storage')}catch(e){}
+    const mb=((st.total_bytes||0)/1048576).toFixed(1);
+    const llm=state.config?.app?.llm||{},as=llm.assist||{};
+    const presets=Array.isArray(llm.request_presets)&&llm.request_presets.length?llm.request_presets:[{id:'',label:'默认（不附加参数）'}];
+    const selPreset=as.request_preset&&presets.some(x=>x.id===as.request_preset)?as.request_preset:(presets[0]?.id||'');
+    const tempOv=as.temperature_override==null?'':Number(as.temperature_override);
+    p.innerHTML=`<div class="card-head"><div><div class="card-kicker">LITERATURE / PDF</div><h3>文献 PDF 附件</h3><p class="row-meta">PDF 附件统一存放在下方目录；阅读工作区、附件登记与重建关联都以此为基准。批注、笔记与索引仍保存在 Workspace 的 Knowledge/Literature 下，不受此路径影响。</p></div><span class="badge ${st.is_default?'':'accent'}">${st.is_default?'默认路径':'自定义路径'}</span></div>
+    <div class="form-grid"><div class="field span-4"><label>当前 PDF 存放路径</label><input value="${esc(st.pdf_dir||'')}" readonly><span class="field-help">现有 PDF：${st.file_count||0} 个 · 共 ${mb} MB${st.is_default?' · 默认目录 Workspace/Knowledge/Literature/PDF':''}</span></div>
+    <div class="field span-4"><label>新的存放路径</label><input id="lit-pdf-dir" placeholder="例如 D:\\Papers\\PDF（绝对路径）或 Knowledge/Literature/PDF（相对 Workspace）"><span class="field-help">支持 Workspace 内相对路径或任意绝对路径；目录不存在会自动创建。留空保存 = 恢复默认目录。</span></div>
+    <div class="field span-4"><label class="field-check-label"><input type="checkbox" id="lit-pdf-move" checked> 保存时迁移现有 PDF 到新目录，并回写文献条目的附件指向</label><span class="field-help">按上方「新的存放路径」执行迁移；Workspace 内为移动，外部路径保留原件复制。</span></div>
+    <div class="field span-4"><label>笔记图片存放目录（批注截图入笔记 / 笔记插图）</label><input id="lit-noteimg-dir" value="${esc(st.note_images_dir||'')}" placeholder="例如 Knowledge/Literature/Images（相对 Workspace）或 D:\\Notes\\Images"><span class="field-help">阅读区「批注加入笔记」与笔记「插入图片」上传的图片统一存到这里；支持 Workspace 相对路径或任意绝对路径，仅影响之后上传的图片（现有 ${st.note_images_count||0} 张不迁移）。留空 = 默认 Workspace/Knowledge/Literature/Images。</span></div></div>
+    <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap"><button class="primary-btn" id="lit-pdf-save">保存并应用</button><button class="secondary-btn" id="lit-noteimg-save">保存图片目录</button><button class="secondary-btn" id="lit-pdf-open">打开 PDF 文件夹</button><button class="secondary-btn" id="lit-pdf-rebuild" title="以文献条目为准，补齐 PDF 工作区关联与登记">重建关联</button></div>
+    <p class="field-help" style="margin-top:8px">重建关联：以文献条目的附件记录为准，把未登记的 PDF 迁入上方存放目录统一保管（Workspace 内为移动，外部路径保留原件复制），并补齐「条目 ↔ PDF」双向关联；幂等可重复执行，批注与笔记不受影响。</p>
+    <div class="section-title" style="margin-top:22px"><div><h3>AI 阅读助手</h3><p>控制 PDF 阅读区的选中文本 AI 处理（翻译 / 总结 / 整理 / 笔记润色 / 自定义指令）。模型接口沿用「Agent / LLM」中启用的配置，此处仅调整阅读场景的行为参数。</p></div><span class="badge ${as.enabled===false?'warn':'accent'}">${as.enabled===false?'已关闭':'已启用'}</span></div>
+    <div class="form-grid">
+    <div class="field"><label>启用 AI 阅读助手</label><select id="lit-ai-enabled"><option value="1" ${as.enabled!==false?'selected':''}>启用</option><option value="0" ${as.enabled===false?'selected':''}>关闭</option></select></div>
+    <div class="field span-2"><label>请求模式</label><select id="lit-ai-preset">${presets.map(x=>`<option value="${esc(x.id)}" ${selPreset===x.id?'selected':''}>${esc(x.label||x.id)}${x.model?' · '+esc(x.model):''}</option>`).join('')}</select><span class="field-help">请求模式 = 一套模型 + 参数组合，在「Agent / LLM」中维护；未另行选择时默认使用列表第一个请求模式。</span></div>
+    <div class="field"><label>翻译目标语言</label><input id="lit-ai-lang" value="${esc(as.target_language||'中文')}" placeholder="中文"><span class="field-help">作用于工具栏「AI 翻译」。</span></div>
+    <div class="field span-2"><label>模型覆盖（可选）</label><input id="lit-ai-model" value="${esc(as.model_override||'')}" placeholder="留空 = 使用所选请求模式的模型"><span class="field-help">填写模型 ID 后无视所选请求模式的模型，直接使用它（例如换用更快的模型做翻译）。</span></div>
+    <div class="field"><label>Temperature 覆盖（可选）</label><input id="lit-ai-temp" type="number" min="0" max="2" step="0.1" value="${tempOv}" placeholder="留空 = 沿用请求模式"><span class="field-help">0–2；留空沿用所选请求模式的温度。</span></div>
+    <div class="field"><label>最大输入字符</label><input id="lit-ai-max" type="number" min="1000" max="60000" value="${Number(as.max_chars||24000)}"><span class="field-help">选中内容超出该长度会被截断（1000–60000）。</span></div>
+    <div class="field span-4"><label>附加请求参数 JSON（可选）</label><textarea id="lit-ai-extra" class="mono" style="min-height:70px">${esc(JSON.stringify(as.extra_params||{},null,0)==='{}'?'':JSON.stringify(as.extra_params,null,2))}</textarea><span class="field-help">合并进请求体的额外参数（JSON 对象），如 {"enable_thinking": false} 或 {"thinking_budget": 1024}；model / messages / stream 不可在此覆盖。</span></div>
+    <div class="field span-4"><label>附加风格指令（可选）</label><textarea id="lit-ai-style" style="min-height:90px">${esc(as.style_instruction||'')}</textarea><span class="field-help">追加到所有 AI 动作的系统提示词末尾。如：输出保持简洁；翻译保留术语对照表；总结按「结论 / 依据 / 局限」分节。</span></div>
+    <div class="field span-4"><label>预设动作提示词覆盖（可选，留空用内置默认）</label><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;margin-top:6px">${[['translate','AI 翻译'],['summarize','AI 总结'],['organize','AI 整理'],['polish','AI 笔记润色']].map(([k,label])=>`<label style="display:block;font-size:12px;opacity:.85">${label}<textarea id="lit-ai-prompt-${k}" rows="4" style="min-height:84px;margin-top:4px" placeholder="${esc(LIT_PROMPT_DEFAULTS[k])}">${esc((as.prompts||{})[k]||'')}</textarea></label>`).join('')}</div><span class="field-help">整段替换对应动作的内置系统提示词（占位灰字即默认内容）；「AI 翻译」的目标语言仍按上方「翻译目标语言」追加。约束示例（翻译）：完全翻译为中文，以下专业名词保留英文原文不翻译：U-Net、SNR、RoI；公式、变量与单位一律原样保留。</span></div>
+    </div>
+    <div class="section-title" style="margin-top:18px"><div><h3>自定义 AI 动作</h3><p>添加个性化阅读动作（最多 12 个）：填动作名称与提示词，保存后出现在 PDF 阅读区 AI 面板，选中文本一键执行。提示词写明任务要求与输出格式；模型 / 温度 / 附加参数沿用上方请求模式与覆盖设置。</p></div><button class="secondary-btn" id="lit-ca-add">＋ 添加动作</button></div>
+    <div id="lit-ca-list">${(Array.isArray(as.custom_actions)?as.custom_actions:[]).map(litCaRow).join('')}</div>
+    <div style="margin-top:12px"><button class="primary-btn" id="lit-ai-save">保存 AI 助手设置</button></div>`;
+    $('#lit-pdf-save').onclick=async()=>{
+      const dir=$('#lit-pdf-dir').value.trim(),move=$('#lit-pdf-move').checked;
+      if(move&&!confirm(`将把现有 PDF 迁移到「${dir||'默认目录 Knowledge/Literature/PDF'}」并回写文献条目的附件指向。继续？`))return;
+      try{
+        const r=await api('/api/literature/storage',{method:'POST',body:{pdf_dir:dir,move_existing:move}});
+        toast(`已保存：迁移 ${r.moved||0} 个 PDF（跳过 ${r.skipped||0}），更新 ${r.updated||0} 条附件指向`);
+        renderLiteratureSettings(p);
+      }catch(e){toast(e.message||'保存失败',true)}
+    };
+    $('#lit-noteimg-save').onclick=async()=>{ /* v260929f · 笔记图片目录单独保存，不动 PDF 目录 */
+      try{
+        const r=await api('/api/literature/storage',{method:'POST',body:{note_images_dir:$('#lit-noteimg-dir').value.trim()}});
+        toast(`笔记图片目录已保存：${r.note_images_dir||'默认目录'}`);
+        renderLiteratureSettings(p);
+      }catch(e){toast(e.message||'保存失败',true)}
+    };
+    $('#lit-ai-save').onclick=async()=>{ /* v260929 · AI 阅读助手设置写入 app.llm.assist，随 /api/config/app 持久化 */
+      let extra={};
+      const rawExtra=$('#lit-ai-extra').value.trim();
+      if(rawExtra){try{extra=JSON.parse(rawExtra);if(!extra||typeof extra!=='object'||Array.isArray(extra))throw new Error('必须是 JSON 对象')}catch(e){toast('附加请求参数 JSON 无效：'+e.message,true);return}}
+      const rawTemp=$('#lit-ai-temp').value.trim();
+      const app=state.config.app,cur=app.llm||{};
+      const cas=$$('#lit-ca-list [data-ca-row]').map(r=>({id:$('[data-ca-id]',r).value||('ca-'+Math.random().toString(36).slice(2,10)),name:$('[data-ca-name]',r).value.trim(),prompt:$('[data-ca-prompt]',r).value.trim()})).filter(x=>x.name&&x.prompt); /* v260929b · 自定义动作随保存写入 */
+      cur.assist={enabled:$('#lit-ai-enabled').value==='1',request_preset:$('#lit-ai-preset').value,model_override:$('#lit-ai-model').value.trim(),temperature_override:rawTemp===''?null:Math.max(0,Math.min(2,+rawTemp||0)),extra_params:extra,target_language:$('#lit-ai-lang').value.trim()||'中文',style_instruction:$('#lit-ai-style').value.trim(),max_chars:Math.max(1000,Math.min(60000,+$('#lit-ai-max').value||24000)),custom_actions:cas,prompts:Object.fromEntries(['translate','summarize','organize','polish'].map(k=>[k,$('#lit-ai-prompt-'+k).value.trim()]).filter(([,v])=>v))}; /* v260929x · 预设动作提示词覆盖随保存写入（空值不存 = 用内置默认） */
+      app.llm=cur;
+      const saved=await api('/api/config/app',{method:'POST',body:app});
+      state.config.app=saved;toast('AI 阅读助手设置已保存');
+      renderLiteratureSettings(p);
+    };
+    const wireCa=()=>{$$('#lit-ca-list [data-ca-del]').forEach(b=>b.onclick=()=>b.closest('[data-ca-row]').remove())};wireCa(); /* v260929b · 自定义动作行增删 */
+    $('#lit-ca-add').onclick=()=>{const list=$('#lit-ca-list');if($$('#lit-ca-list [data-ca-row]').length>=12)return toast('自定义动作最多 12 个',true);list.insertAdjacentHTML('beforeend',litCaRow({id:'ca-'+Math.random().toString(36).slice(2,10)}));wireCa()};
+    $('#lit-pdf-open').onclick=async()=>{try{await api('/api/literature/open-folder',{method:'POST',body:{}})}catch(e){toast(e.message||'打开失败',true)}};
+    $('#lit-pdf-rebuild').onclick=rebuildLiteratureLinks;
   }
   function conditionEditRow(x={}){return `<div class="condition-edit-row"><input class="search-input" data-cond-label value="${esc(x.label||'')}" placeholder="例如：期刊论文"><input class="search-input" data-cond-current type="number" min="0" step="0.1" value="${Number(x.current||0)}"><input class="search-input" data-cond-target type="number" min="0" step="0.1" value="${Number(x.target||0)}"><input class="search-input" data-cond-unit value="${esc(x.unit||'')}" placeholder="篇 / 项"><button class="ghost-btn danger" type="button" data-cond-del>删除</button></div>`}
   function sourceRow(s,i){return `<div class="source-row"><input class="search-input" data-rss-name value="${esc(s.name)}"><input class="search-input" data-rss-url value="${esc(s.url)}"><label class="badge"><input type="checkbox" data-rss-enable ${s.enabled!==false?'checked':''}> 启用</label><button class="ghost-btn danger" data-rss-del>删除</button></div>`}
@@ -777,12 +1318,23 @@
   function bindGlobal(){
     $('#modal-close').onclick=closeModal;$('#modal-backdrop').addEventListener('click',e=>{if(e.target===$('#modal-backdrop'))closeModal()});
     $('#theme-btn').onclick=()=>applyTheme(document.documentElement.dataset.theme==='dark'?'light':'dark');
-    $('#global-search-btn').onclick=openGlobalSearch;
+    $('#zoom-btn').onclick=()=>$('#zoom-menu').classList.toggle('hidden');
+    $$('[data-zoom]').forEach(b=>b.onclick=()=>{applyUiScale(b.dataset.zoom);$('#zoom-menu').classList.add('hidden')});
+    applyUiScale(state.uiScale);
+    window.addEventListener('resize',syncViewportVars); /* v260929g · 窗口尺寸变化时同步折算视口变量 */
+    /* v260922h · 密度默认紧凑型（并排一屏收纳）；手动切换后记忆用户选择 */
+    $('#density-btn').onclick=()=>{const v=state.density==='cozy'?'compact':'cozy';localStorage.setItem('pageDensityManual','1');localStorage.setItem('pageDensity',v);applyDensity(v);fitResearchHeatmap();};
+    const savedDensity=localStorage.getItem('pageDensity'), manualDensity=localStorage.getItem('pageDensityManual')==='1';
+    applyDensity(manualDensity&&savedDensity?savedDensity:'compact'); /* v260922h · 默认紧凑型：并排一屏、免滚动 */
+    $('#global-search-btn').onclick=()=>openGlobalSearch();
     document.addEventListener('keydown',e=>{const mod=e.ctrlKey||e.metaKey,key=e.key.toLowerCase();if(mod&&key==='s'&&$('#md-input')&&state.selectedDoc){e.preventDefault();$('#doc-save')?.click();return}if(mod&&key==='k'){e.preventDefault();openGlobalSearch();}});
     $('#reload-btn').onclick=()=>systemAction('reload');$('#reload-menu-btn').onclick=()=>$('#reload-menu').classList.toggle('hidden');$$('[data-system-action]').forEach(b=>b.onclick=()=>{ $('#reload-menu').classList.add('hidden');systemAction(b.dataset.systemAction)});
-    document.addEventListener('click',e=>{if(!e.target.closest('.reload-wrap'))$('#reload-menu').classList.add('hidden')});
+    document.addEventListener('click',e=>{if(!e.target.closest('.reload-wrap'))$('#reload-menu').classList.add('hidden');if(!e.target.closest('.zoom-wrap'))$('#zoom-menu').classList.add('hidden')});
     window.addEventListener('beforeunload',e=>{if(state.dirty){e.preventDefault();e.returnValue=''}});
     window.addEventListener('hashchange',()=>{const r=location.hash.slice(1)||'overview';if(r!==state.route)navigate(r)});
+    /* v260929 · PDF 工作区「返回文献列表」事件：启动即注册（此前挂在 openLiteratureWorkspace 内，
+       从附件徽章进入时无人监听，点击返回无反应）；hash 未变不触发路由，须显式重渲染列表页 */
+    window.addEventListener('erw-lit-back',()=>renderDocsPage('literature'));
   }
 
   async function init(){ try{bindGlobal();await loadBootstrap();renderSidebar();loadWeather();const route=location.hash.slice(1)||'overview';await navigate(route);}catch(e){console.error(e);$('#main').innerHTML=`<div class="card card-pad danger">初始化失败：${esc(e.message)}<br><span class="muted">确认已使用 <span class="mono">python server.py</span> 启动工程。</span></div>`;} }

@@ -5,16 +5,21 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#087f83">
   <title>科研工作台</title>
-  <link rel="stylesheet" href="/styles.css">
-  <link rel="stylesheet" href="/literature.css">
-  <link rel="stylesheet" href="/v260922-projects.css">
-  <link rel="stylesheet" href="/v260922-compact-layout.css">
-  <link rel="stylesheet" href="/v260922-overview-editor-tools.css">
-  <link rel="stylesheet" href="/v260922-performance.css">
-  <link rel="stylesheet" href="/v260922-graph-performance.css">
-  <link rel="stylesheet" href="/v260922-agent-profiles.css">
-  <link rel="stylesheet" href="/v260922-layout-bugfixes.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/styles/github.min.css" onerror="this.onerror=null;this.href='https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css'">
+  <link rel="icon" type="image/png" href="/favicon.png?v=260923">
+  <link rel="apple-touch-icon" href="/favicon.png?v=260923">
+  <!-- v260924g · CSS 引用带版本参数，避免 WebView 缓存旧样式；本次随分页排版/滚动同步锁修复升级 -->
+  <link rel="stylesheet" href="/styles.css?v=260929h"><!-- v260929h · 设置页导航 sticky 阈值改为等于内容自然起点（宽屏紧凑 92=topbar 82+padding 10），修页顶左右卡片顶边错位 6px；按密度×断点四组对齐。上版：高度改用 zoom 折算视口变量 -->
+  <link rel="stylesheet" href="/literature.css?v=260929j"><!-- v260929j · 批注编辑卡片操作行（加入笔记 / 附带截图勾选）样式；上版：AI 面板截图入口与待处理截图预览样式 -->
+  <link rel="stylesheet" href="/v260922-projects.css?v=260924g">
+  <link rel="stylesheet" href="/v260922-compact-layout.css?v=260924g">
+  <link rel="stylesheet" href="/v260922-overview-editor-tools.css?v=260924g">
+  <link rel="stylesheet" href="/v260922-performance.css?v=260924g">
+  <link rel="stylesheet" href="/v260922-graph-performance.css?v=260924g">
+  <link rel="stylesheet" href="/v260922-agent-profiles.css?v=260929d">
+  <link rel="stylesheet" href="/v260922-layout-bugfixes.css?v=260924g">
+  <link rel="stylesheet" href="/v260930-floating-agent.css?v=260930n"><!-- v260930n · 历史列表归档/删除操作样式；上版：停止按钮样式 -->
+  <link rel="stylesheet" href="/v261008-billing.css?v=261008"><!-- v261008 · 用量计费仪表盘样式 -->
+  <link rel="stylesheet" href="/vendor/github.min.css" onerror="this.onerror=null;this.href='https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css'">
   <script>
     window.MathJax = {
       tex: {
@@ -26,11 +31,11 @@
       options: {skipHtmlTags: ['script','noscript','style','textarea','pre','code']}
     };
   </script>
-  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js" onerror="this.onerror=null;this.src='https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.min.js'"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/marked@15.0.12/marked.min.js" onerror="this.onerror=null;this.src='https://unpkg.com/marked@15.0.12/marked.min.js'"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js" onerror="this.onerror=null;this.src='https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.6/purify.min.js'"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/lib/common.min.js" onerror="this.onerror=null;this.src='https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js'"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js" onerror="this.onerror=null;this.src='https://unpkg.com/mermaid@11.4.1/dist/mermaid.min.js'"></script>
+  <script defer src="/vendor/mathjax-tex-svg.js" onerror="this.onerror=null;this.src='https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.min.js'"></script>
+  <script defer src="/vendor/marked.min.js" onerror="this.onerror=null;this.src='https://unpkg.com/marked@15.0.12/marked.min.js'"></script>
+  <script defer src="/vendor/purify.min.js" onerror="this.onerror=null;this.src='https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.6/purify.min.js'"></script>
+  <script defer src="/vendor/highlight-umd.min.js" onerror="this.onerror=null;this.src='https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js'"></script>
+  <script defer src="/vendor/mermaid.min.js" onerror="this.onerror=null;this.src='https://unpkg.com/mermaid@11.4.1/dist/mermaid.min.js'"></script>
 </head>
 <body>
   <div id="app" class="app-shell">
@@ -62,6 +67,17 @@
             <span class="status-dot"></span><span id="weather-text">天气加载中</span>
           </button>
           <button class="icon-btn" id="theme-btn" type="button" title="切换主题">◐</button>
+          <button class="density-pill" id="density-btn" type="button" title="当前：紧凑型（热力图与学业卡并排、一屏收纳免滚动）。点击切换为宽松型">紧凑型</button>
+          <div class="zoom-wrap">
+            <button class="zoom-pill" id="zoom-btn" type="button" title="界面缩放">100%</button>
+            <div class="dropdown hidden" id="zoom-menu">
+              <button type="button" data-zoom="80">80% · 紧凑</button>
+              <button type="button" data-zoom="90">90% · 偏小</button>
+              <button type="button" data-zoom="100">100% · 默认</button>
+              <button type="button" data-zoom="110">110% · 偏大</button>
+              <button type="button" data-zoom="125">125% · 宽松</button>
+            </div>
+          </div>
           <div class="reload-wrap">
             <button class="primary-btn reload-btn" id="reload-btn" type="button" title="重新读取所有配置并刷新本地缓存">↻ Reload</button>
             <button class="primary-btn reload-menu-btn" id="reload-menu-btn" type="button" aria-label="Reload 菜单">⌄</button>
@@ -85,14 +101,16 @@
     </section>
   </div>
 
-  <script defer src="/v260922-performance.js"></script>
-  <script defer src="/app.js"></script>
-  <script defer src="/literature.js"></script>
+  <script defer src="/v260922-performance.js?v=260924g"></script><!-- v260924g · 分页文案/排版修复，版本参数防缓存 -->
+  <script defer src="/app.js?v=261008g2"></script><!-- v261008g2 · 侧栏新增「用量」页（用量计费）；上版：笔记页「打开原文件」选择 VS Code / Typora -->
+  <script defer src="/literature.js?v=260930n"></script><!-- v260930n · 修复框选失效（move/up 未挂载）+ Esc/取消时释放截图等待；上版：ERWCapture 桥 -->
   <script defer src="/v260922-projects.js"></script>
   <script defer src="/v260922-overview-editor-tools.js"></script>
-  <script defer src="/v260922-graph-performance.js"></script>
+  <script defer src="/v260922-graph-performance.js?v=260929w"></script>
   <script defer src="/v260922-overview-graph.js"></script>
-  <script defer src="/v260922-agent-profiles.js"></script>
+  <script defer src="/v260922-agent-profiles.js?v=260930g3"></script><!-- v260930g3 · 设置页顶部「AI 助手人设」锚点入口 + 统一提示词与人设提示词区分说明；上版：请求模式行可折叠 -->
+  <script defer src="/v260930-floating-agent.js?v=260930n"></script><!-- v260930n · 历史列表会话归档/删除+分组；上版：done 立即收尾（修卡停止） -->
   <script defer src="/v260922-layout-bugfixes.js"></script>
+  <script defer src="/v261008-billing.js?v=261008"></script><!-- v261008 · 用量计费仪表盘（window.ERWBilling） -->
 </body>
 </html>

@@ -10,7 +10,7 @@ from typing import Any
 
 from . import workspace
 
-SCHEMA_VERSION=1
+SCHEMA_VERSION=2  # v260923 · documents 表新增 attachment 列（文献 PDF 附件）
 WORKSPACE_SCHEMA_VERSION=3
 SYNC_INTERVAL_SECONDS=30.0
 DEFAULT_PAGE_SIZE=50
@@ -133,7 +133,8 @@ def _init_db(conn: sqlite3.Connection) -> None:
             venue TEXT NOT NULL DEFAULT '',
             doi TEXT NOT NULL DEFAULT '',
             url TEXT NOT NULL DEFAULT '',
-            cite_key TEXT NOT NULL DEFAULT ''
+            cite_key TEXT NOT NULL DEFAULT '',
+            attachment TEXT NOT NULL DEFAULT ''
         );
         CREATE INDEX IF NOT EXISTS idx_documents_kind_updated ON documents(kind, updated DESC);
         CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status);
@@ -207,12 +208,19 @@ def _init_db(conn: sqlite3.Connection) -> None:
     )
 
     row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
+    upgraded = False
     if not row or int(row[0] or 0) != SCHEMA_VERSION:
+        upgraded = True
         conn.execute(
             "INSERT INTO meta(key,value) VALUES('schema_version',?) "
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
             (str(SCHEMA_VERSION),),
         )
+    # v260923 · 旧库补 attachment 列（新库建表已自带）；补列后由 initialize 强制重建索引回填
+    cols = {str(r[1]) for r in conn.execute("PRAGMA table_info(documents)")}
+    if "attachment" not in cols:
+        conn.execute("ALTER TABLE documents ADD COLUMN attachment TEXT NOT NULL DEFAULT ''")
+        upgraded = True
 
     fts_exists = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='documents_fts'"
@@ -237,3 +245,4 @@ def _init_db(conn: sqlite3.Connection) -> None:
         text = str(sql[0] if sql else "")
         _FTS_TOKENIZER = "trigram" if "trigram" in text else "unicode61"
     conn.commit()
+    return upgraded

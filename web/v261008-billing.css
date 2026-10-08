@@ -1,0 +1,25 @@
+/* v261008 · 用量计费仪表盘样式（与既有卡片/按钮体系保持一致，仅补充专有布局） */
+.billing-page{display:flex;flex-direction:column;gap:16px}
+.billing-tabs{display:flex;gap:6px;margin-bottom:2px}
+.billing-tabs button{border:1px solid var(--line,#e3e6ea);background:transparent;color:inherit;border-radius:8px;padding:6px 14px;cursor:pointer;font-size:13px}
+.billing-tabs button.active{background:var(--accent,#087f83);border-color:var(--accent,#087f83);color:#fff}
+.billing-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+.billing-card{border:1px solid var(--line,#e3e6ea);border-radius:10px;padding:14px 16px;background:var(--card,#fff)}
+.billing-card .k{font-size:12px;opacity:.65;margin-bottom:6px}
+.billing-card .v{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums}
+.billing-card .s{font-size:12px;opacity:.6;margin-top:4px}
+.billing-table{width:100%;border-collapse:collapse;font-size:13px}
+.billing-table th,.billing-table td{border-bottom:1px solid var(--line,#eef0f2);padding:7px 10px;text-align:left;vertical-align:top}
+.billing-table th{font-weight:600;opacity:.7;white-space:nowrap}
+.billing-table td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.billing-table tr:hover td{background:rgba(127,127,127,.06)}
+.billing-scroll{max-height:420px;overflow:auto;border:1px solid var(--line,#eef0f2);border-radius:10px}
+.billing-muted{opacity:.6}
+.billing-warn{color:#b7791f}
+.billing-sub{font-size:12px;opacity:.6}
+.billing-prices textarea{width:100%;min-height:340px;font-family:ui-monospace,Consolas,monospace;font-size:12.5px}
+.billing-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center}
+.billing-badge{display:inline-block;padding:1px 7px;border-radius:999px;font-size:11px;border:1px solid var(--line,#e3e6ea)}
+/* v261008b · 订阅/免费计费方式徽标：与「按量」区分开，避免被当成缺单价 */
+.billing-badge.billing-mode{color:var(--accent-ink,#06595c);border-color:color-mix(in srgb,var(--accent,#087f83) 40%,var(--line,#e3e6ea));background:color-mix(in srgb,var(--accent,#087f83) 12%,transparent)}
+.billing-addprice{padding:2px 10px;font-size:12px}

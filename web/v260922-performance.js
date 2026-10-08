@@ -126,7 +126,7 @@
     pager.dataset.signature = signature;
     pager.innerHTML = `
       <button type="button" class="secondary-btn" data-perf-page="prev" ${meta.prev_page ? '' : 'disabled'}>上一页</button>
-      <span><b>${meta.page}</b> / ${meta.pages} 页 · 共 ${meta.total} 条</span>
+      <span><b>${meta.page}</b>/${meta.pages} 页 · 共 ${meta.total} 条</span>
       <button type="button" class="secondary-btn" data-perf-page="next" ${meta.next_page ? '' : 'disabled'}>下一页</button>`;
     pager.querySelector('[data-perf-page="prev"]')?.addEventListener('click', () => {
       if (!meta.prev_page) return;

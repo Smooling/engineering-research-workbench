@@ -10,7 +10,7 @@ import webbrowser
 import tempfile
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from app import config
 from app import rss as rss_service
@@ -19,12 +19,17 @@ from app import todos
 from app import weather
 from app import workspace
 from app import agent
+from app import agent_tools  # v260930 · M1 Agent 工具调用层
 from app import projects
 from app import indexer
+from app.paths import ASSET_ROOT, DATA_ROOT
 from app import literature
+from app import billing  # v261008 · 用量计费
+from app import scratch  # v261008 · 操作临时空间 .scratch
 
-ROOT = Path(__file__).resolve().parent
-WEB = ROOT / "web"
+# v260923 · 打包 exe 后：只读资源（web/、VERSION）在 PyInstaller 解压目录；可写数据在 exe 同级
+ROOT = DATA_ROOT
+WEB = ASSET_ROOT / "web"
 
 
 def json_bytes(data) -> bytes:
@@ -54,7 +59,10 @@ def _project_registry_needs_migration() -> bool:
 
 class WorkbenchHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
-    allow_reuse_address = True
+    # v260923v · Windows 上 allow_reuse_address=1(SO_REUSEADDR) 允许第二个进程静默重复绑定同一端口，
+    # 曾导致旧实例/开发服务与新实例同端口打架、前端 bundle 版本错乱。Windows 改为独占绑定；
+    # Unix 上该标志仅用于绕过 TIME_WAIT，保留 True 方便开发时快速重启。
+    allow_reuse_address = (sys.platform != "win32")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -71,6 +79,43 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
+
+    def _send_agent_stream(self, payload):  # v260930k · 方案 A：Agent 对话 SSE 流式端点。
+        """事件序列：round(新一轮 LLM 请求) → delta*(文本片段) → ... → done(完整响应,与旧 JSON 同构) / error。
+        长回答的等待被拆成「相邻片段之间 ≤timeout」，不再出现整段 120s 超时。"""
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")  # v260930m · SSE 用短连接：done 后关闭，前端 EOF 立即到达（keep-alive 会让 read() 永久挂起、UI 卡「停止」）
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+
+        def emit(event: str, data) -> None:
+            try:
+                self.wfile.write(f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n".encode("utf-8"))
+                self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                raise  # v260930k · 客户端断开：让 send_message 中止写出（会话已落盘部分不受影响）
+
+        try:
+            result = agent.send_message(
+                str(payload.get("session_id") or ""), str(payload.get("message") or ""),
+                payload.get("refs") or [], payload.get("images") or [], str(payload.get("request_preset") or ""),
+                payload.get("context") if isinstance(payload.get("context"), dict) else None,
+                str(payload.get("persona_id") or ""),
+                on_delta=lambda t: emit("delta", {"text": t}),
+                on_round=lambda i: emit("round", {"i": i}),
+                on_tool=lambda name, r: emit("tool", {"name": name, "ok": bool(r.get("ok")), "ms": r.get("tool_ms", 0), "pending": bool(r.get("pending")), "doc_id": r.get("doc_id") or ""}),  # v260930l · 工具进度实时可见
+            )
+            emit("done", {"ok": True, "assistant": result.get("assistant")})  # v260930m · 负载瘦身：只回 assistant，不再附带全量 session（前端未用，300KB+ 单行 JSON）
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            pass  # 客户端已断开：无需再写
+        except Exception as e:
+            try:
+                emit("error", {"message": str(e)})
+            except Exception:
+                pass
+
 
     def send_text(self, text, content_type="text/plain; charset=utf-8", status=200):
         body = text.encode("utf-8") if isinstance(text, str) else text
@@ -90,7 +135,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
-        q = parse_qs(parsed.query)
+        q = parse_qs(parsed.query, keep_blank_values=True)  # v260930i · 保留空值参数：/api/agent/drafts?status= 依赖空串表示「全量」，否则被解析为未传而回退 pending，导致重启后草稿已确认状态无法校准
         try:
             if path.startswith("/api/"):
                 return self.handle_api_get(path, q)
@@ -147,6 +192,8 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith("/api/agent/sessions/"):
                 session_id = unquote(path.split("/api/agent/sessions/", 1)[1])
                 return self.send_json(agent.delete_session(session_id))
+            if path == "/api/billing/records":  # v261008 · 用量计费：清空账本
+                return self.send_json(billing.clear())
             self.send_json({"error": "not_found"}, 404)
         except FileNotFoundError as e:
             self.send_json({"error": "not_found", "message": str(e)}, 404)
@@ -157,7 +204,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/health":
             return self.send_json({
                 "ok": True,
-                "version": (ROOT / "VERSION").read_text(encoding="utf-8").strip(),
+                "version": (ASSET_ROOT / "VERSION").read_text(encoding="utf-8").strip(),
                 "index": indexer.status(),
             })
         if path == "/api/config":
@@ -187,6 +234,21 @@ class Handler(BaseHTTPRequestHandler):
                 kind, query, status, project, mark,
                 page=page, page_size=page_size, paged=paged,
             ))
+        # v260923 · 文献 PDF 附件下载：/api/docs/<id>/attachment，路径须置于 /api/docs/ 泛匹配之前
+        if path.startswith("/api/docs/") and path.endswith("/attachment"):
+            doc_id = unquote(path[len("/api/docs/"):-len("/attachment")])
+            att = store.attachment_file(doc_id)
+            if not att:
+                return self.send_json({"error": "not_found", "message": "附件未配置或文件不存在"}, 404)
+            content = att.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/pdf")
+            self.send_header("Content-Disposition", f'inline; filename="{quote(att.name)}"')
+            self.send_header("Content-Length", str(len(content)))
+            self.send_header("Cache-Control", "private, max-age=60")
+            self.end_headers()
+            self.wfile.write(content)
+            return
         if path.startswith("/api/docs/"):
             doc_id = unquote(path.split("/api/docs/", 1)[1])
             return self.send_json(indexer.get_doc(doc_id))
@@ -227,9 +289,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(literature.list_items(
                 (q.get("q") or [""])[0], (q.get("status") or [""])[0], (q.get("category") or [""])[0],
                 _q_int(q, "page", 1, 1, 1000000), _q_int(q, "page_size", 60, 10, 200),
+                (q.get("mark") or [""])[0],
             ))
-        if path == "/api/literature/export-bibtex":
-            return self.send_json(indexer.export_bibtex(payload.get("ids") or []))
+        if path == "/api/literature/storage":  # v260929 · 设置页：PDF 存放目录概况
+            return self.send_json(literature.storage_info())
         if path.startswith("/api/literature/") and path.endswith("/annotations"):
             paper_id = unquote(path.split("/api/literature/",1)[1].rsplit("/annotations",1)[0])
             page_raw = (q.get("page") or [""])[0]
@@ -248,6 +311,22 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/agent/sessions/"):
             session_id = unquote(path.split("/api/agent/sessions/", 1)[1])
             return self.send_json(agent.get_session(session_id))
+        if path == "/api/agent/tools":  # v260930 · M1 工具清单：前端人设编辑器/悬浮球按白名单展示
+            return self.send_json(agent_tools.list_tool_meta())
+        if path == "/api/agent/drafts":  # v260930 · M1 待确认草稿列表（默认 pending，?status= 全量）
+            return self.send_json(agent_tools.list_drafts(str((q.get("status") or ["pending"])[0])))
+        if path == "/api/billing/summary":  # v261008 · 用量计费：按会话/模型/日期聚合
+            return self.send_json(billing.summary())
+        if path == "/api/billing/records":  # v261008 · 用量计费：调用明细（最新在前）
+            return self.send_json(billing.records(
+                limit=_q_int(q, "limit", 200, 1, 2000),
+                offset=_q_int(q, "offset", 0, 0, 1000000000),
+                session_id=str((q.get("session_id") or [""])[0]),
+            ))
+        if path == "/api/billing/prices":  # v261008 · 用量计费：单价表（?defaults=1 返回预置模板）
+            if (q.get("defaults") or [""])[0] == "1":
+                return self.send_json(billing.default_prices())
+            return self.send_json(billing.load_prices())
         return self.send_json({"error": "not_found"}, 404)
 
     def handle_api_post(self, path, payload):
@@ -313,6 +392,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"legacy": legacy, "projects": project_migration, "index": index_state})
         if path == "/api/workspace/open":
             return self.send_json(workspace.open_path(str(payload.get("path") or "")))
+        if path == "/api/workspace/open-with":  # v261008 · 笔记页「打开原文件」：选择 VS Code / Typora 打开 md
+            return self.send_json(workspace.open_file_with(
+                str(payload.get("path") or ""), str(payload.get("editor") or "")))
         if path == "/api/docs":
             normalized = indexer.normalize_project_payload(payload)
             doc = store.create_doc(str(normalized.get("kind") or "note"), normalized)
@@ -337,6 +419,27 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"ok": True, "content": content})
         if path == "/api/graph/bundle/save":
             return self.send_json(store.save_bundle(str(payload.get("filename") or "knowledge-bundle.md"), str(payload.get("content") or "")))
+        if path == "/api/literature/export-bibtex":  # v260929 · 修复上游错位：此路由须在 POST 分发且先于 /api/literature/ 泛匹配，否则落入 update_item 报 404
+            return self.send_json(indexer.export_bibtex(payload.get("ids") or []))
+        if path == "/api/literature/rebuild":  # v260929 · 真值归一：以文献 md 为准重建 library 关联/登记；doc_id 传入时仅处理该条目（徽章点击自动登记）
+            return self.send_json(literature.rebuild_registry(str(payload.get("doc_id") or "")))
+        if path == "/api/literature/lookup":  # v260929 · 自动填写：DOI/arXiv 编号联网抓取元数据
+            return self.send_json(literature.lookup_metadata(str(payload.get("identifier") or "")))
+        if path == "/api/literature/storage":  # v260929 · 设置页：修改 PDF 存放目录（可迁移现有 PDF）；v260929f · 支持笔记图片目录
+            if "note_images_dir" in payload and "pdf_dir" not in payload and "move_existing" not in payload:
+                return self.send_json(literature.set_note_images_dir(str(payload.get("note_images_dir") or "")))
+            out = literature.set_pdf_dir(str(payload.get("pdf_dir") or ""), bool(payload.get("move_existing", True)))
+            if "note_images_dir" in payload:
+                out.update(literature.set_note_images_dir(str(payload.get("note_images_dir") or "")))
+            return self.send_json(out)
+        if path == "/api/literature/note-image":  # v260929f · 笔记插图 / 批注截图入笔记：图片落盘到笔记图片目录
+            return self.send_json(literature.save_note_image(
+                str(payload.get("paper_id") or ""), str(payload.get("data_url") or "")), 201)
+        if path == "/api/literature/note-image-copy":  # v260929w · 批注截图入笔记：把 Previews 缩略图复制到笔记图片目录
+            return self.send_json(literature.copy_preview_to_note_images(
+                str(payload.get("paper_id") or ""), str(payload.get("preview_path") or "")), 201)
+        if path == "/api/literature/open-folder":  # v260929 · 设置页：文件管理器打开 PDF 目录
+            return self.send_json(literature.open_folder())
         if path.startswith("/api/literature/") and path.endswith("/annotations"):
             paper_id = unquote(path.split("/api/literature/",1)[1].rsplit("/annotations",1)[0])
             return self.send_json(literature.save_annotation(paper_id, payload), 201)
@@ -350,15 +453,28 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(agent.create_session(str(payload.get("title") or "")), 201)
         if path == "/api/agent/session/rename":
             return self.send_json(agent.rename_session(str(payload.get("id") or ""), str(payload.get("title") or "")))
+        if path == "/api/agent/session/archive":  # v260930n · 会话归档/取消归档（删除复用已有 DELETE /api/agent/sessions/<id>，移入 Trash）
+            return self.send_json(agent.archive_session(str(payload.get("id") or ""), bool(payload.get("archived"))))
         if path == "/api/agent/assets":
             return self.send_json(agent.save_image(str(payload.get("data_url") or ""), str(payload.get("name") or "image.png")))
         if path == "/api/agent/send":
-            return self.send_json(agent.send_message(
-                str(payload.get("session_id") or ""), str(payload.get("message") or ""),
-                payload.get("refs") or [], payload.get("images") or [], str(payload.get("request_preset") or ""),
+            return self._send_agent_stream(payload)  # v260930k · 方案 A：SSE 流式转发（delta/round/done/error），前端逐字渲染，长回答不再整体超时
+        if path.startswith("/api/agent/drafts/"):  # v260930 · M1 写工具草稿确认流：confirm 落盘 / reject 拒绝
+            tail = path.split("/api/agent/drafts/", 1)[1]
+            if tail.endswith("/confirm"):
+                return self.send_json(agent_tools.confirm_draft(tail[: -len("/confirm")]))
+            if tail.endswith("/reject"):
+                return self.send_json(agent_tools.reject_draft(tail[: -len("/reject")]))
+            raise FileNotFoundError(path)
+        if path == "/api/agent/assist":  # v260929 · PDF 阅读区 AI 助手：选中内容的翻译/总结/整理/笔记润色/自定义；v260929c · image 截图多模态
+            return self.send_json(agent.assist(
+                str(payload.get("action") or ""), str(payload.get("text") or ""),
+                str(payload.get("instruction") or ""), str(payload.get("image") or ""),
             ))
         if path == "/api/agent/test":
             return self.send_json(agent.test_connection())
+        if path == "/api/kb/related":  # v260930d · M5 阅读中知识关联：页面正文匹配知识库条目（纯文本匹配，零 LLM 依赖）
+            return self.send_json({"items": store.match_related(str(payload.get("page_text") or ""))})
         if path == "/api/todos":
             normalized = indexer.normalize_project_payload(payload)
             item = todos.create(normalized)
@@ -375,6 +491,8 @@ class Handler(BaseHTTPRequestHandler):
             item = indexer.apply_todo_project_id(item, normalized)
             indexer.refresh_todos()
             return self.send_json(item)
+        if path == "/api/billing/prices":  # v261008 · 用量计费：保存单价表
+            return self.send_json(billing.save_prices(payload))
         return self.send_json({"error": "not_found"}, 404)
 
 
@@ -462,21 +580,44 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(content)
 
 
-def main():
+def _scratch_boot_cleanup() -> None:
+    """v261008 · 启动时初始化并清理操作临时空间 .scratch/，失败不影响服务启动。"""
+    try:
+        scratch.ensure()
+        result = scratch.clean(scratch.resolve_retention_days())
+        if result["deleted"]:
+            print(f"[scratch] {scratch.summarize(result)}")
+    except Exception as exc:  # 临时空间异常绝不应阻断工作台启动
+        print(f"[scratch] 跳过清理：{type(exc).__name__}: {exc}")
+
+
+def build_server(port_override: int | None = None, auto_open_browser: bool | None = None):
+    """初始化 workspace/索引并绑定 HTTP 服务。供 main() 与桌面客户端 client.py 共用。
+
+    port_override：端口被占用时由调用方传入空闲端口。
+    auto_open_browser：桌面窗口模式传 False，避免额外打开系统浏览器。
+    """
     workspace.ensure_workspace()
+    _scratch_boot_cleanup()
     if _project_registry_needs_migration():
         projects.ensure_registry()
     index_state = indexer.initialize(force=False)
     cfg = config.get_app()
     host = str(cfg.get("host") or "127.0.0.1")
-    port = int(cfg.get("port") or 8765)
+    port = int(port_override or cfg.get("port") or 8765)
     server = WorkbenchHTTPServer((host, port), Handler)
     url = f"http://{host}:{port}"
     print(f"Engineering Research Workbench running at {url}")
     print(f"Workspace: {workspace.ensure_workspace()}")
     print(f"Index: {index_state.get('counts', {}).get('documents', 0)} docs · {index_state.get('path', '')}")
-    if cfg.get("auto_open_browser", True):
+    open_browser = cfg.get("auto_open_browser", True) if auto_open_browser is None else auto_open_browser
+    if open_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
+    return server, cfg, url
+
+
+def main():
+    server, _cfg, _url = build_server()
     restart_requested = False
     try:
         server.serve_forever(poll_interval=0.25)
@@ -487,6 +628,11 @@ def main():
         server.server_close()
     if restart_requested:
         print("Restarting service...")
+        if getattr(sys, "frozen", False):
+            # v260923 · 打包后多线程进程内 os.execv 不可靠，改为拉起新 exe 进程后退出
+            import subprocess
+            subprocess.Popen([sys.executable])
+            sys.exit(0)
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
 

@@ -294,6 +294,78 @@ def open_path(rel: str = "") -> dict:
     return {"ok": True, "path": str(target)}
 
 
+# v261008 · 笔记页「打开原文件」：以指定外部编辑器打开 Workspace 内的 Markdown 原文件
+_EDITOR_LABELS = {"vscode": "VS Code", "typora": "Typora"}
+
+
+def _windows_app_path(exe_name: str) -> str:
+    """从 Windows 注册表 App Paths 读取可执行文件绝对路径，覆盖非默认安装位置（如 Typora 装在 D:\\Typora）。"""
+    if not sys.platform.startswith("win"):
+        return ""
+    try:
+        import winreg
+    except ImportError:
+        return ""
+    sub = rf"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{exe_name}"
+    for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+        for access in (winreg.KEY_READ | winreg.KEY_WOW64_64KEY, winreg.KEY_READ | winreg.KEY_WOW64_32KEY):
+            try:
+                with winreg.OpenKey(root, sub, 0, access) as key:
+                    value, _ = winreg.QueryValueEx(key, "")
+            except OSError:
+                continue
+            candidate = Path(str(value or "").strip().strip('"'))
+            if str(candidate) and candidate.is_file():
+                return str(candidate)
+    return ""
+
+
+def _editor_executable(editor: str) -> str:
+    """解析 vscode / typora 可执行文件：优先 PATH，其次注册表 App Paths，最后各平台常见安装路径；找不到时抛 FileNotFoundError。"""
+    editor = str(editor or "").strip().lower()
+    if editor not in _EDITOR_LABELS:
+        raise ValueError("不支持的打开方式")
+    home = Path.home()
+    if editor == "vscode":
+        exe = shutil.which("code") or shutil.which("code.cmd") or _windows_app_path("Code.exe")
+        candidates = (
+            Path(os.environ.get("LOCALAPPDATA", "")) / "Programs/Microsoft VS Code/Code.exe",
+            Path(os.environ.get("ProgramFiles", "")) / "Microsoft VS Code/Code.exe",
+            Path(os.environ.get("ProgramFiles(x86)", "")) / "Microsoft VS Code/Code.exe",
+            Path("/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"),
+        )
+    else:
+        exe = shutil.which("typora") or shutil.which("typora.exe") or _windows_app_path("Typora.exe")
+        candidates = (
+            Path(os.environ.get("LOCALAPPDATA", "")) / "Programs/Typora/Typora.exe",
+            Path(os.environ.get("ProgramFiles", "")) / "Typora/Typora.exe",
+            Path(os.environ.get("ProgramFiles(x86)", "")) / "Typora/Typora.exe",
+            home / "Applications/Typora.app/Contents/MacOS/Typora",
+            Path("/Applications/Typora.app/Contents/MacOS/Typora"),
+        )
+    if not exe:
+        for candidate in candidates:
+            if str(candidate) and candidate.is_file():
+                exe = str(candidate)
+                break
+    if not exe:
+        raise FileNotFoundError(f"未找到 {_EDITOR_LABELS[editor]}，请确认已安装")
+    return exe
+
+
+def open_file_with(rel: str, editor: str) -> dict:
+    """在 VS Code / Typora 中打开 Workspace 内的原文件（相对路径 rel 须位于 Workspace 内）。"""
+    path = _safe_under_workspace(rel)
+    if not path.is_file():
+        raise FileNotFoundError(str(path))
+    exe = _editor_executable(editor)
+    if Path(exe).suffix.lower() in (".cmd", ".bat"):  # Windows 上的 code.cmd 等批处理须经 cmd.exe 启动
+        subprocess.Popen([os.environ.get("COMSPEC", "cmd.exe"), "/c", exe, str(path)])
+    else:
+        subprocess.Popen([exe, str(path)])
+    return {"ok": True, "path": str(path), "editor": str(editor).strip().lower()}
+
+
 def workspace_info() -> dict:
     root = ensure_workspace()
     return {
