@@ -658,6 +658,8 @@ def save_app(data: dict) -> dict:
     with _lock:
         if not _cache:
             reload_all()
+        if "knowledge_types" not in incoming:
+            incoming["knowledge_types"] = deepcopy(_cache["app"].get("knowledge_types") or DEFAULT_APP_CONFIG["knowledge_types"])
         current_secret = deepcopy(_cache["secret"])
         secret = _merge_profiles_from_public(incoming_llm, current_secret)
         assist = incoming_llm.get("assist") if isinstance(incoming_llm.get("assist"), dict) else {}
