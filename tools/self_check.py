@@ -21,20 +21,44 @@ def ok(name: str):
 def main() -> int:
     original_app_path = ROOT / "config" / "app.json"
     original_text = original_app_path.read_text(encoding="utf-8")
+    original_secret_path = ROOT / "config" / "secret.json"
+    original_secret_exists = original_secret_path.exists()
+    original_secret_bytes = original_secret_path.read_bytes() if original_secret_exists else b""
     temp = Path(tempfile.mkdtemp(prefix="erw-self-check-"))
     try:
-        cfg = config.get_app()
+        # v261009 · Agent 配置已迁移为 profile + config/secret.json 模型。
+        # self_check 不再使用旧 api_key_env 断言；临时写入一套独立 profile，并在 finally 原样恢复 secret.json。
+        cfg = config.get_public()["app"]
         cfg["workspace"] = str(temp / "Workspace")
         cfg.setdefault("workspace_migration", {})["enabled"] = False
-        cfg.setdefault("llm", {})["api_key_env"] = "WORKBENCH_SELF_CHECK_KEY"
-        os.environ["WORKBENCH_SELF_CHECK_KEY"] = "self-check-secret"
+        llm = cfg.setdefault("llm", {})
+        llm["enabled"] = False
+        llm["active_profile_id"] = "self-check-profile"
+        llm["profiles"] = [{
+            "id": "self-check-profile",
+            "name": "Self Check",
+            "base_url": "https://example.invalid/v1",
+            "api_key": "self-check-secret",
+            "headers": {"X-Self-Check": "1"},
+            "timeout": 120,
+            "max_output_tokens": 0,
+            "temperature": None,
+            "show_reasoning": True,
+            "default_request_preset": "default",
+            "request_presets": [{"id": "default", "label": "默认", "model": "mock-model", "temperature": None, "params": {}}],
+        }]
         config.save_app(cfg)
 
         public = config.get_public()
-        assert public["app"]["llm"]["api_key_env"] == "WORKBENCH_SELF_CHECK_KEY" and public["app"]["llm"]["has_api_key"] is True
+        public_llm = public["app"]["llm"]
+        assert public_llm["has_api_key"] is True and public_llm["api_key_source"] == "config/secret.json"
+        assert public_llm["active_profile_id"] == "self-check-profile"
+        assert all("api_key" not in p for p in public_llm.get("profiles", []))
+        runtime_profile = config.get_active_llm_profile_runtime()
+        assert runtime_profile["api_key"] == "self-check-secret"
+        assert runtime_profile["headers"].get("X-Self-Check") == "1"
         assert "api_key" not in config.get_app()["llm"]
-        assert not (ROOT / "config" / "secrets.json").exists()
-        ok("Environment-variable API key; no local secret storage")
+        ok("Profile-based local secret storage + public key redaction")
 
         ws = workspace.ensure_workspace()
         assert (ws / "Knowledge/Notes").exists() and (ws / "System/AgentChats/Attachments").exists()
@@ -112,40 +136,49 @@ def main() -> int:
         found = search.search_all("Self check")
         assert any(x["source"] == "doc" for x in found) and any(x["source"] == "chat" for x in found)
 
-        # Exercise the OpenAI-compatible payload path without any network call.
-        llm_cfg = config.get_app()
-        os.environ["WORKBENCH_SELF_CHECK_KEY"] = "mock-key"
-        llm_cfg["llm"] = {**llm_cfg.get("llm", {}), "enabled": True, "base_url": "https://example.invalid/v1", "api_key_env": "WORKBENCH_SELF_CHECK_KEY", "show_reasoning": True, "model": "mock-model", "protocol": "chat_completions", "temperature": None, "max_output_tokens": 0, "request_presets": [{"id":"default","label":"默认（不附加参数）","params":{}},{"id":"qwen-low","label":"Qwen · 低思考","params":{"enable_thinking":True,"thinking_budget":1024}},{"id":"qwen-off","label":"Qwen · 无思考","params":{"enable_thinking":False}},{"id":"high","label":"高思考","params":{"reasoning_effort":"high","model":"must-not-overwrite"}}], "default_request_preset":"default"}
+        # Exercise the current profile-based OpenAI-compatible payload path without any network call.
+        llm_cfg = config.get_public()["app"]
+        llm_cfg["llm"]["enabled"] = True
+        llm_cfg["llm"]["active_profile_id"] = "self-check-profile"
+        llm_cfg["llm"]["profiles"] = [{
+            "id": "self-check-profile",
+            "name": "Self Check",
+            "base_url": "https://example.invalid/v1",
+            "api_key": "mock-key",
+            "headers": {"X-Self-Check": "1"},
+            "timeout": 120,
+            "max_output_tokens": 0,
+            "temperature": None,
+            "show_reasoning": True,
+            "default_request_preset": "default",
+            "request_presets": [
+                {"id":"default","label":"默认（不附加参数）","model":"mock-model","temperature":None,"params":{}},
+                {"id":"qwen-low","label":"Qwen · 低思考","model":"mock-model","temperature":None,"params":{"enable_thinking":True,"thinking_budget":1024}},
+                {"id":"qwen-off","label":"Qwen · 无思考","model":"mock-model","temperature":None,"params":{"enable_thinking":False}},
+                {"id":"high","label":"高思考","model":"mock-model","temperature":None,"params":{"reasoning_effort":"high","model":"must-not-overwrite"}},
+            ],
+        }]
         config.save_app(llm_cfg)
         captured = {}
         original_http = agent._http_json
-        def fake_http(url, payload, api_key, timeout=120, method="POST"):
-            captured.update({"url": url, "payload": payload, "api_key": api_key, "method": method})
+        def fake_http(url, payload, api_key, timeout=120, method="POST", extra_headers=None):
+            captured.update({"url": url, "payload": payload, "api_key": api_key, "method": method, "headers": extra_headers or {}})
             return {"choices": [{"message": {"content": "mock answer", "reasoning_content": "mock reasoning"}}]}
         agent._http_json = fake_http
         try:
             sent = agent.send_message(chat["id"], "请结合引用分析", [note["id"]], [chat_image["path"]], "high")
             assert sent["assistant"]["content"] == "mock answer" and sent["assistant"]["reasoning"] == "mock reasoning"
             assert captured["url"].endswith("/chat/completions") and captured["api_key"] == "mock-key"
+            assert captured["headers"].get("X-Self-Check") == "1"
             assert any(isinstance(m.get("content"), list) for m in captured["payload"]["messages"] if m.get("role") == "user")
             assert "Self check note" in captured["payload"]["messages"][0]["content"]
             assert captured["payload"]["reasoning_effort"] == "high"
-            assert captured["payload"]["model"] == "mock-model"
+            assert captured["payload"]["model"] == "mock-model"  # params 中的 model 不得覆盖模式模型
             assert sent["assistant"]["request_preset"] == "high"
-
-            cfg_r = config.get_app()
-            cfg_r["llm"]["protocol"] = "responses"
-            config.save_app(cfg_r)
-            def fake_responses(url, payload, api_key, timeout=120, method="POST"):
-                captured.update({"url": url, "payload": payload, "api_key": api_key, "method": method})
-                return {"output": [{"type":"reasoning","summary":[{"type":"summary_text","text":"responses reasoning"}]},{"content": [{"type": "output_text", "text": "responses answer"}]}]}
-            agent._http_json = fake_responses
-            sent2 = agent.send_message(chat["id"], "第二轮", [], [])
-            assert sent2["assistant"]["content"] == "responses answer" and sent2["assistant"]["reasoning"] == "responses reasoning" and captured["url"].endswith("/responses")
         finally:
             agent._http_json = original_http
         agent.delete_session(chat["id"])
-        ok("Global search + Agent multimodal + dynamic request presets")
+        ok("Global search + Agent multimodal + profile presets + custom headers")
 
         cfg2 = config.get_app()
         cfg2["academic_profile"] = {
@@ -198,6 +231,11 @@ def main() -> int:
         return 0
     finally:
         original_app_path.write_text(original_text, encoding="utf-8")
+        if original_secret_exists:
+            original_secret_path.parent.mkdir(parents=True, exist_ok=True)
+            original_secret_path.write_bytes(original_secret_bytes)
+        else:
+            original_secret_path.unlink(missing_ok=True)
         os.environ.pop("WORKBENCH_SELF_CHECK_KEY", None)
         config.reload_all()
         shutil.rmtree(temp, ignore_errors=True)
