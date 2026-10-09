@@ -620,6 +620,38 @@ def _merge_profiles_from_public(incoming_llm: dict[str, Any], current_secret: di
     }
 
 
+def _clean_knowledge_types(value: Any) -> dict[str, Any]:
+    raw = value if isinstance(value, dict) else {}
+    builtin = {"idea", "journal", "note", "milestone", "summary", "literature"}
+    custom: list[dict[str, Any]] = []
+    seen = set(builtin)
+    for item in (raw.get("custom") or []):
+        if not isinstance(item, dict):
+            continue
+        kind = str(item.get("id") or "").strip().lower()
+        if not re.fullmatch(r"[a-z][a-z0-9_-]{1,47}", kind) or kind in seen:
+            continue
+        label = str(item.get("label") or kind).strip()[:32] or kind
+        icon = str(item.get("icon") or "◆").strip()[:4] or "◆"
+        statuses = [str(x).strip()[:24] for x in (item.get("statuses") or []) if str(x).strip()]
+        if not statuses:
+            statuses = ["草稿", "进行中", "完成", "已归档"]
+        custom.append({
+            "id": kind,
+            "label": label,
+            "icon": icon,
+            "statuses": list(dict.fromkeys(statuses))[:12],
+            "template": str(item.get("template") or "")[:20000].replace("\r\n", "\n"),
+            "hidden": bool(item.get("hidden", False)),
+        })
+        seen.add(kind)
+    valid = builtin | {x["id"] for x in custom}
+    order = [str(x) for x in (raw.get("order") or []) if str(x) in valid]
+    order = list(dict.fromkeys(order + ["idea","journal","note","milestone","summary","literature"] + [x["id"] for x in custom]))
+    hidden = [str(x) for x in (raw.get("hidden") or []) if str(x) in valid]
+    return {"order": order, "hidden": list(dict.fromkeys(hidden)), "custom": custom}
+
+
 def save_app(data: dict) -> dict:
     incoming = deepcopy(data or {})
     incoming_llm = incoming.get("llm") if isinstance(incoming.get("llm"), dict) else {}
@@ -637,6 +669,7 @@ def save_app(data: dict) -> dict:
             "personas": _clean_personas(incoming_llm.get("personas")),  # v260930 · M3 人设档案：随 app.json 持久化，否则 save 时被清掉导致回退默认 confirm
         }
         incoming["llm"] = clean_llm
+        incoming["knowledge_types"] = _clean_knowledge_types(incoming.get("knowledge_types"))
         merged = _deep_merge(DEFAULT_APP_CONFIG, incoming)
         _atomic_json_write(CONFIG_DIR / "app.json", merged)
         _atomic_json_write(SECRET_PATH, secret)
