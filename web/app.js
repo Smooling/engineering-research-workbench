@@ -65,7 +65,8 @@
     'research-overview':['RESEARCH KNOWLEDGE','研究 · 知识总览'], ideas:['RESEARCH KNOWLEDGE','灵感'], journals:['RESEARCH KNOWLEDGE','研究日志'],
     notes:['RESEARCH KNOWLEDGE','笔记'], milestones:['RESEARCH KNOWLEDGE','里程碑'], summaries:['RESEARCH KNOWLEDGE','工作总结'],
     literature:['RESEARCH KNOWLEDGE','文献'], graph:['RESEARCH KNOWLEDGE','知识图谱'], folders:['RESOURCES','文件夹'], settings:['SYSTEM','设置'],
-    billing:['SYSTEM','用量统计'] /* v261008 · 用量计费仪表盘 */
+    billing:['SYSTEM','用量统计'], /* v261008 · 用量计费仪表盘 */
+    'knowledge-types':['RESEARCH KNOWLEDGE','添加条目']
   };
 
   const KIND_ROUTE = BUILTIN_KIND_ROUTE;
@@ -119,7 +120,7 @@
     return NAV_GROUPS.map(g=>{
       if(g.id!=='research')return {...g,items:[...g.items]};
       const docs=configuredKnowledgeTypes().filter(x=>!x.hidden).map(x=>[routeForKind(x.id),x.label,x.icon||'◆']);
-      return {...g,items:[['research-overview','总览','◇'],...docs,['graph','知识图谱','⌬']]};
+      return {...g,items:[['research-overview','总览','◇'],...docs,['knowledge-types','添加条目','＋'],['graph','知识图谱','⌬']]};
     });
   }
 
@@ -180,6 +181,11 @@
       else if(route==='folders') await renderFolders();
       else if(route==='billing') await renderBillingPage(); /* v261008 · 用量计费 */
       else if(route==='settings') await renderSettings();
+      else if(route==='knowledge-types'){
+        await renderSettings();
+        const tab=$('[data-set-tab="knowledge"]');
+        if(tab){$('[data-set-tab]').forEach(x=>x.classList.toggle('active',x===tab));renderSettingsTab('knowledge',state.config)}
+      }
       else if(kindFromRoute(route)) await renderDocsPage(kindFromRoute(route));
       else await renderOverview();
       if(seq!==state.navSeq) return false; /* v260930g9c · 已被更新导航取代：视为未完成 */
