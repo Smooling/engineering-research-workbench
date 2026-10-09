@@ -201,7 +201,8 @@ def main() -> int:
         assert "heatmap-month-select" in app_js and "data-row" in app_js and "--boundary-y" in app_js
         assert "data-graph-kind" in app_js and "data-graph-relation" in app_js and "timeline-3d-viewport" in app_js
         assert "_graphRenderToken" in app_js and "selectedId" in app_js
-        assert "标签1, 标签2, 标签3" in app_js and "key==='s'" in app_js
+        # v261009 · 旧 placeholder 文案已不再是稳定接口；这里只验证 Ctrl/Cmd+S 保存钩子仍存在。
+        assert "key==='s'" in app_js and "doc-save" in app_js
         assert "renderAgent" in app_js and "request_preset" in app_js and "/api/agent/send" in app_js and "/api/search" in app_js
         assert "overview-new-project" in app_js and "openEditorProjectPicker" in app_js and "api_key_env" in app_js
         assert "agent-thinking" in app_js and "模型思考过程" in app_js and "点击空白处恢复全图" in app_js
@@ -210,6 +211,7 @@ def main() -> int:
         assert "milestone-preview" in app_js and "showMilestonePreview" in app_js
         assert "data-set-tab=\"service\"" in app_js and "svc-host" in app_js and "svc-workspace" in app_js
         assert "data-set-tab=\"knowledge\"" in app_js and "openKnowledgeTypeEditor" in app_js and "/api/knowledge-types" in app_js
+        assert "knowledge-types" in app_js and "添加条目" in app_js
         assert "graph-wrap.preview-open" in styles and "overflow-wrap:anywhere" in styles
         assert "mermaid.render" in app_js and "data-focus-preset" in app_js
         ok("Graph filters/highlight + Ctrl+S + dynamic Agent mode UI")
