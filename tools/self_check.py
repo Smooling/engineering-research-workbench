@@ -96,7 +96,23 @@ def main() -> int:
         assert experiment["status"] == "计划" and "## 实验目的" in experiment["body"]
         assert (ws / "Knowledge/Custom/experiment" / f"{experiment['id']}.md").exists()
         assert store.list_docs("experiment")[0]["id"] == experiment["id"]
-        ok("Custom knowledge type registry + template + status + storage")
+        cfg_templates = config.get_app()
+        cfg_templates["knowledge_types"]["templates"] = {"note": "# {{title}}\n\n## 自定义模板\n"}
+        cfg_templates["classification_marks"] = [
+            {"id": "knowledge", "icon": "◈", "label": "知识", "color": "#2a9d8f"},
+            {"id": "method", "icon": "⚒", "label": "方法", "color": "#e76f51"},
+            {"id": "experiment", "icon": "⚗", "label": "实验", "color": "#d1569a"},
+        ]
+        config.save_app(cfg_templates)
+        templated = store.create_doc("note", {"title": "Template override"})
+        assert "## 自定义模板" in templated["body"]
+        assert store.kind_default_template("note") != store.kind_template("note")
+        marked = store.update_doc(note["id"], {"kind_marks": ["knowledge", "method"]})
+        assert marked["kind_marks"] == ["knowledge", "method"]
+        cleaned = store.cleanup_deleted_mark("knowledge")
+        assert cleaned["updated"] >= 1 and store.get_doc(note["id"])["kind_marks"] == []
+        assert store.kind_label_map()["journal"] == "实验记录"
+        ok("Custom knowledge type registry + templates + classification cleanup")
 
         lit = store.create_doc("literature", {"title": "Self check paper", "bibtex": "@article{selfcheck, title={Self Check}}"})
         lit = store.update_doc(lit["id"], {"body": lit["body"], "bibtex": "@article{selfcheck, title={Self Check \\LaTeX}, year={2026}}"})
@@ -211,7 +227,8 @@ def main() -> int:
         assert "milestone-preview" in app_js and "showMilestonePreview" in app_js
         assert "data-set-tab=\"service\"" in app_js and "svc-host" in app_js and "svc-workspace" in app_js
         assert "data-set-tab=\"knowledge\"" in app_js and "openKnowledgeTypeEditor" in app_js and "/api/knowledge-types" in app_js
-        assert "knowledge-types" in app_js and "添加条目" in app_js
+        assert "CLASSIFICATION MARKS" in app_js and "还原为预设" in app_js and "/api/knowledge-marks/cleanup" in app_js
+        assert "添加条目" not in app_js and "journal:'实验记录'" in app_js
         assert "graph-wrap.preview-open" in styles and "overflow-wrap:anywhere" in styles
         assert "mermaid.render" in app_js and "data-focus-preset" in app_js
         ok("Graph filters/highlight + Ctrl+S + dynamic Agent mode UI")
