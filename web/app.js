@@ -710,7 +710,7 @@
   /* v260923 · 分类标记 chips 渲染 / 事件 / 重渲染（含「＋ 自定义」入口） */
   function markChipsHtml(selected){return allMarks().map(k=>`<button type="button" class="mark-chip${(selected||[]).includes(k.id)?' on':''}" data-mark="${esc(k.id)}" style="--mark-color:${esc(k.color)}" title="点击标记为${esc(k.label)}，可多选">${esc(k.icon)} ${esc(k.label)}</button>`).join('')}
   function wireMarkChips(){
-    $('#f-marks .mark-chip').forEach(b=>b.onclick=()=>{b.classList.toggle('on');state.dirty=true});
+    $$('#f-marks .mark-chip').forEach(b=>b.onclick=()=>{b.classList.toggle('on');state.dirty=true});
   }
   function refreshMarkChips(){
     const box=$('#f-marks'); if(!box)return;
@@ -1269,14 +1269,14 @@
       </div>`,
       '<button class="secondary-btn" id="kt-cancel">取消</button><button class="primary-btn" id="kt-save">保存</button>');
     $('#kt-cancel').onclick=closeModal;
-    $('#kt-icon-pick [data-kt-icon]').forEach(btn=>btn.onclick=()=>{
+    $$('#kt-icon-pick [data-kt-icon]').forEach(btn=>btn.onclick=()=>{
       const icon=btn.dataset.ktIcon||'◆';
       $('#kt-icon').value=icon;
-      $('#kt-icon-pick [data-kt-icon]').forEach(x=>x.classList.toggle('on',x===btn));
+      $$('#kt-icon-pick [data-kt-icon]').forEach(x=>x.classList.toggle('on',x===btn));
     });
     $('#kt-icon').addEventListener('input',()=>{
       const icon=$('#kt-icon').value.trim();
-      $('#kt-icon-pick [data-kt-icon]').forEach(x=>x.classList.toggle('on',x.dataset.ktIcon===icon));
+      $$('#kt-icon-pick [data-kt-icon]').forEach(x=>x.classList.toggle('on',x.dataset.ktIcon===icon));
     });
     $('#kt-save').onclick=async()=>{
       const id=(editing?item.id:$('#kt-id').value.trim().toLowerCase());
@@ -1318,7 +1318,7 @@
       </div>`).join('')||'<div class="empty">暂无分类标记；下方可以添加。</div>'}</div>
       <div class="form-grid" style="margin-top:14px">
         <div class="field span-2"><label>分类名称</label><input id="km-label" maxlength="16" placeholder="例如：问题"></div>
-        <div class="field"><label>图标</label><input id="km-icon" maxlength="4" value="◆"></div>
+        <div class="field"><label>图标</label><select id="km-icon">${KNOWLEDGE_ICON_CHOICES.map(ic=>`<option value="${esc(ic)}" ${ic==='◆'?'selected':''}>${esc(ic)}</option>`).join('')}</select><span class="field-help">从约 20 个候选图标中选择。</span></div>
         <div class="field"><label>颜色</label><input id="km-color" type="color" value="#4a6fa5"></div>
       </div>
       <div style="margin-top:10px"><button class="primary-btn" id="km-add">＋ 添加分类标记</button></div>`;
