@@ -105,6 +105,13 @@ DEFAULT_APP_CONFIG = {
         "enabled": True,
         "copy_legacy_data": True,
     },
+    # v261009 · “研究 · 知识”条目类型注册表。内置类型只保存显示/排序偏好；
+    # 自定义类型由用户定义 label/icon/statuses/template，文件固定落在 Knowledge/Custom/<id>/。
+    "knowledge_types": {
+        "order": ["idea", "journal", "note", "milestone", "summary", "literature"],
+        "hidden": [],
+        "custom": [],
+    },
     # Non-secret, global Agent options stay in app.json. Provider profiles and
     # API keys live only in config/secret.json, which is ignored by git.
     "llm": {
