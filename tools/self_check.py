@@ -53,6 +53,27 @@ def main() -> int:
         assert store.list_docs("note", project="SecondProject")
         ok("Markdown CRUD + multi-project + full-text search")
 
+        cfg_types = config.get_app()
+        cfg_types["knowledge_types"] = {
+            "order": ["idea", "note", "experiment", "milestone", "literature", "journal", "summary"],
+            "hidden": ["journal", "summary"],
+            "custom": [{
+                "id": "experiment", "label": "实验记录", "icon": "⚗",
+                "statuses": ["计划", "进行中", "完成"],
+                "template": "# {{title}}\n\n## 实验目的\n\n## 实验结果\n",
+            }],
+        }
+        config.save_app(cfg_types)
+        registry = store.knowledge_type_registry()
+        exp_type = next(x for x in registry if x["id"] == "experiment")
+        assert exp_type["label"] == "实验记录" and exp_type["statuses"] == ["计划", "进行中", "完成"]
+        assert next(x for x in registry if x["id"] == "journal")["hidden"] is True
+        experiment = store.create_doc("experiment", {"title": "Self check experiment"})
+        assert experiment["status"] == "计划" and "## 实验目的" in experiment["body"]
+        assert (ws / "Knowledge/Custom/experiment" / f"{experiment['id']}.md").exists()
+        assert store.list_docs("experiment")[0]["id"] == experiment["id"]
+        ok("Custom knowledge type registry + template + status + storage")
+
         lit = store.create_doc("literature", {"title": "Self check paper", "bibtex": "@article{selfcheck, title={Self Check}}"})
         lit = store.update_doc(lit["id"], {"body": lit["body"], "bibtex": "@article{selfcheck, title={Self Check \\LaTeX}, year={2026}}"})
         assert "year={2026}" in lit["bibtex"]
@@ -155,6 +176,7 @@ def main() -> int:
         assert "graph-preview" in app_js and "graph-fit" in app_js and "_graphResetView" in app_js
         assert "milestone-preview" in app_js and "showMilestonePreview" in app_js
         assert "data-set-tab=\"service\"" in app_js and "svc-host" in app_js and "svc-workspace" in app_js
+        assert "data-set-tab=\"knowledge\"" in app_js and "openKnowledgeTypeEditor" in app_js and "/api/knowledge-types" in app_js
         assert "graph-wrap.preview-open" in styles and "overflow-wrap:anywhere" in styles
         assert "mermaid.render" in app_js and "data-focus-preset" in app_js
         ok("Graph filters/highlight + Ctrl+S + dynamic Agent mode UI")
