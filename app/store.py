@@ -27,7 +27,7 @@ BUILTIN_KIND_DIR = {
 
 BUILTIN_KIND_LABEL = {
     "idea": "灵感",
-    "journal": "研究日志",
+    "journal": "实验记录",
     "note": "笔记",
     "milestone": "里程碑",
     "summary": "工作总结",
@@ -89,10 +89,12 @@ def knowledge_type_registry() -> list[dict[str, Any]]:
             rows.append({
                 "id": kind, "label": BUILTIN_KIND_LABEL[kind], "icon": builtin_icons[kind],
                 "statuses": list(BUILTIN_STATUSES[kind]), "builtin": True,
-                "hidden": kind in hidden, "template": "",
+                "hidden": kind in hidden, "template": kind_template(kind),
+                "default_template": kind_default_template(kind),
             })
         elif kind in custom:
-            rows.append({**custom[kind], "builtin": False, "hidden": bool(custom[kind].get("hidden")) or kind in hidden})
+            rows.append({**custom[kind], "builtin": False, "hidden": bool(custom[kind].get("hidden")) or kind in hidden,
+                         "template": kind_template(kind), "default_template": kind_default_template(kind)})
     return rows
 
 def kind_dir_map() -> dict[str, str]:
@@ -118,11 +120,58 @@ def kind_statuses(kind: str) -> list[str]:
 def all_statuses() -> dict[str, list[str]]:
     return {kind: kind_statuses(kind) for kind in kind_dir_map()}
 
-def custom_kind_template(kind: str) -> str:
+def builtin_kind_default_template(kind: str) -> str:
+    if kind == "idea":
+        return "# {{title}}\n\n## 想法\n\n\n## 为什么值得记录\n\n\n## 下一步\n\n- [ ] \n"
+    if kind == "journal":
+        return "# {{title}}\n\n## 实验目的\n\n\n## 实验配置\n\n\n## 实验结果\n\n\n## 结论\n\n"
+    if kind == "note":
+        return "# {{title}}\n\n## 摘要\n\n\n## 正文\n\n\n## 关联\n\n"
+    if kind == "milestone":
+        return "# {{title}}\n\n## 目标\n\n\n## 验收条件\n\n- [ ] \n\n## 进展记录\n\n"
+    if kind == "summary":
+        return "# {{title}}\n\n## 本阶段完成\n\n\n## 结果与产出\n\n\n## 问题与经验\n\n\n## 下一阶段\n\n- [ ] \n"
+    if kind == "literature":
+        return "# {{title}}\n\n## BibTeX\n\n\`\`\`bibtex\n{{bibtex}}\n\`\`\`\n\n## 核心结论\n\n\n## 方法与数据\n\n\n## 与当前研究的关系\n\n\n## 摘录与批注\n\n"
+    return "# {{title}}\n\n## 要点\n\n\n## 正文\n\n\n## 关联\n\n"
+
+
+def kind_default_template(kind: str) -> str:
+    if kind in BUILTIN_KIND_DIR:
+        return builtin_kind_default_template(kind)
     for row in custom_kind_records():
         if row["id"] == kind:
-            return str(row.get("template") or "")
-    return ""
+            return str(row.get("template") or "") or builtin_kind_default_template("note")
+    return builtin_kind_default_template("note")
+
+
+def kind_template(kind: str) -> str:
+    cfg = _knowledge_cfg()
+    overrides = cfg.get("templates") if isinstance(cfg.get("templates"), dict) else {}
+    if kind in overrides:
+        return str(overrides.get(kind) or "")
+    return kind_default_template(kind)
+
+
+def cleanup_deleted_mark(mark_id: str) -> dict[str, Any]:
+    mark_id = str(mark_id or "").strip()
+    if not mark_id:
+        return {"ok": True, "updated": 0}
+    updated = 0
+    for kind, path in _iter_docs():
+        text = path.read_text(encoding="utf-8")
+        meta, body = _frontmatter_parse(text)
+        marks = meta.get("kind_marks") or []
+        if isinstance(marks, str):
+            marks = [x.strip() for x in re.split(r"[,，]", marks) if x.strip()]
+        if mark_id not in marks:
+            continue
+        meta["kind_marks"] = []
+        meta["updated"] = _now()
+        with _LOCK:
+            _atomic_write(path, _frontmatter_dump(meta) + body.rstrip() + "\n")
+        updated += 1
+    return {"ok": True, "updated": updated, "mark_id": mark_id}
 
 DATE_FIELDS = {
     "journal": "record_date",
@@ -488,31 +537,15 @@ def attachment_file(doc_id: str) -> Path | None:
 
 
 def _make_default_body(kind: str, title: str, payload: dict[str, Any]) -> str:
-    if kind == "idea":
-        return f"# {title}\n\n## 想法\n\n\n## 为什么值得记录\n\n\n## 下一步\n\n- [ ] \n"
-    if kind == "journal":
-        return f"# {title}\n\n## 今日进展\n\n\n## 关键发现\n\n\n## 问题与阻塞\n\n\n## 下一步\n\n- [ ] \n"
-    if kind == "note":
-        return f"# {title}\n\n## 摘要\n\n\n## 正文\n\n\n## 关联\n\n"
-    if kind == "milestone":
-        return f"# {title}\n\n## 目标\n\n\n## 验收条件\n\n- [ ] \n\n## 进展记录\n\n"
-    if kind == "summary":
-        return f"# {title}\n\n## 本阶段完成\n\n\n## 结果与产出\n\n\n## 问题与经验\n\n\n## 下一阶段\n\n- [ ] \n"
-    if kind == "literature":
-        bibtex = payload.get("bibtex") or "@article{cite_key,\n  title = {},\n  author = {},\n  year = {}\n}"
-        return (
-            f"# {title}\n\n"
-            "## BibTeX\n\n"
-            f"```bibtex\n{bibtex.strip()}\n```\n\n"
-            "## 核心结论\n\n\n"
-            "## 方法与数据\n\n\n"
-            "## 与当前研究的关系\n\n\n"
-            "## 摘录与批注\n\n"
-        )
-    template = custom_kind_template(kind)
-    if template:
-        return template.replace("{{title}}", title).replace("{{date}}", _today()).rstrip() + "\n"
-    return f"# {title}\n\n## 要点\n\n\n## 正文\n\n\n## 关联\n\n"
+    template = kind_template(kind)
+    bibtex = payload.get("bibtex") or "@article{cite_key,\n  title = {},\n  author = {},\n  year = {}\n}"
+    return (
+        template
+        .replace("{{title}}", title)
+        .replace("{{date}}", _today())
+        .replace("{{bibtex}}", str(bibtex).strip())
+        .rstrip() + "\n"
+    )
 
 
 def create_doc(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
