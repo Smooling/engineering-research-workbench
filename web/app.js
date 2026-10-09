@@ -233,7 +233,7 @@
           <div class="quick-capture-copy"><div class="card-kicker">QUICK CAPTURE</div><h3>快速记录</h3><p>把临时想法及时沉淀到 Workspace，减少页面跳转。</p></div>
           <div class="quick-capture-actions">
             <button class="quick-action" data-quick-doc="ideas"><span>✦</span><b>灵感</b><small>Idea</small></button>
-            <button class="quick-action" data-quick-doc="journals"><span>▤</span><b>研究日志</b><small>Journal</small></button>
+            <button class="quick-action" data-quick-doc="journals"><span>▤</span><b>实验记录</b><small>Journal</small></button>
             <button class="quick-action" data-quick-doc="notes"><span>▧</span><b>笔记</b><small>Note</small></button>
             <button class="quick-action" data-quick-doc="literature"><span>◫</span><b>文献</b><small>Paper</small></button>
             <button class="quick-action" data-quick-doc="milestones"><span>⚑</span><b>里程碑</b><small>Milestone</small></button>
@@ -256,7 +256,7 @@
         ${stat('笔记',dash.counts.note||0,'NOTES')}
         ${stat('文献',dash.counts.literature||0,'LITERATURE')}
         ${stat('里程碑',dash.counts.milestone||0,'MILESTONES')}
-        ${stat('研究日志',dash.counts.journal||0,'JOURNALS')}
+        ${stat('实验记录',dash.counts.journal||0,'JOURNALS')}
       </div>
     </div>`;
     wireGo();
@@ -1119,7 +1119,7 @@
   }
 
   async function renderGraphPage(){ const g=await api('/api/graph');state.graph=g;
-    const filterKinds=[['idea','灵感'],['journal','研究日志'],['note','笔记'],['milestone','里程碑'],['summary','工作总结'],['literature','文献'],['tag','标签'],['project','项目']];
+    const filterKinds=[['idea','灵感'],['journal','实验记录'],['note','笔记'],['milestone','里程碑'],['summary','工作总结'],['literature','文献'],['tag','标签'],['project','项目']];
     const relationKinds=[['wikilink','显式引用'],['tag','标签关联'],['project','项目归属']];
     $('#main').innerHTML=`<div class="card card-pad"><div class="card-head"><div><div class="card-kicker">RELATION MAP</div><h3>知识图谱</h3></div><div class="graph-view-tools"><div class="view-tabs"><button data-gview="2d" class="${state.graphView==='2d'?'active':''}">2D</button><button data-gview="3d" class="${state.graphView==='3d'?'active':''}">3D 星图</button></div><button class="secondary-btn" id="graph-fit" type="button">⤢ 全览</button></div></div>
       <div class="graph-wrap" id="graph-wrap"><div class="graph-canvas-wrap"><canvas class="graph-canvas" id="graph-canvas"></canvas><div class="graph-canvas-help">空白处拖动平移 · 3D 下 Alt/右键拖动旋转 · Ctrl+滚轮缩放</div></div><section class="card graph-preview hidden" id="graph-preview"><div class="preview-pane-head"><div><div class="card-kicker">MARKDOWN PREVIEW</div><h3 id="graph-preview-title">节点预览</h3></div><button class="ghost-btn" id="graph-preview-close" type="button">关闭</button></div><div class="preview-pane-meta" id="graph-preview-meta"></div><div class="md-preview graph-preview-body" id="graph-preview-body"></div></section><aside class="card graph-side"><h3 id="graph-node-title">选择节点</h3><div class="graph-node-info" id="graph-node-info">点击任意节点后，将高亮相邻节点与关系边。点击画布空白处可取消高亮。</div><div style="margin-top:12px"><button class="primary-btn" id="graph-bundle" disabled>整理关联 Markdown</button></div><div class="graph-filter"><strong>显示节点类别</strong><div class="graph-filter-grid">${filterKinds.map(([k,label])=>`<label><input type="checkbox" data-graph-kind="${k}" ${state.graphKinds.has(k)?'checked':''}> ${label}</label>`).join('')}</div><div class="graph-filter-actions"><button class="ghost-btn" id="graph-filter-all">全选</button><button class="ghost-btn" id="graph-filter-docs">仅知识条目</button></div></div><div class="graph-filter"><strong>关系来源</strong><div class="graph-filter-grid">${relationKinds.map(([k,label])=>`<label><input type="checkbox" data-graph-relation="${k}" ${state.graphRelations.has(k)?'checked':''}> ${label}</label>`).join('')}</div><div class="row-meta">隐藏“标签”或“项目”节点时，对应关系边也会立即从图谱和导出结果中移除。</div></div></aside></div>
