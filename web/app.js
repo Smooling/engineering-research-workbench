@@ -1215,8 +1215,10 @@
       <textarea id="kt-template-edit" style="width:100%;min-height:360px;font-family:Consolas,monospace">${esc(current)}</textarea>`,
       '<button class="secondary-btn" id="kt-template-reset">还原为预设</button><button class="secondary-btn" id="kt-template-cancel">取消</button><button class="primary-btn" id="kt-template-save">保存模板</button>');
     $('#kt-template-cancel').onclick=closeModal;
-    $('#kt-template-reset').onclick=()=>{
-      $('#kt-template-edit').value=preset;
+    $('#kt-template-reset').onclick=async()=>{
+      delete reg.templates[row.id];
+      await saveKnowledgeTypes(app,cfg,'已一键还原为预设模板');
+      closeModal();renderSettingsTab('knowledge',cfg);
     };
     $('#kt-template-save').onclick=async()=>{
       const value=$('#kt-template-edit').value;
@@ -1257,7 +1259,7 @@
         <div class="field span-2"><label>显示名称</label><input id="kt-label" value="${esc(item.label||'')}" placeholder="实验记录"></div>
         <div class="field"><label>图标</label><input id="kt-icon" maxlength="4" value="${esc(item.icon||'◆')}" placeholder="⚗"></div>
         <div class="field span-4"><label>状态（每行一个，或用逗号分隔）</label><textarea id="kt-statuses" style="min-height:84px">${esc((item.statuses||[]).join('\n'))}</textarea></div>
-        <div class="field span-4"><label>新建条目默认 Markdown 模板</label><textarea id="kt-template" style="min-height:260px;font-family:Consolas,monospace">${esc(item.template||'')}</textarea><span class="field-help">支持 {{title}} 与 {{date}} 占位符。</span></div>
+        <div class="field span-4"><label>该类型预设 Markdown 模板</label><textarea id="kt-template" style="min-height:260px;font-family:Consolas,monospace">${esc(item.template||'')}</textarea><span class="field-help">这是自定义类型的“预设”；实际使用模板仍可在知识条目列表点击“模板”单独覆盖并一键还原。支持 {{title}} 与 {{date}} 占位符。</span></div>
       </div>`,
       '<button class="secondary-btn" id="kt-cancel">取消</button><button class="primary-btn" id="kt-save">保存</button>');
     $('#kt-cancel').onclick=closeModal;
