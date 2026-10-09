@@ -43,7 +43,7 @@ BUILTIN_STATUSES = {
     "literature": ["待阅读", "阅读中", "已精读", "已归档"],
 }
 
-_CUSTOM_KIND_RE = re.compile(r"^[a-z][a-z0-9_-]{1,47}$")
+_CUSTOM_KIND_RE = re.compile(r"^[a-z][a-z0-9_-]{0,47}$")
 
 def _knowledge_cfg() -> dict[str, Any]:
     raw = config.get_app().get("knowledge_types") or {}
