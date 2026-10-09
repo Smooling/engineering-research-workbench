@@ -32,16 +32,29 @@
     focus: {mode:'专注', focusMinutes:savedFocusMinutes, breakMinutes:savedBreakMinutes, seconds:savedFocusMinutes*60, total:savedFocusMinutes*60, timer:null, running:false},
     sidebarPinned: new Set(storedArray('sidebarPinned', ['core'])),
     sidebarOpen: new Set(storedArray('sidebarOpen', ['core','resources','system'])),
+    knowledgeTypes: [],
     dirty: false,
   };
+
+  const BUILTIN_KIND_ROUTE = {ideas:'idea', journals:'journal', notes:'note', milestones:'milestone', summaries:'summary', literature:'literature'};
+  const BUILTIN_ROUTE_KIND = {idea:'ideas', journal:'journals', note:'notes', milestone:'milestones', summary:'summaries', literature:'literature'};
+  function configuredKnowledgeTypes(){
+    const rows=state.knowledgeTypes?.length?state.knowledgeTypes:(state.config?.app?.knowledge_types?.registry||[]);
+    return Array.isArray(rows)?rows:[];
+  }
+  function knowledgeType(kind){return configuredKnowledgeTypes().find(x=>x.id===kind)||null}
+  function kindFromRoute(route){
+    if(BUILTIN_KIND_ROUTE[route])return BUILTIN_KIND_ROUTE[route];
+    if(route.startsWith('kind-'))return decodeURIComponent(route.slice(5));
+    return '';
+  }
 
   const NAV_GROUPS = [
     {id:'core', label:'核心工作', items:[
       ['overview','概览','▦'], ['todos','待办','✓'], ['focus','专注','◷'], ['agent','Agent','◉'], ['news','资讯','◎']
     ]},
     {id:'research', label:'研究 · 知识', defaultCollapsed:true, items:[
-      ['research-overview','总览','◇'], ['ideas','灵感','✦'], ['journals','研究日志','▤'], ['notes','笔记','▧'],
-      ['milestones','里程碑','⚑'], ['summaries','工作总结','▣'], ['literature','文献','◫'], ['graph','知识图谱','⌬']
+      ['research-overview','总览','◇'], ['graph','知识图谱','⌬']
     ]},
     {id:'resources', label:'资源', items:[['folders','文件夹','▱']]},
     {id:'system', label:'系统', items:[['billing','用量','▩'], ['settings','设置','⚙']]}
@@ -55,7 +68,7 @@
     billing:['SYSTEM','用量统计'] /* v261008 · 用量计费仪表盘 */
   };
 
-  const KIND_ROUTE = {ideas:'idea', journals:'journal', notes:'note', milestones:'milestone', summaries:'summary', literature:'literature'};
+  const KIND_ROUTE = BUILTIN_KIND_ROUTE;
   const KIND_LABEL = {idea:'灵感', journal:'研究日志', note:'笔记', milestone:'里程碑', summary:'工作总结', literature:'文献'};
 
   /* v260923 · 内置分类标记 + 自定义标记（localStorage 持久化） */
@@ -75,7 +88,7 @@
   function customMarks(){ try{ const v=JSON.parse(localStorage.getItem('customMarks')||'[]'); return Array.isArray(v)?v:[]; }catch{ return []; } }
   function saveCustomMarks(v){ localStorage.setItem('customMarks', JSON.stringify(v)); }
   function allMarks(){ return KIND_MARKS.concat(customMarks()); }
-  function kindLabel(kind){ return KIND_LABEL[kind] || kind; }
+  function kindLabel(kind){ return knowledgeType(kind)?.label || KIND_LABEL[kind] || kind; }
 
   async function api(url, opts={}) {
     const init = {...opts, headers:{'Content-Type':'application/json', ...(opts.headers||{})}};
@@ -103,7 +116,11 @@
   }
 
   function navGroups(){
-    return NAV_GROUPS.map(g=>({...g, items:[...g.items]}));
+    return NAV_GROUPS.map(g=>{
+      if(g.id!=='research')return {...g,items:[...g.items]};
+      const docs=configuredKnowledgeTypes().filter(x=>!x.hidden).map(x=>[routeForKind(x.id),x.label,x.icon||'◆']);
+      return {...g,items:[['research-overview','总览','◇'],...docs,['graph','知识图谱','⌬']]};
+    });
   }
 
   function renderSidebar(){
@@ -131,7 +148,9 @@
   function setHeader(route){
     let eyebrow,pageTitle;
     const meta = PAGE_META[route];
+    const dynamicKind=kindFromRoute(route);
     if(meta){ [eyebrow,pageTitle]=meta; }
+    else if(dynamicKind){eyebrow='RESEARCH KNOWLEDGE';pageTitle=kindLabel(dynamicKind)}
     else { eyebrow='WORKBENCH'; pageTitle=route; }
     $('#page-eyebrow').textContent=eyebrow; $('#page-title').textContent=pageTitle;
     const d=new Date(); $('#page-date').textContent = d.toLocaleDateString('zh-CN',{year:'numeric',month:'long',day:'numeric',weekday:'short'});
@@ -156,7 +175,7 @@
       else if(route==='folders') await renderFolders();
       else if(route==='billing') await renderBillingPage(); /* v261008 · 用量计费 */
       else if(route==='settings') await renderSettings();
-      else if(KIND_ROUTE[route]) await renderDocsPage(KIND_ROUTE[route]);
+      else if(kindFromRoute(route)) await renderDocsPage(kindFromRoute(route));
       else await renderOverview();
       if(seq!==state.navSeq) return false; /* v260930g9c · 已被更新导航取代：视为未完成 */
       animateMain();
@@ -1074,7 +1093,7 @@
   async function saveCurrentDoc(doc,dateField){ const projects=editorProjects(); const body={title:$('#f-title').value.trim(),project:projects[0]||'',projects,status:$('#f-status').value,tags:editorTags(),kind_marks:$$('#f-marks .mark-chip.on').map(b=>b.dataset.mark),body:$('#md-input').value,pinned:!!($('#f-pinned')&&$('#f-pinned').checked)}; if(dateField)body[dateField]=$('#f-date').value||today(); if(doc.kind==='summary')body.summary_type=$('#f-summary-type').value; if(doc.kind==='literature'){Object.assign(body,{authors:$('#f-authors').value,year:$('#f-year').value,venue:$('#f-venue').value,doi:$('#f-doi').value,url:$('#f-url').value,cite_key:$('#f-cite-key').value,attachment:$('#f-attachment')?.value.trim()||'',bibtex:$('#f-bibtex').value,added_date:$('#f-date').value||today()});} const saved=await api('/api/docs/'+doc.id,{method:'POST',body});state.dirty=false;toast('已保存 Markdown');state.selectedDoc=saved; await refreshListAfterSave(doc.kind,saved.id); }
   async function refreshListAfterSave(kind,id){ state.docs=await api('/api/docs?kind='+kind);const list=$('#doc-list');if(list){list.innerHTML=docItems(state.docs);wireDocList(kind);$$('[data-doc-id]').forEach(x=>x.classList.toggle('active',x.dataset.docId===id));} }
   async function deleteCurrentDoc(doc){ if(!confirm(`删除“${doc.title}”？文件会移入 Workspace/System/Trash。`))return;await api('/api/docs/'+doc.id,{method:'DELETE'});toast('已移入回收目录');state.dirty=false;renderDocsPage(doc.kind); }
-  function routeForKind(k){ return {idea:'ideas',journal:'journals',note:'notes',milestone:'milestones',summary:'summaries',literature:'literature'}[k]||'notes'}
+  function routeForKind(k){ return BUILTIN_ROUTE_KIND[k] || ('kind-'+encodeURIComponent(k))}
   async function exportBibtex(){
     const docs=await api('/api/docs?kind=literature');
     modal('批量导出 BibTeX',`<div class="row-meta" style="margin-bottom:10px">默认全选；可取消不需要导出的文献。</div><div class="bundle-list">${docs.map(d=>`<label class="bundle-item"><input type="checkbox" class="bib-select" value="${d.id}" checked><span class="badge">文献</span><span><strong>${esc(d.title)}</strong><br><span class="row-meta">${esc(d.authors||'')} · ${esc(d.year||'')} · ${esc(d.venue||'')}</span></span></label>`).join('')||'<div class="empty">暂无文献</div>'}</div>`,`<button class="secondary-btn" id="bib-cancel">取消</button><button class="primary-btn" id="bib-export-run">导出所选</button>`);
@@ -1196,7 +1215,7 @@
     await window.ERWBilling.render($('#main'));
   }
   async function renderSettings(){const cfg=await api('/api/config');state.config=cfg;
-    $('#main').innerHTML=`<div class="settings-layout"><aside class="card settings-nav"><button class="active" data-set-tab="general">基础</button><button data-set-tab="service">服务与存储</button><button data-set-tab="literature">文献 / PDF</button><button data-set-tab="academic">学业与目标</button><button data-set-tab="weather">天气</button><button data-set-tab="rss">资讯源</button><button data-set-tab="llm">Agent / LLM</button><button data-set-tab="interface">界面</button></aside><section class="card settings-panel" id="settings-panel"></section></div>`;
+    $('#main').innerHTML=`<div class="settings-layout"><aside class="card settings-nav"><button class="active" data-set-tab="general">基础</button><button data-set-tab="knowledge">知识条目</button><button data-set-tab="service">服务与存储</button><button data-set-tab="literature">文献 / PDF</button><button data-set-tab="academic">学业与目标</button><button data-set-tab="weather">天气</button><button data-set-tab="rss">资讯源</button><button data-set-tab="llm">Agent / LLM</button><button data-set-tab="interface">界面</button></aside><section class="card settings-panel" id="settings-panel"></section></div>`;
     $$('[data-set-tab]').forEach(b=>b.onclick=()=>{$$('[data-set-tab]').forEach(x=>x.classList.toggle('active',x===b));renderSettingsTab(b.dataset.setTab,cfg)});renderSettingsTab('general',cfg);
   }
   function renderSettingsTab(tab,cfg){const p=$('#settings-panel'),app=cfg.app,rss=cfg.rss;if(tab==='general'){
@@ -1313,7 +1332,7 @@
     try{await api('/api/health');location.reload();}catch{setTimeout(()=>waitForRestart(attempt+1),450);}
   }
 
-  async function loadBootstrap(){ const [cfg,statuses,projects,health,ws]=await Promise.all([api('/api/config'),api('/api/statuses'),api('/api/projects'),api('/api/health'),api('/api/workspace/info')]); state.config=cfg;state.statuses=statuses;state.projects=projects;if(localStorage.getItem('sidebarPinned')===null){state.sidebarPinned=new Set(cfg.app.ui?.sidebar_pinned_groups||['core']);saveSidebarState();}$('#brand-title').textContent=cfg.app.app_name;$('#brand-subtitle').textContent=cfg.app.subtitle;$('#version-label').textContent=health.version;$('#workspace-mini').textContent='Workspace · '+ws.relative;state.milestoneView=cfg.app.ui?.milestone_default_view||state.milestoneView;state.graphView=cfg.app.ui?.graph_default_view||state.graphView;state.heatmapMonths=Math.max(1,Math.min(12,Number(cfg.app.ui?.heatmap_months)||state.heatmapMonths||12));localStorage.setItem('heatmapMonths',String(state.heatmapMonths));const theme=localStorage.getItem('theme')||cfg.app.ui?.theme||'light';applyTheme(theme); }
+  async function loadBootstrap(){ const [cfg,statuses,projects,health,ws,knowledgeTypes]=await Promise.all([api('/api/config'),api('/api/statuses'),api('/api/projects'),api('/api/health'),api('/api/workspace/info'),api('/api/knowledge-types')]); state.config=cfg;state.statuses=statuses;state.projects=projects;state.knowledgeTypes=Array.isArray(knowledgeTypes)?knowledgeTypes:[];if(localStorage.getItem('sidebarPinned')===null){state.sidebarPinned=new Set(cfg.app.ui?.sidebar_pinned_groups||['core']);saveSidebarState();}$('#brand-title').textContent=cfg.app.app_name;$('#brand-subtitle').textContent=cfg.app.subtitle;$('#version-label').textContent=health.version;$('#workspace-mini').textContent='Workspace · '+ws.relative;state.milestoneView=cfg.app.ui?.milestone_default_view||state.milestoneView;state.graphView=cfg.app.ui?.graph_default_view||state.graphView;state.heatmapMonths=Math.max(1,Math.min(12,Number(cfg.app.ui?.heatmap_months)||state.heatmapMonths||12));localStorage.setItem('heatmapMonths',String(state.heatmapMonths));const theme=localStorage.getItem('theme')||cfg.app.ui?.theme||'light';applyTheme(theme); }
 
   function bindGlobal(){
     $('#modal-close').onclick=closeModal;$('#modal-backdrop').addEventListener('click',e=>{if(e.target===$('#modal-backdrop'))closeModal()});
