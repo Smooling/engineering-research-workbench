@@ -129,7 +129,7 @@
       const pinned = state.sidebarPinned.has(g.id);
       const open = pinned || state.sidebarOpen.has(g.id);
       return `<section class="nav-group ${open?'':'collapsed'} ${pinned?'pinned':''}" data-group="${g.id}">
-        <div class="nav-group-head"><button class="group-toggle" type="button" data-group-toggle="${g.id}"><span class="chev">⌄</span><span>${g.label}</span></button><button class="pin" type="button" data-pin-group="${g.id}" title="常驻展开">◆</button></div>
+        <div class="nav-group-head"><button class="group-toggle" type="button" data-group-toggle="${g.id}"><span class="chev">⌄</span><span>${g.label}</span></button>${g.id==='research'?'<button class="pin" type="button" data-add-knowledge title="添加自定义知识条目">＋</button>':''}<button class="pin" type="button" data-pin-group="${g.id}" title="常驻展开">◆</button></div>
         <div class="nav-items">${g.items.map(([id,label,ico])=>`<a class="nav-item ${state.route===id?'active':''}" href="#${id}" data-route="${id}"><span class="nav-ico">${ico}</span><span>${label}</span></a>`).join('')}</div>
       </section>`;
     }).join('');
@@ -138,11 +138,16 @@
       const id=btn.dataset.groupToggle; if(state.sidebarPinned.has(id)) return;
       if(state.sidebarOpen.has(id)) state.sidebarOpen.delete(id); else state.sidebarOpen.add(id); saveSidebarState(); renderSidebar();
     }));
-    $$('[data-pin-group]', nav).forEach(btn => btn.addEventListener('click', e => {
+    $('[data-pin-group]', nav).forEach(btn => btn.addEventListener('click', e => {
       e.stopPropagation(); const id=btn.dataset.pinGroup;
       if(state.sidebarPinned.has(id)) state.sidebarPinned.delete(id); else {state.sidebarPinned.add(id); state.sidebarOpen.add(id);} saveSidebarState(); renderSidebar();
     }));
-    $$('[data-route]', nav).forEach(a => a.addEventListener('click', e=>{ e.preventDefault(); navigate(a.dataset.route); }));
+    $('[data-add-knowledge]',nav).forEach(btn=>btn.addEventListener('click',async e=>{
+      e.stopPropagation();
+      const ok=await navigate('settings');if(ok===false)return;
+      const tab=$('[data-set-tab="knowledge"]');if(tab){tab.click();setTimeout(()=>$('#kt-add')?.click(),0)}
+    }));
+    $('[data-route]', nav).forEach(a => a.addEventListener('click', e=>{ e.preventDefault(); navigate(a.dataset.route); }));
   }
 
   function setHeader(route){
