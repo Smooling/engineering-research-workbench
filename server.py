@@ -254,6 +254,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(indexer.get_doc(doc_id))
         if path == "/api/statuses":
             return self.send_json(store.all_statuses())
+        if path == "/api/knowledge-types":
+            return self.send_json(store.knowledge_type_registry())
         if path == "/api/projects":
             return self.send_json(indexer.project_names())
         if path == "/api/project-records":
