@@ -336,6 +336,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(config.save_app(payload))
         if path == "/api/config/rss":
             return self.send_json(config.save_rss(payload))
+        if path == "/api/knowledge-marks/cleanup":
+            result = store.cleanup_deleted_mark(str(payload.get("mark_id") or ""))
+            indexer.rebuild()
+            return self.send_json(result)
         if path == "/api/system/index/rebuild":
             return self.send_json(indexer.rebuild())
         if path == "/api/system/reload":
