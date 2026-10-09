@@ -43,20 +43,86 @@ BUILTIN_STATUSES = {
     "literature": ["待阅读", "阅读中", "已精读", "已归档"],
 }
 
-def kind_dir_map() -> dict[str, str]:
-    return dict(BUILTIN_KIND_DIR)
+_CUSTOM_KIND_RE = re.compile(r"^[a-z][a-z0-9_-]{1,47}$")
 
+def _knowledge_cfg() -> dict[str, Any]:
+    raw = config.get_app().get("knowledge_types") or {}
+    return raw if isinstance(raw, dict) else {}
+
+def custom_kind_records() -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set(BUILTIN_KIND_DIR)
+    for raw in (_knowledge_cfg().get("custom") or []):
+        if not isinstance(raw, dict):
+            continue
+        kind = str(raw.get("id") or "").strip().lower()
+        if not _CUSTOM_KIND_RE.fullmatch(kind) or kind in seen:
+            continue
+        label = str(raw.get("label") or kind).strip()[:32] or kind
+        icon = str(raw.get("icon") or "◆").strip()[:4] or "◆"
+        statuses = [str(x).strip()[:24] for x in (raw.get("statuses") or []) if str(x).strip()]
+        if not statuses:
+            statuses = ["草稿", "进行中", "完成", "已归档"]
+        template = str(raw.get("template") or "").replace("\r\n", "\n")
+        out.append({
+            "id": kind,
+            "label": label,
+            "icon": icon,
+            "statuses": list(dict.fromkeys(statuses))[:12],
+            "template": template,
+            "hidden": bool(raw.get("hidden", False)),
+        })
+        seen.add(kind)
+    return out
+
+def knowledge_type_registry() -> list[dict[str, Any]]:
+    cfg = _knowledge_cfg()
+    hidden = {str(x) for x in (cfg.get("hidden") or [])}
+    custom = {x["id"]: x for x in custom_kind_records()}
+    default_order = ["idea", "journal", "note", "milestone", "summary", "literature", *custom.keys()]
+    order = [str(x) for x in (cfg.get("order") or []) if str(x)]
+    order = list(dict.fromkeys([*order, *default_order]))
+    rows: list[dict[str, Any]] = []
+    builtin_icons = {"idea":"✦","journal":"▤","note":"▧","milestone":"⚑","summary":"▣","literature":"◫"}
+    for kind in order:
+        if kind in BUILTIN_KIND_DIR:
+            rows.append({
+                "id": kind, "label": BUILTIN_KIND_LABEL[kind], "icon": builtin_icons[kind],
+                "statuses": list(BUILTIN_STATUSES[kind]), "builtin": True,
+                "hidden": kind in hidden, "template": "",
+            })
+        elif kind in custom:
+            rows.append({**custom[kind], "builtin": False, "hidden": bool(custom[kind].get("hidden")) or kind in hidden})
+    return rows
+
+def kind_dir_map() -> dict[str, str]:
+    out = dict(BUILTIN_KIND_DIR)
+    for row in custom_kind_records():
+        out[row["id"]] = f"Knowledge/Custom/{row['id']}"
+    return out
 
 def kind_label_map() -> dict[str, str]:
-    return dict(BUILTIN_KIND_LABEL)
-
+    out = dict(BUILTIN_KIND_LABEL)
+    for row in custom_kind_records():
+        out[row["id"]] = row["label"]
+    return out
 
 def kind_statuses(kind: str) -> list[str]:
-    return list(BUILTIN_STATUSES.get(kind, []))
-
+    if kind in BUILTIN_STATUSES:
+        return list(BUILTIN_STATUSES[kind])
+    for row in custom_kind_records():
+        if row["id"] == kind:
+            return list(row["statuses"])
+    return []
 
 def all_statuses() -> dict[str, list[str]]:
-    return dict(BUILTIN_STATUSES)
+    return {kind: kind_statuses(kind) for kind in kind_dir_map()}
+
+def custom_kind_template(kind: str) -> str:
+    for row in custom_kind_records():
+        if row["id"] == kind:
+            return str(row.get("template") or "")
+    return ""
 
 DATE_FIELDS = {
     "journal": "record_date",
@@ -443,6 +509,9 @@ def _make_default_body(kind: str, title: str, payload: dict[str, Any]) -> str:
             "## 与当前研究的关系\n\n\n"
             "## 摘录与批注\n\n"
         )
+    template = custom_kind_template(kind)
+    if template:
+        return template.replace("{{title}}", title).replace("{{date}}", _today()).rstrip() + "\n"
     return f"# {title}\n\n## 要点\n\n\n## 正文\n\n\n## 关联\n\n"
 
 
