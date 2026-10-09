@@ -139,16 +139,16 @@
       const id=btn.dataset.groupToggle; if(state.sidebarPinned.has(id)) return;
       if(state.sidebarOpen.has(id)) state.sidebarOpen.delete(id); else state.sidebarOpen.add(id); saveSidebarState(); renderSidebar();
     }));
-    $('[data-pin-group]', nav).forEach(btn => btn.addEventListener('click', e => {
+    $$('[data-pin-group]', nav).forEach(btn => btn.addEventListener('click', e => {
       e.stopPropagation(); const id=btn.dataset.pinGroup;
       if(state.sidebarPinned.has(id)) state.sidebarPinned.delete(id); else {state.sidebarPinned.add(id); state.sidebarOpen.add(id);} saveSidebarState(); renderSidebar();
     }));
-    $('[data-add-knowledge]',nav).forEach(btn=>btn.addEventListener('click',async e=>{
+    $$('[data-add-knowledge]',nav).forEach(btn=>btn.addEventListener('click',async e=>{
       e.stopPropagation();
       const ok=await navigate('settings');if(ok===false)return;
       const tab=$('[data-set-tab="knowledge"]');if(tab){tab.click();setTimeout(()=>$('#kt-add')?.click(),0)}
     }));
-    $('[data-route]', nav).forEach(a => a.addEventListener('click', e=>{ e.preventDefault(); navigate(a.dataset.route); }));
+    $$('[data-route]', nav).forEach(a => a.addEventListener('click', e=>{ e.preventDefault(); navigate(a.dataset.route); }));
   }
 
   function setHeader(route){
@@ -184,7 +184,7 @@
       else if(route==='knowledge-types'){
         await renderSettings();
         const tab=$('[data-set-tab="knowledge"]');
-        if(tab){$('[data-set-tab]').forEach(x=>x.classList.toggle('active',x===tab));renderSettingsTab('knowledge',state.config)}
+        if(tab){$$('[data-set-tab]').forEach(x=>x.classList.toggle('active',x===tab));renderSettingsTab('knowledge',state.config)}
       }
       else if(kindFromRoute(route)) await renderDocsPage(kindFromRoute(route));
       else await renderOverview();
@@ -1284,7 +1284,7 @@
       </div>`).join('')||'<div class="empty">暂无知识条目类型</div>'}</div>
       <div class="field-help" style="margin-top:12px">“删除定义”只允许在该类型没有文档时执行；已有数据请使用“隐藏”。</div>`;
     $('#kt-add').onclick=()=>openKnowledgeTypeEditor(app,cfg);
-    $('[data-kt-visible]',p).forEach(el=>el.onchange=async()=>{
+    $$('[data-kt-visible]',p).forEach(el=>el.onchange=async()=>{
       const id=el.dataset.ktVisible;const set=new Set(reg.hidden||[]);if(el.checked)set.delete(id);else set.add(id);reg.hidden=[...set];
       await saveKnowledgeTypes(app,cfg,el.checked?'已显示该条目':'已隐藏该条目');renderSettingsTab('knowledge',cfg);
     });
@@ -1292,10 +1292,10 @@
       const order=[...reg.order];const i=order.indexOf(id);if(i<0)return;const j=i+delta;if(j<0||j>=order.length)return;
       [order[i],order[j]]=[order[j],order[i]];reg.order=order;await saveKnowledgeTypes(app,cfg,'排序已保存');renderSettingsTab('knowledge',cfg);
     };
-    $('[data-kt-up]',p).forEach(b=>b.onclick=()=>move(b.dataset.ktUp,-1));
-    $('[data-kt-down]',p).forEach(b=>b.onclick=()=>move(b.dataset.ktDown,1));
-    $('[data-kt-edit]',p).forEach(b=>b.onclick=()=>openKnowledgeTypeEditor(app,cfg,reg.custom.find(x=>x.id===b.dataset.ktEdit)));
-    $('[data-kt-delete]',p).forEach(b=>b.onclick=async()=>{
+    $$('[data-kt-up]',p).forEach(b=>b.onclick=()=>move(b.dataset.ktUp,-1));
+    $$('[data-kt-down]',p).forEach(b=>b.onclick=()=>move(b.dataset.ktDown,1));
+    $$('[data-kt-edit]',p).forEach(b=>b.onclick=()=>openKnowledgeTypeEditor(app,cfg,reg.custom.find(x=>x.id===b.dataset.ktEdit)));
+    $$('[data-kt-delete]',p).forEach(b=>b.onclick=async()=>{
       const id=b.dataset.ktDelete,label=knowledgeType(id)?.label||id;
       const docs=await api('/api/docs?kind='+encodeURIComponent(id));
       if(docs.length){toast(`“${label}”已有 ${docs.length} 条或更多文档，不能删除定义；请改为隐藏。`,true);return}
@@ -1307,7 +1307,7 @@
 
   async function renderSettings(){const cfg=await api('/api/config');state.config=cfg;
     $('#main').innerHTML=`<div class="settings-layout"><aside class="card settings-nav"><button class="active" data-set-tab="general">基础</button><button data-set-tab="knowledge">知识条目</button><button data-set-tab="service">服务与存储</button><button data-set-tab="literature">文献 / PDF</button><button data-set-tab="academic">学业与目标</button><button data-set-tab="weather">天气</button><button data-set-tab="rss">资讯源</button><button data-set-tab="llm">Agent / LLM</button><button data-set-tab="interface">界面</button></aside><section class="card settings-panel" id="settings-panel"></section></div>`;
-    $$('[data-set-tab]').forEach(b=>b.onclick=()=>{$$('[data-set-tab]').forEach(x=>x.classList.toggle('active',x===b));renderSettingsTab(b.dataset.setTab,cfg)});renderSettingsTab('general',cfg);
+    $$$('[data-set-tab]').forEach(b=>b.onclick=()=>{$$$('[data-set-tab]').forEach(x=>x.classList.toggle('active',x===b));renderSettingsTab(b.dataset.setTab,cfg)});renderSettingsTab('general',cfg);
   }
   function renderSettingsTab(tab,cfg){const p=$('#settings-panel'),app=cfg.app,rss=cfg.rss;if(tab==='general'){
       p.innerHTML=`<div class="card-head"><div><div class="card-kicker">GENERAL</div><h3>基础设置</h3></div></div><div class="form-grid"><div class="field span-2"><label>工作台名称</label><input id="set-app-name" value="${esc(app.app_name)}"></div><div class="field span-2"><label>副标题</label><input id="set-subtitle" value="${esc(app.subtitle)}"></div></div><div class="field-help" style="margin-top:10px">运行端口、监听地址、Workspace 路径和启动行为已移动到“服务与存储”，均可在页面中配置。</div><div style="margin-top:14px"><button class="primary-btn" id="save-settings">保存</button></div>`;$('#save-settings').onclick=async()=>{app.app_name=$('#set-app-name').value.trim()||'科研工作台';app.subtitle=$('#set-subtitle').value.trim();const saved=await api('/api/config/app',{method:'POST',body:app});state.config.app=saved;cfg.app=saved;toast('基础设置已保存');await loadBootstrap();};
