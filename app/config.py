@@ -111,7 +111,14 @@ DEFAULT_APP_CONFIG = {
         "order": ["idea", "journal", "note", "milestone", "summary", "literature"],
         "hidden": [],
         "custom": [],
+        "templates": {},
     },
+    # v261009 · 分类标记改为配置驱动；默认仅保留 3 个常用标记，其余由用户在设置中增减。
+    "classification_marks": [
+        {"id": "knowledge", "icon": "◈", "label": "知识", "color": "#2a9d8f"},
+        {"id": "method", "icon": "⚒", "label": "方法", "color": "#e76f51"},
+        {"id": "experiment", "icon": "⚗", "label": "实验", "color": "#d1569a"},
+    ],
     # Non-secret, global Agent options stay in app.json. Provider profiles and
     # API keys live only in config/secret.json, which is ignored by git.
     "llm": {
@@ -649,7 +656,35 @@ def _clean_knowledge_types(value: Any) -> dict[str, Any]:
     order = [str(x) for x in (raw.get("order") or []) if str(x) in valid]
     order = list(dict.fromkeys(order + ["idea","journal","note","milestone","summary","literature"] + [x["id"] for x in custom]))
     hidden = [str(x) for x in (raw.get("hidden") or []) if str(x) in valid]
-    return {"order": order, "hidden": list(dict.fromkeys(hidden)), "custom": custom}
+    templates_raw = raw.get("templates") if isinstance(raw.get("templates"), dict) else {}
+    templates: dict[str, str] = {}
+    for kind, value in templates_raw.items():
+        key = str(kind).strip()
+        if key in valid:
+            templates[key] = str(value or "")[:30000].replace("\r\n", "\n")
+    return {"order": order, "hidden": list(dict.fromkeys(hidden)), "custom": custom, "templates": templates}
+
+
+def _clean_classification_marks(value: Any) -> list[dict[str, str]]:
+    rows = value if isinstance(value, list) else []
+    out: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for index, item in enumerate(rows):
+        if not isinstance(item, dict):
+            continue
+        mark_id = str(item.get("id") or "").strip().lower()
+        if not re.fullmatch(r"[a-z][a-z0-9_-]{0,47}", mark_id) or mark_id in seen:
+            continue
+        label = str(item.get("label") or mark_id).strip()[:16] or mark_id
+        icon = str(item.get("icon") or "◆").strip()[:4] or "◆"
+        color = str(item.get("color") or "#4a6fa5").strip().lower()
+        if not re.fullmatch(r"#[0-9a-f]{6}", color):
+            color = "#4a6fa5"
+        out.append({"id": mark_id, "icon": icon, "label": label, "color": color})
+        seen.add(mark_id)
+        if len(out) >= 24:
+            break
+    return out
 
 
 def save_app(data: dict) -> dict:
@@ -660,6 +695,8 @@ def save_app(data: dict) -> dict:
             reload_all()
         if "knowledge_types" not in incoming:
             incoming["knowledge_types"] = deepcopy(_cache["app"].get("knowledge_types") or DEFAULT_APP_CONFIG["knowledge_types"])
+        if "classification_marks" not in incoming:
+            incoming["classification_marks"] = deepcopy(_cache["app"].get("classification_marks") or DEFAULT_APP_CONFIG["classification_marks"])
         current_secret = deepcopy(_cache["secret"])
         secret = _merge_profiles_from_public(incoming_llm, current_secret)
         assist = incoming_llm.get("assist") if isinstance(incoming_llm.get("assist"), dict) else {}
@@ -672,6 +709,7 @@ def save_app(data: dict) -> dict:
         }
         incoming["llm"] = clean_llm
         incoming["knowledge_types"] = _clean_knowledge_types(incoming.get("knowledge_types"))
+        incoming["classification_marks"] = _clean_classification_marks(incoming.get("classification_marks"))
         merged = _deep_merge(DEFAULT_APP_CONFIG, incoming)
         _atomic_json_write(CONFIG_DIR / "app.json", merged)
         _atomic_json_write(SECRET_PATH, secret)
