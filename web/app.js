@@ -1324,7 +1324,6 @@
             <div class="compact-icon-menu" id="km-icon-menu">${KNOWLEDGE_ICON_CHOICES.map(ic=>`<button type="button" data-km-icon="${esc(ic)}" class="${ic==='◆'?'on':''}" title="选择 ${esc(ic)}">${esc(ic)}</button>`).join('')}</div>
           </details>
           <input id="km-icon" type="hidden" value="◆">
-          <span class="field-help">点击展开后以 5×4 紧凑网格选择。</span>
         </div>
         <div class="field"><label>颜色</label><input id="km-color" type="color" value="#4a6fa5"></div>
       </div>
