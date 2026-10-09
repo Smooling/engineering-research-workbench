@@ -1246,7 +1246,7 @@
     $('#kt-save').onclick=async()=>{
       const id=(editing?item.id:$('#kt-id').value.trim().toLowerCase());
       const label=$('#kt-label').value.trim();
-      if(!/^[a-z][a-z0-9_-]{1,47}$/.test(id)){toast('ID 需以小写字母开头，只能包含小写字母、数字、-、_',true);return}
+      if(!/^[a-z][a-z0-9_-]{0,47}$/.test(id)){toast('ID 需以小写字母开头，只能包含小写字母、数字、-、_',true);return}
       if(['idea','journal','note','milestone','summary','literature'].includes(id)){toast('该 ID 为内置类型，请换一个',true);return}
       if(!label){toast('请填写显示名称',true);return}
       if(!editing&&custom.some(x=>x.id===id)){toast('该 ID 已存在',true);return}
