@@ -629,7 +629,7 @@ def _clean_knowledge_types(value: Any) -> dict[str, Any]:
         if not isinstance(item, dict):
             continue
         kind = str(item.get("id") or "").strip().lower()
-        if not re.fullmatch(r"[a-z][a-z0-9_-]{1,47}", kind) or kind in seen:
+        if not re.fullmatch(r"[a-z][a-z0-9_-]{0,47}", kind) or kind in seen:
             continue
         label = str(item.get("label") or kind).strip()[:32] or kind
         icon = str(item.get("icon") or "◆").strip()[:4] or "◆"
