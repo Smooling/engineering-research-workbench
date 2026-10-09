@@ -1318,7 +1318,14 @@
       </div>`).join('')||'<div class="empty">暂无分类标记；下方可以添加。</div>'}</div>
       <div class="form-grid" style="margin-top:14px">
         <div class="field span-2"><label>分类名称</label><input id="km-label" maxlength="16" placeholder="例如：问题"></div>
-        <div class="field"><label>图标</label><select id="km-icon">${KNOWLEDGE_ICON_CHOICES.map(ic=>`<option value="${esc(ic)}" ${ic==='◆'?'selected':''}>${esc(ic)}</option>`).join('')}</select><span class="field-help">从约 20 个候选图标中选择。</span></div>
+        <div class="field"><label>图标</label>
+          <details class="compact-icon-select" id="km-icon-select">
+            <summary id="km-icon-trigger" title="选择图标"><span id="km-icon-current">◆</span><span class="compact-icon-caret">⌄</span></summary>
+            <div class="compact-icon-menu" id="km-icon-menu">${KNOWLEDGE_ICON_CHOICES.map(ic=>`<button type="button" data-km-icon="${esc(ic)}" class="${ic==='◆'?'on':''}" title="选择 ${esc(ic)}">${esc(ic)}</button>`).join('')}</div>
+          </details>
+          <input id="km-icon" type="hidden" value="◆">
+          <span class="field-help">点击展开后以 5×4 紧凑网格选择。</span>
+        </div>
         <div class="field"><label>颜色</label><input id="km-color" type="color" value="#4a6fa5"></div>
       </div>
       <div style="margin-top:10px"><button class="primary-btn" id="km-add">＋ 添加分类标记</button></div>`;
@@ -1341,6 +1348,14 @@
       if(!confirm(`删除自定义条目类型“${label}”的定义？空目录会保留，现有其它数据不受影响。`))return;
       reg.custom=reg.custom.filter(x=>x.id!==id);reg.order=reg.order.filter(x=>x!==id);reg.hidden=reg.hidden.filter(x=>x!==id);delete reg.templates[id];
       await saveKnowledgeTypes(app,cfg,'自定义条目类型定义已删除');renderSettingsTab('knowledge',cfg);
+    });
+    const kmIconDetails=$('#km-icon-select');
+    $$('[data-km-icon]',p).forEach(btn=>btn.onclick=()=>{
+      const icon=btn.dataset.kmIcon||'◆';
+      $('#km-icon').value=icon;
+      $('#km-icon-current').textContent=icon;
+      $$('[data-km-icon]',p).forEach(x=>x.classList.toggle('on',x===btn));
+      if(kmIconDetails)kmIconDetails.open=false;
     });
     $('#km-add').onclick=()=>addClassificationMark(app,cfg);
     $$('[data-km-delete]',p).forEach(b=>b.onclick=()=>deleteClassificationMark(app,cfg,b.dataset.kmDelete));
