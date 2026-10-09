@@ -1214,6 +1214,86 @@
     if(!window.ERWBilling){ $('#main').innerHTML='<div class="card card-pad danger">用量模块未加载（v261008-billing.js）</div>'; return; }
     await window.ERWBilling.render($('#main'));
   }
+  async function saveKnowledgeTypes(app,cfg,message='知识条目设置已保存'){
+    const saved=await api('/api/config/app',{method:'POST',body:app});
+    state.config.app=saved;cfg.app=saved;
+    const [types,statuses]=await Promise.all([api('/api/knowledge-types'),api('/api/statuses')]);
+    state.knowledgeTypes=Array.isArray(types)?types:[];state.statuses=statuses||{};
+    renderSidebar();toast(message);
+    return saved;
+  }
+  function knowledgeConfig(app){
+    const raw=app.knowledge_types&&typeof app.knowledge_types==='object'?app.knowledge_types:{};
+    if(!Array.isArray(raw.order))raw.order=['idea','journal','note','milestone','summary','literature'];
+    if(!Array.isArray(raw.hidden))raw.hidden=[];
+    if(!Array.isArray(raw.custom))raw.custom=[];
+    app.knowledge_types=raw;return raw;
+  }
+  function openKnowledgeTypeEditor(app,cfg,existing=null){
+    const custom=knowledgeConfig(app).custom;
+    const item=existing||{id:'',label:'',icon:'◆',statuses:['草稿','进行中','完成','已归档'],template:'# {{title}}\n\n## 要点\n\n\n## 正文\n\n\n## 关联\n'};
+    const editing=!!existing;
+    modal(editing?'编辑自定义条目类型':'添加自定义条目类型',`
+      <div class="form-grid">
+        <div class="field"><label>标识 ID</label><input id="kt-id" ${editing?'disabled':''} value="${esc(item.id||'')}" placeholder="experiment"><span class="field-help">仅小写字母、数字、-、_；创建后不可修改。</span></div>
+        <div class="field span-2"><label>显示名称</label><input id="kt-label" value="${esc(item.label||'')}" placeholder="实验记录"></div>
+        <div class="field"><label>图标</label><input id="kt-icon" maxlength="4" value="${esc(item.icon||'◆')}" placeholder="⚗"></div>
+        <div class="field span-4"><label>状态（每行一个，或用逗号分隔）</label><textarea id="kt-statuses" style="min-height:84px">${esc((item.statuses||[]).join('\n'))}</textarea></div>
+        <div class="field span-4"><label>新建条目默认 Markdown 模板</label><textarea id="kt-template" style="min-height:260px;font-family:Consolas,monospace">${esc(item.template||'')}</textarea><span class="field-help">支持 {{title}} 与 {{date}} 占位符。</span></div>
+      </div>`,
+      '<button class="secondary-btn" id="kt-cancel">取消</button><button class="primary-btn" id="kt-save">保存</button>');
+    $('#kt-cancel').onclick=closeModal;
+    $('#kt-save').onclick=async()=>{
+      const id=(editing?item.id:$('#kt-id').value.trim().toLowerCase());
+      const label=$('#kt-label').value.trim();
+      if(!/^[a-z][a-z0-9_-]{1,47}$/.test(id)){toast('ID 需以小写字母开头，只能包含小写字母、数字、-、_',true);return}
+      if(['idea','journal','note','milestone','summary','literature'].includes(id)){toast('该 ID 为内置类型，请换一个',true);return}
+      if(!label){toast('请填写显示名称',true);return}
+      if(!editing&&custom.some(x=>x.id===id)){toast('该 ID 已存在',true);return}
+      const statuses=$('#kt-statuses').value.split(/[\n,，]+/).map(x=>x.trim()).filter(Boolean);
+      const next={id,label,icon:$('#kt-icon').value.trim()||'◆',statuses:[...new Set(statuses)].slice(0,12),template:$('#kt-template').value};
+      if(editing){const idx=custom.findIndex(x=>x.id===id);if(idx>=0)custom[idx]=next}else{custom.push(next);if(!app.knowledge_types.order.includes(id))app.knowledge_types.order.push(id)}
+      await saveKnowledgeTypes(app,cfg,editing?'自定义条目类型已更新':'自定义条目类型已添加');
+      closeModal();renderSettingsTab('knowledge',cfg);
+    };
+  }
+  function renderKnowledgeTypesSettings(p,app,cfg){
+    const reg=knowledgeConfig(app),rows=state.knowledgeTypes?.length?state.knowledgeTypes:[];
+    const ordered=reg.order.map(id=>rows.find(x=>x.id===id)).filter(Boolean);
+    const extras=rows.filter(x=>!reg.order.includes(x.id));
+    const all=[...ordered,...extras];
+    p.innerHTML=`<div class="card-head"><div><div class="card-kicker">KNOWLEDGE TYPES</div><h3>研究 · 知识条目</h3><p class="row-meta">管理侧栏中的知识条目类型。隐藏不会删除任何 Markdown 数据；自定义类型共用通用 Markdown 编辑器。</p></div><button class="primary-btn" id="kt-add">＋ 添加自定义条目</button></div>
+      <div class="list-stack" id="kt-list">${all.map((x,i)=>`<div class="list-row" data-kt="${esc(x.id)}">
+        <div style="font-size:18px;width:24px;text-align:center">${esc(x.icon||'◆')}</div>
+        <div class="row-main"><div class="row-title">${esc(x.label)} <span class="badge">${x.builtin?'内置':'自定义'}</span></div><div class="row-meta"><code>${esc(x.id)}</code> · 状态：${esc((x.statuses||[]).join(' / ')||'无')}</div></div>
+        <label class="badge" style="gap:5px"><input type="checkbox" data-kt-visible="${esc(x.id)}" ${x.hidden?'':'checked'}>显示</label>
+        <button class="secondary-btn" data-kt-up="${esc(x.id)}" ${i===0?'disabled':''}>↑</button>
+        <button class="secondary-btn" data-kt-down="${esc(x.id)}" ${i===all.length-1?'disabled':''}>↓</button>
+        ${x.builtin?'':`<button class="secondary-btn" data-kt-edit="${esc(x.id)}">编辑</button><button class="secondary-btn" data-kt-delete="${esc(x.id)}">删除定义</button>`}
+      </div>`).join('')||'<div class="empty">暂无知识条目类型</div>'}</div>
+      <div class="field-help" style="margin-top:12px">“删除定义”只允许在该类型没有文档时执行；已有数据请使用“隐藏”。</div>`;
+    $('#kt-add').onclick=()=>openKnowledgeTypeEditor(app,cfg);
+    $('[data-kt-visible]',p).forEach(el=>el.onchange=async()=>{
+      const id=el.dataset.ktVisible;const set=new Set(reg.hidden||[]);if(el.checked)set.delete(id);else set.add(id);reg.hidden=[...set];
+      await saveKnowledgeTypes(app,cfg,el.checked?'已显示该条目':'已隐藏该条目');renderSettingsTab('knowledge',cfg);
+    });
+    const move=async(id,delta)=>{
+      const order=[...reg.order];const i=order.indexOf(id);if(i<0)return;const j=i+delta;if(j<0||j>=order.length)return;
+      [order[i],order[j]]=[order[j],order[i]];reg.order=order;await saveKnowledgeTypes(app,cfg,'排序已保存');renderSettingsTab('knowledge',cfg);
+    };
+    $('[data-kt-up]',p).forEach(b=>b.onclick=()=>move(b.dataset.ktUp,-1));
+    $('[data-kt-down]',p).forEach(b=>b.onclick=()=>move(b.dataset.ktDown,1));
+    $('[data-kt-edit]',p).forEach(b=>b.onclick=()=>openKnowledgeTypeEditor(app,cfg,reg.custom.find(x=>x.id===b.dataset.ktEdit)));
+    $('[data-kt-delete]',p).forEach(b=>b.onclick=async()=>{
+      const id=b.dataset.ktDelete,label=knowledgeType(id)?.label||id;
+      const docs=await api('/api/docs?kind='+encodeURIComponent(id));
+      if(docs.length){toast(`“${label}”已有 ${docs.length} 条或更多文档，不能删除定义；请改为隐藏。`,true);return}
+      if(!confirm(`删除自定义条目类型“${label}”的定义？空目录会保留，现有其它数据不受影响。`))return;
+      reg.custom=reg.custom.filter(x=>x.id!==id);reg.order=reg.order.filter(x=>x!==id);reg.hidden=reg.hidden.filter(x=>x!==id);
+      await saveKnowledgeTypes(app,cfg,'自定义条目类型定义已删除');renderSettingsTab('knowledge',cfg);
+    });
+  }
+
   async function renderSettings(){const cfg=await api('/api/config');state.config=cfg;
     $('#main').innerHTML=`<div class="settings-layout"><aside class="card settings-nav"><button class="active" data-set-tab="general">基础</button><button data-set-tab="knowledge">知识条目</button><button data-set-tab="service">服务与存储</button><button data-set-tab="literature">文献 / PDF</button><button data-set-tab="academic">学业与目标</button><button data-set-tab="weather">天气</button><button data-set-tab="rss">资讯源</button><button data-set-tab="llm">Agent / LLM</button><button data-set-tab="interface">界面</button></aside><section class="card settings-panel" id="settings-panel"></section></div>`;
     $$('[data-set-tab]').forEach(b=>b.onclick=()=>{$$('[data-set-tab]').forEach(x=>x.classList.toggle('active',x===b));renderSettingsTab(b.dataset.setTab,cfg)});renderSettingsTab('general',cfg);
@@ -1221,6 +1301,7 @@
   function renderSettingsTab(tab,cfg){const p=$('#settings-panel'),app=cfg.app,rss=cfg.rss;if(tab==='general'){
       p.innerHTML=`<div class="card-head"><div><div class="card-kicker">GENERAL</div><h3>基础设置</h3></div></div><div class="form-grid"><div class="field span-2"><label>工作台名称</label><input id="set-app-name" value="${esc(app.app_name)}"></div><div class="field span-2"><label>副标题</label><input id="set-subtitle" value="${esc(app.subtitle)}"></div></div><div class="field-help" style="margin-top:10px">运行端口、监听地址、Workspace 路径和启动行为已移动到“服务与存储”，均可在页面中配置。</div><div style="margin-top:14px"><button class="primary-btn" id="save-settings">保存</button></div>`;$('#save-settings').onclick=async()=>{app.app_name=$('#set-app-name').value.trim()||'科研工作台';app.subtitle=$('#set-subtitle').value.trim();const saved=await api('/api/config/app',{method:'POST',body:app});state.config.app=saved;cfg.app=saved;toast('基础设置已保存');await loadBootstrap();};
     }
+    else if(tab==='knowledge'){renderKnowledgeTypesSettings(p,app,cfg);}
     else if(tab==='service'){
       const mig=app.workspace_migration||{};
       p.innerHTML=`<div class="card-head"><div><div class="card-kicker">SERVICE / STORAGE</div><h3>服务与存储</h3><p class="row-meta">这些参数直接对应 config/app.json 中的运行与 Workspace 配置。</p></div><span class="badge warn">Host / Port 修改后需快速重启</span></div><div class="form-grid"><div class="field span-2"><label>监听地址 Host</label><input id="svc-host" value="${esc(app.host||'127.0.0.1')}" placeholder="127.0.0.1"><span class="field-help">仅本机使用建议 127.0.0.1；局域网访问可配置 0.0.0.0，并自行确认防火墙安全。</span></div><div class="field"><label>端口 Port</label><input id="svc-port" type="number" min="1" max="65535" value="${Number(app.port||8765)}"></div><div class="field"><label>启动时打开浏览器</label><select id="svc-browser"><option value="1" ${app.auto_open_browser!==false?'selected':''}>是</option><option value="0" ${app.auto_open_browser===false?'selected':''}>否 / 静默启动</option></select></div><div class="field span-4"><label>Workspace 路径</label><input id="svc-workspace" value="${esc(app.workspace||'Workspace')}" placeholder="Workspace"><span class="field-help">支持项目相对路径或绝对路径。修改后后续数据读写会使用新目录；建议修改前先备份 Workspace。</span></div><div class="field"><label>旧数据自动识别</label><select id="svc-migrate"><option value="1" ${mig.enabled!==false?'selected':''}>启用</option><option value="0" ${mig.enabled===false?'selected':''}>关闭</option></select></div><div class="field"><label>迁移时复制旧数据</label><select id="svc-copy"><option value="1" ${mig.copy_legacy_data!==false?'selected':''}>复制（非破坏）</option><option value="0" ${mig.copy_legacy_data===false?'selected':''}>仅识别</option></select></div></div><div style="margin-top:14px;display:flex;gap:8px"><button class="primary-btn" id="svc-save">保存服务与存储设置</button><button class="secondary-btn" id="svc-restart">保存后快速重启</button></div>`;
