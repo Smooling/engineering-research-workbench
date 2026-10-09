@@ -299,6 +299,17 @@ html[data-density="compact"] .meta-head{margin-bottom:4px}
 .mark-icon-pick button{width:36px;height:32px;border:1px solid var(--line-strong);background:var(--surface-2);border-radius:8px;font-size:14px;color:var(--muted);cursor:pointer;transition:border-color .15s,color .15s,background .15s}
 .mark-icon-pick button:hover{border-color:var(--accent);color:var(--accent)}
 .mark-icon-pick button.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft);font-weight:600}
+/* v261009 · 分类标记图标选择器改为紧凑 5×4 弹出网格，避免原生下拉显示 20 行。 */
+.compact-icon-select{position:relative;width:100%}
+.compact-icon-select>summary{list-style:none;height:34px;box-sizing:border-box;border:1px solid var(--line);border-radius:8px;background:var(--surface);padding:0 9px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;font-size:15px;color:var(--text);outline:none}
+.compact-icon-select>summary::-webkit-details-marker{display:none}
+.compact-icon-select>summary:hover,.compact-icon-select[open]>summary{border-color:var(--accent)}
+.compact-icon-select[open]>summary{box-shadow:0 0 0 2px var(--accent-soft)}
+.compact-icon-caret{font-size:10px;color:var(--muted);margin-left:8px}
+.compact-icon-menu{position:absolute;z-index:80;left:0;top:38px;display:grid;grid-template-columns:repeat(5,30px);gap:4px;padding:6px;border:1px solid var(--line-strong);border-radius:9px;background:var(--surface);box-shadow:var(--shadow);width:max-content;max-width:min(100%,180px)}
+.compact-icon-menu button{width:30px;height:28px;padding:0;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--text);font-size:14px;line-height:1;cursor:pointer}
+.compact-icon-menu button:hover{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.compact-icon-menu button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent);font-weight:700}
 /* v260923 · 等高纯色色块：隐藏原生 color 输入边框，圆点实时反映所选颜色 */
 .color-swatch{position:relative;width:46px;min-width:46px;border:1px solid var(--line-strong);border-radius:9px;overflow:hidden;cursor:pointer;display:grid;place-items:center;background:var(--surface-2)}
 .color-swatch #f-mark-color{position:absolute;inset:0;opacity:0;cursor:pointer}
