@@ -62,33 +62,25 @@
 
   const PAGE_META = {
     overview:['CORE WORK','概览'], todos:['CORE WORK','待办'], focus:['CORE WORK','专注'], agent:['CORE WORK','科研 Agent'], news:['CORE WORK','资讯'],
-    'research-overview':['RESEARCH KNOWLEDGE','研究 · 知识总览'], ideas:['RESEARCH KNOWLEDGE','灵感'], journals:['RESEARCH KNOWLEDGE','研究日志'],
+    'research-overview':['RESEARCH KNOWLEDGE','研究 · 知识总览'], ideas:['RESEARCH KNOWLEDGE','灵感'], journals:['RESEARCH KNOWLEDGE','实验记录'],
     notes:['RESEARCH KNOWLEDGE','笔记'], milestones:['RESEARCH KNOWLEDGE','里程碑'], summaries:['RESEARCH KNOWLEDGE','工作总结'],
     literature:['RESEARCH KNOWLEDGE','文献'], graph:['RESEARCH KNOWLEDGE','知识图谱'], folders:['RESOURCES','文件夹'], settings:['SYSTEM','设置'],
-    billing:['SYSTEM','用量统计'], /* v261008 · 用量计费仪表盘 */
-    'knowledge-types':['RESEARCH KNOWLEDGE','添加条目']
+    billing:['SYSTEM','用量统计'] /* v261008 · 用量计费仪表盘 */
   };
 
   const KIND_ROUTE = BUILTIN_KIND_ROUTE;
-  const KIND_LABEL = {idea:'灵感', journal:'研究日志', note:'笔记', milestone:'里程碑', summary:'工作总结', literature:'文献'};
+  const KIND_LABEL = {idea:'灵感', journal:'实验记录', note:'笔记', milestone:'里程碑', summary:'工作总结', literature:'文献'};
 
-  /* v260923 · 内置分类标记 + 自定义标记（localStorage 持久化） */
-  const KIND_MARKS=[
+  /* v261009 · 分类标记统一由 app.json 管理；默认仅保留知识 / 方法 / 实验，增减在设置页完成。 */
+  const DEFAULT_KIND_MARKS=[
     {id:'knowledge',icon:'◈',label:'知识',color:'#2a9d8f'},
-    {id:'synthesis',icon:'◎',label:'归类',color:'#845ec2'},
     {id:'method',icon:'⚒',label:'方法',color:'#e76f51'},
-    {id:'question',icon:'？',label:'问题',color:'#bc4749'},
-    {id:'thinking',icon:'✦',label:'思路',color:'#e9b44c'},
-    {id:'architecture',icon:'▤',label:'架构',color:'#4a6fa5'},
-    {id:'experiment',icon:'⚗',label:'实验',color:'#d1569a'},
-    {id:'data',icon:'⊞',label:'数据',color:'#2f7d6d'},
-    /* v260924 · 新增两个内置标记：模型（可建模对象）、原理（方法的具体原理与公式） */
-    {id:'model',icon:'⬡',label:'模型',color:'#8a6d3b'},
-    {id:'principle',icon:'∑',label:'原理',color:'#6a994e'}
+    {id:'experiment',icon:'⚗',label:'实验',color:'#d1569a'}
   ];
-  function customMarks(){ try{ const v=JSON.parse(localStorage.getItem('customMarks')||'[]'); return Array.isArray(v)?v:[]; }catch{ return []; } }
-  function saveCustomMarks(v){ localStorage.setItem('customMarks', JSON.stringify(v)); }
-  function allMarks(){ return KIND_MARKS.concat(customMarks()); }
+  function allMarks(){
+    const rows=state.config?.app?.classification_marks;
+    return Array.isArray(rows)?rows:DEFAULT_KIND_MARKS;
+  }
   function kindLabel(kind){ return knowledgeType(kind)?.label || KIND_LABEL[kind] || kind; }
 
   async function api(url, opts={}) {
@@ -120,7 +112,7 @@
     return NAV_GROUPS.map(g=>{
       if(g.id!=='research')return {...g,items:[...g.items]};
       const docs=configuredKnowledgeTypes().filter(x=>!x.hidden).map(x=>[routeForKind(x.id),x.label,x.icon||'◆']);
-      return {...g,items:[['research-overview','总览','◇'],...docs,['knowledge-types','添加条目','＋'],['graph','知识图谱','⌬']]};
+      return {...g,items:[['research-overview','总览','◇'],...docs,['graph','知识图谱','⌬']]};
     });
   }
 
@@ -130,7 +122,7 @@
       const pinned = state.sidebarPinned.has(g.id);
       const open = pinned || state.sidebarOpen.has(g.id);
       return `<section class="nav-group ${open?'':'collapsed'} ${pinned?'pinned':''}" data-group="${g.id}">
-        <div class="nav-group-head"><button class="group-toggle" type="button" data-group-toggle="${g.id}"><span class="chev">⌄</span><span>${g.label}</span></button>${g.id==='research'?'<button class="pin" type="button" data-add-knowledge title="添加自定义知识条目">＋</button>':''}<button class="pin" type="button" data-pin-group="${g.id}" title="常驻展开">◆</button></div>
+        <div class="nav-group-head"><button class="group-toggle" type="button" data-group-toggle="${g.id}"><span class="chev">⌄</span><span>${g.label}</span></button><button class="pin" type="button" data-pin-group="${g.id}" title="常驻展开">◆</button></div>
         <div class="nav-items">${g.items.map(([id,label,ico])=>`<a class="nav-item ${state.route===id?'active':''}" href="#${id}" data-route="${id}"><span class="nav-ico">${ico}</span><span>${label}</span></a>`).join('')}</div>
       </section>`;
     }).join('');
@@ -142,11 +134,6 @@
     $$('[data-pin-group]', nav).forEach(btn => btn.addEventListener('click', e => {
       e.stopPropagation(); const id=btn.dataset.pinGroup;
       if(state.sidebarPinned.has(id)) state.sidebarPinned.delete(id); else {state.sidebarPinned.add(id); state.sidebarOpen.add(id);} saveSidebarState(); renderSidebar();
-    }));
-    $$('[data-add-knowledge]',nav).forEach(btn=>btn.addEventListener('click',async e=>{
-      e.stopPropagation();
-      const ok=await navigate('settings');if(ok===false)return;
-      const tab=$('[data-set-tab="knowledge"]');if(tab){tab.click();setTimeout(()=>$('#kt-add')?.click(),0)}
     }));
     $$('[data-route]', nav).forEach(a => a.addEventListener('click', e=>{ e.preventDefault(); navigate(a.dataset.route); }));
   }
@@ -181,11 +168,6 @@
       else if(route==='folders') await renderFolders();
       else if(route==='billing') await renderBillingPage(); /* v261008 · 用量计费 */
       else if(route==='settings') await renderSettings();
-      else if(route==='knowledge-types'){
-        await renderSettings();
-        const tab=$('[data-set-tab="knowledge"]');
-        if(tab){$$('[data-set-tab]').forEach(x=>x.classList.toggle('active',x===tab));renderSettingsTab('knowledge',state.config)}
-      }
       else if(kindFromRoute(route)) await renderDocsPage(kindFromRoute(route));
       else await renderOverview();
       if(seq!==state.navSeq) return false; /* v260930g9c · 已被更新导航取代：视为未完成 */
@@ -726,10 +708,9 @@
     },80); }
   } };
   /* v260923 · 分类标记 chips 渲染 / 事件 / 重渲染（含「＋ 自定义」入口） */
-  function markChipsHtml(selected){return allMarks().map(k=>`<button type="button" class="mark-chip${(selected||[]).includes(k.id)?' on':''}" data-mark="${esc(k.id)}" style="--mark-color:${esc(k.color)}" title="点击标记为${esc(k.label)}，可多选">${esc(k.icon)} ${esc(k.label)}</button>`).join('')+'<button type="button" class="mark-chip add-mark" id="f-mark-add" title="添加自定义标记">＋ 自定义</button>'}
+  function markChipsHtml(selected){return allMarks().map(k=>`<button type="button" class="mark-chip${(selected||[]).includes(k.id)?' on':''}" data-mark="${esc(k.id)}" style="--mark-color:${esc(k.color)}" title="点击标记为${esc(k.label)}，可多选">${esc(k.icon)} ${esc(k.label)}</button>`).join('')}
   function wireMarkChips(){
-    $$('#f-marks .mark-chip:not(.add-mark)').forEach(b=>b.onclick=()=>{b.classList.toggle('on');state.dirty=true});
-    const add=$('#f-mark-add'); if(add)add.onclick=openMarkManager;
+    $('#f-marks .mark-chip').forEach(b=>b.onclick=()=>{b.classList.toggle('on');state.dirty=true});
   }
   function refreshMarkChips(){
     const box=$('#f-marks'); if(!box)return;
@@ -1238,6 +1219,7 @@
     if(!Array.isArray(raw.order))raw.order=['idea','journal','note','milestone','summary','literature'];
     if(!Array.isArray(raw.hidden))raw.hidden=[];
     if(!Array.isArray(raw.custom))raw.custom=[];
+    if(!raw.templates||typeof raw.templates!=='object'||Array.isArray(raw.templates))raw.templates={};
     app.knowledge_types=raw;return raw;
   }
   function openKnowledgeTypeEditor(app,cfg,existing=null){
