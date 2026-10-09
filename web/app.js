@@ -719,32 +719,12 @@
     box.innerHTML=markChipsHtml([...new Set([...on,...saved])]);
     wireMarkChips();
   }
-  function openMarkManager(onChanged){
-    const ICON_CHOICES=['★','✦','◆','●','■','▲','◈','◎','⚑','✿','☾','⚗']; /* v260923 · 预设标记形状 */
-    const renderList=()=>{
-      const list=customMarks();
-      $('#f-mark-manage-list').innerHTML=list.length?list.map(m=>`<span class="mark-chip" style="--mark-color:${esc(m.color)}">${esc(m.icon)} ${esc(m.label)}<button type="button" class="mark-del" data-del="${esc(m.id)}" title="删除该标记">×</button></span>`).join(''):'<span class="row-meta">暂无自定义标记</span>';
-      $$('#f-mark-manage-list .mark-del').forEach(b=>b.onclick=()=>{
-        const m=customMarks().find(x=>x.id===b.dataset.del);
-        if(m&&!confirm(`删除自定义标记「${m.label}」？已打标的内容将不再显示该标记。`))return;
-        saveCustomMarks(customMarks().filter(x=>x.id!==b.dataset.del)); toast('已删除'); refreshMarkChips(); renderList(); if(onChanged)onChanged();
-      });
-    };
-    modal('自定义分类标记',`<div class="row-meta" style="margin-bottom:12px">选择形状、填写名称并挑一个颜色；标记保存在本浏览器，可在所有文档类型中使用与筛选。</div><div class="mark-icon-pick" id="f-mark-icon-pick" style="margin-bottom:12px">${ICON_CHOICES.map((ic,i)=>`<button type="button"${i===0?' class="on"':''} data-icon="${ic}">${ic}</button>`).join('')}</div><div class="mark-mgr-row" style="margin-bottom:12px"><input id="f-mark-label" class="mark-name" maxlength="8" placeholder="名称，如：思路"><label class="color-swatch" title="颜色"><input id="f-mark-color" type="color" value="#4a6fa5"><span id="f-mark-color-dot" style="background:#4a6fa5"></span></label><button class="primary-btn" id="f-mark-save">添加</button></div><div class="mark-chip-box" id="f-mark-manage-list"></div>`,`<button class="secondary-btn" id="mark-mgr-close">关闭</button>`);
-    $('#mark-mgr-close').onclick=closeModal;
-    $$('#f-mark-icon-pick button').forEach(b=>b.onclick=()=>$$('#f-mark-icon-pick button').forEach(x=>x.classList.toggle('on',x===b)));
-    $('#f-mark-color').oninput=e=>{$('#f-mark-color-dot').style.background=e.target.value};
-    $('#f-mark-save').onclick=()=>{
-      const label=$('#f-mark-label').value.trim();
-      if(!label){toast('请填写标记名称',true);return;}
-      const marks=customMarks();
-      if(marks.some(m=>m.label===label)||KIND_MARKS.some(m=>m.label===label)){toast('该名称已存在',true);return;}
-      if(marks.length>=8){toast('自定义标记最多 8 个',true);return;}
-      const picked=$('#f-mark-icon-pick button.on');
-      marks.push({id:'c_'+Date.now().toString(36),icon:(picked&&picked.dataset.icon)||'★',label,color:$('#f-mark-color').value});
-      saveCustomMarks(marks); toast(`已添加「${label}」`); refreshMarkChips(); renderList(); if(onChanged)onChanged();
-    };
-    renderList();
+  function openMarkManager(){
+    navigate('settings').then(ok=>{
+      if(ok===false)return;
+      const tab=$('[data-set-tab="knowledge"]');
+      if(tab){$$('[data-set-tab]').forEach(x=>x.classList.toggle('active',x===tab));renderSettingsTab('knowledge',state.config)}
+    });
   }
   /* v260923 · 笔记卡片格式统一：状态/分类一行；时间与项目名同排，项目名过长固定宽度省略 */
   /* v260924i · 置顶条目卡片显示置顶徽章并加 pinned 类 */
@@ -1222,6 +1202,51 @@
     if(!raw.templates||typeof raw.templates!=='object'||Array.isArray(raw.templates))raw.templates={};
     app.knowledge_types=raw;return raw;
   }
+  function classificationMarksConfig(app){
+    if(!Array.isArray(app.classification_marks))app.classification_marks=DEFAULT_KIND_MARKS.map(x=>({...x}));
+    return app.classification_marks;
+  }
+  function openKnowledgeTemplateEditor(app,cfg,row){
+    const reg=knowledgeConfig(app);
+    const current=String(row.template||'');
+    const preset=String(row.default_template||'');
+    modal('Markdown 模板 · '+row.label,`
+      <div class="row-meta" style="margin-bottom:10px">该模板仅影响以后新建的“${esc(row.label)}”；已有文档正文不会被改写。支持 <code>{{title}}</code>、<code>{{date}}</code>；文献额外支持 <code>{{bibtex}}</code>。</div>
+      <textarea id="kt-template-edit" style="width:100%;min-height:360px;font-family:Consolas,monospace">${esc(current)}</textarea>`,
+      '<button class="secondary-btn" id="kt-template-reset">还原为预设</button><button class="secondary-btn" id="kt-template-cancel">取消</button><button class="primary-btn" id="kt-template-save">保存模板</button>');
+    $('#kt-template-cancel').onclick=closeModal;
+    $('#kt-template-reset').onclick=()=>{
+      $('#kt-template-edit').value=preset;
+    };
+    $('#kt-template-save').onclick=async()=>{
+      const value=$('#kt-template-edit').value;
+      if(value===preset)delete reg.templates[row.id];
+      else reg.templates[row.id]=value;
+      await saveKnowledgeTypes(app,cfg,value===preset?'已还原为预设模板':'Markdown 模板已保存');
+      closeModal();renderSettingsTab('knowledge',cfg);
+    };
+  }
+  async function addClassificationMark(app,cfg){
+    const label=$('#km-label').value.trim(),icon=$('#km-icon').value.trim()||'◆',color=$('#km-color').value||'#4a6fa5';
+    if(!label){toast('请填写分类名称',true);return}
+    const marks=classificationMarksConfig(app);
+    if(marks.some(x=>x.label===label)){toast('该分类名称已存在',true);return}
+    const id='mark_'+Date.now().toString(36);
+    marks.push({id,icon,label,color});
+    await saveKnowledgeTypes(app,cfg,'分类标记已添加');
+    renderSettingsTab('knowledge',cfg);
+  }
+  async function deleteClassificationMark(app,cfg,id){
+    const marks=classificationMarksConfig(app),mark=marks.find(x=>x.id===id);
+    if(!mark)return;
+    if(!confirm(`删除分类“${mark.label}”？所有使用该分类的笔记、灵感、文献等条目将自动清空分类标记。`))return;
+    app.classification_marks=marks.filter(x=>x.id!==id);
+    await saveKnowledgeTypes(app,cfg,'分类标记已删除');
+    const result=await api('/api/knowledge-marks/cleanup',{method:'POST',body:{mark_id:id}});
+    toast(`已清空 ${result.updated||0} 个条目的分类标记`);
+    renderSettingsTab('knowledge',cfg);
+  }
+
   function openKnowledgeTypeEditor(app,cfg,existing=null){
     const custom=knowledgeConfig(app).custom;
     const item=existing||{id:'',label:'',icon:'◆',statuses:['草稿','进行中','完成','已归档'],template:'# {{title}}\n\n## 要点\n\n\n## 正文\n\n\n## 关联\n'};
@@ -1254,39 +1279,55 @@
     const reg=knowledgeConfig(app),rows=state.knowledgeTypes?.length?state.knowledgeTypes:[];
     const ordered=reg.order.map(id=>rows.find(x=>x.id===id)).filter(Boolean);
     const extras=rows.filter(x=>!reg.order.includes(x.id));
-    const all=[...ordered,...extras];
-    p.innerHTML=`<div class="card-head"><div><div class="card-kicker">KNOWLEDGE TYPES</div><h3>研究 · 知识条目</h3><p class="row-meta">管理侧栏中的知识条目类型。隐藏不会删除任何 Markdown 数据；自定义类型共用通用 Markdown 编辑器。</p></div><button class="primary-btn" id="kt-add">＋ 添加自定义条目</button></div>
+    const all=[...ordered,...extras],marks=classificationMarksConfig(app);
+    p.innerHTML=`<div class="card-head"><div><div class="card-kicker">KNOWLEDGE TYPES</div><h3>研究 · 知识条目</h3><p class="row-meta">这里统一管理条目类型、顺序、显示状态和新建 Markdown 模板。自定义类型共用通用 Markdown 编辑器。</p></div><button class="primary-btn" id="kt-add">＋ 添加自定义条目</button></div>
       <div class="list-stack" id="kt-list">${all.map((x,i)=>`<div class="list-row" data-kt="${esc(x.id)}">
         <div style="font-size:18px;width:24px;text-align:center">${esc(x.icon||'◆')}</div>
         <div class="row-main"><div class="row-title">${esc(x.label)} <span class="badge">${x.builtin?'内置':'自定义'}</span></div><div class="row-meta"><code>${esc(x.id)}</code> · 状态：${esc((x.statuses||[]).join(' / ')||'无')}</div></div>
         <label class="badge" style="gap:5px"><input type="checkbox" data-kt-visible="${esc(x.id)}" ${x.hidden?'':'checked'}>显示</label>
+        <button class="secondary-btn" data-kt-template="${esc(x.id)}">模板</button>
         <button class="secondary-btn" data-kt-up="${esc(x.id)}" ${i===0?'disabled':''}>↑</button>
         <button class="secondary-btn" data-kt-down="${esc(x.id)}" ${i===all.length-1?'disabled':''}>↓</button>
         ${x.builtin?'':`<button class="secondary-btn" data-kt-edit="${esc(x.id)}">编辑</button><button class="secondary-btn" data-kt-delete="${esc(x.id)}">删除定义</button>`}
       </div>`).join('')||'<div class="empty">暂无知识条目类型</div>'}</div>
-      <div class="field-help" style="margin-top:12px">“删除定义”只允许在该类型没有文档时执行；已有数据请使用“隐藏”。</div>`;
+      <div class="field-help" style="margin-top:10px">隐藏不会删除 Markdown 数据；“模板”只影响以后新建的条目，并可一键还原为预设。</div>
+
+      <div class="card-head" style="margin-top:26px"><div><div class="card-kicker">CLASSIFICATION MARKS</div><h3>分类标记</h3><p class="row-meta">默认精简为“知识 / 方法 / 实验”。分类只在这里增减；删除分类后，使用该分类的条目会自动设为“无标记”。</p></div></div>
+      <div class="list-stack" id="km-list">${marks.map(m=>`<div class="list-row">
+        <div style="font-size:18px;width:28px;text-align:center;color:${esc(m.color)}">${esc(m.icon)}</div>
+        <div class="row-main"><div class="row-title">${esc(m.label)}</div><div class="row-meta"><code>${esc(m.id)}</code></div></div>
+        <span class="mark-chip" style="--mark-color:${esc(m.color)}">${esc(m.icon)} ${esc(m.label)}</span>
+        <button class="secondary-btn" data-km-delete="${esc(m.id)}">删除</button>
+      </div>`).join('')||'<div class="empty">暂无分类标记；下方可以添加。</div>'}</div>
+      <div class="form-grid" style="margin-top:14px">
+        <div class="field span-2"><label>分类名称</label><input id="km-label" maxlength="16" placeholder="例如：问题"></div>
+        <div class="field"><label>图标</label><input id="km-icon" maxlength="4" value="◆"></div>
+        <div class="field"><label>颜色</label><input id="km-color" type="color" value="#4a6fa5"></div>
+      </div>
+      <div style="margin-top:10px"><button class="primary-btn" id="km-add">＋ 添加分类标记</button></div>`;
     $('#kt-add').onclick=()=>openKnowledgeTypeEditor(app,cfg);
     $$('[data-kt-visible]',p).forEach(el=>el.onchange=async()=>{
       const id=el.dataset.ktVisible;const set=new Set(reg.hidden||[]);if(el.checked)set.delete(id);else set.add(id);reg.hidden=[...set];
       await saveKnowledgeTypes(app,cfg,el.checked?'已显示该条目':'已隐藏该条目');renderSettingsTab('knowledge',cfg);
     });
     const move=async(id,delta)=>{
-      const order=[...reg.order];const i=order.indexOf(id);if(i<0)return;const j=i+delta;if(j<0||j>=order.length)return;
+      const order=[...reg.order],i=order.indexOf(id),j=i+delta;if(i<0||j<0||j>=order.length)return;
       [order[i],order[j]]=[order[j],order[i]];reg.order=order;await saveKnowledgeTypes(app,cfg,'排序已保存');renderSettingsTab('knowledge',cfg);
     };
+    $$('[data-kt-template]',p).forEach(b=>b.onclick=()=>{const row=all.find(x=>x.id===b.dataset.ktTemplate);if(row)openKnowledgeTemplateEditor(app,cfg,row)});
     $$('[data-kt-up]',p).forEach(b=>b.onclick=()=>move(b.dataset.ktUp,-1));
     $$('[data-kt-down]',p).forEach(b=>b.onclick=()=>move(b.dataset.ktDown,1));
     $$('[data-kt-edit]',p).forEach(b=>b.onclick=()=>openKnowledgeTypeEditor(app,cfg,reg.custom.find(x=>x.id===b.dataset.ktEdit)));
     $$('[data-kt-delete]',p).forEach(b=>b.onclick=async()=>{
-      const id=b.dataset.ktDelete,label=knowledgeType(id)?.label||id;
-      const docs=await api('/api/docs?kind='+encodeURIComponent(id));
+      const id=b.dataset.ktDelete,label=knowledgeType(id)?.label||id,docs=await api('/api/docs?kind='+encodeURIComponent(id));
       if(docs.length){toast(`“${label}”已有 ${docs.length} 条或更多文档，不能删除定义；请改为隐藏。`,true);return}
       if(!confirm(`删除自定义条目类型“${label}”的定义？空目录会保留，现有其它数据不受影响。`))return;
-      reg.custom=reg.custom.filter(x=>x.id!==id);reg.order=reg.order.filter(x=>x!==id);reg.hidden=reg.hidden.filter(x=>x!==id);
+      reg.custom=reg.custom.filter(x=>x.id!==id);reg.order=reg.order.filter(x=>x!==id);reg.hidden=reg.hidden.filter(x=>x!==id);delete reg.templates[id];
       await saveKnowledgeTypes(app,cfg,'自定义条目类型定义已删除');renderSettingsTab('knowledge',cfg);
     });
+    $('#km-add').onclick=()=>addClassificationMark(app,cfg);
+    $$('[data-km-delete]',p).forEach(b=>b.onclick=()=>deleteClassificationMark(app,cfg,b.dataset.kmDelete));
   }
-
   async function renderSettings(){const cfg=await api('/api/config');state.config=cfg;
     $('#main').innerHTML=`<div class="settings-layout"><aside class="card settings-nav"><button class="active" data-set-tab="general">基础</button><button data-set-tab="knowledge">知识条目</button><button data-set-tab="service">服务与存储</button><button data-set-tab="literature">文献 / PDF</button><button data-set-tab="academic">学业与目标</button><button data-set-tab="weather">天气</button><button data-set-tab="rss">资讯源</button><button data-set-tab="llm">Agent / LLM</button><button data-set-tab="interface">界面</button></aside><section class="card settings-panel" id="settings-panel"></section></div>`;
     $$('[data-set-tab]').forEach(b=>b.onclick=()=>{$$('[data-set-tab]').forEach(x=>x.classList.toggle('active',x===b));renderSettingsTab(b.dataset.setTab,cfg)});renderSettingsTab('general',cfg);
