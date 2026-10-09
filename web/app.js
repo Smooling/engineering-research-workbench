@@ -1249,6 +1249,8 @@
     renderSettingsTab('knowledge',cfg);
   }
 
+  const KNOWLEDGE_ICON_CHOICES=['✦','◆','◇','●','○','■','□','▲','△','▶','▣','◈','◎','✎','✍','⚑','⚗','☀','☾','★'];
+
   function openKnowledgeTypeEditor(app,cfg,existing=null){
     const custom=knowledgeConfig(app).custom;
     const item=existing||{id:'',label:'',icon:'◆',statuses:['草稿','进行中','完成','已归档'],template:'# {{title}}\n\n## 要点\n\n\n## 正文\n\n\n## 关联\n'};
@@ -1257,12 +1259,25 @@
       <div class="form-grid">
         <div class="field"><label>标识 ID</label><input id="kt-id" ${editing?'disabled':''} value="${esc(item.id||'')}" placeholder="experiment"><span class="field-help">仅小写字母、数字、-、_；创建后不可修改。</span></div>
         <div class="field span-2"><label>显示名称</label><input id="kt-label" value="${esc(item.label||'')}" placeholder="实验记录"></div>
-        <div class="field"><label>图标</label><input id="kt-icon" maxlength="4" value="${esc(item.icon||'◆')}" placeholder="⚗"></div>
+        <div class="field span-4"><label>图标</label>
+          <div class="mark-icon-pick kt-icon-pick" id="kt-icon-pick">${KNOWLEDGE_ICON_CHOICES.map(ic=>`<button type="button" class="${(item.icon||'◆')===ic?'on':''}" data-kt-icon="${esc(ic)}" title="选择 ${esc(ic)}">${esc(ic)}</button>`).join('')}</div>
+          <div class="field-help" style="margin:8px 0 5px">点击候选图标即可选择；也可以在下方输入其它符号。</div>
+          <input id="kt-icon" maxlength="4" value="${esc(item.icon||'◆')}" placeholder="可手动输入其它图标">
+        </div>
         <div class="field span-4"><label>状态（每行一个，或用逗号分隔）</label><textarea id="kt-statuses" style="min-height:84px">${esc((item.statuses||[]).join('\n'))}</textarea></div>
         <div class="field span-4"><label>该类型预设 Markdown 模板</label><textarea id="kt-template" style="min-height:260px;font-family:Consolas,monospace">${esc(item.template||'')}</textarea><span class="field-help">这是自定义类型的“预设”；实际使用模板仍可在知识条目列表点击“模板”单独覆盖并一键还原。支持 {{title}} 与 {{date}} 占位符。</span></div>
       </div>`,
       '<button class="secondary-btn" id="kt-cancel">取消</button><button class="primary-btn" id="kt-save">保存</button>');
     $('#kt-cancel').onclick=closeModal;
+    $('#kt-icon-pick [data-kt-icon]').forEach(btn=>btn.onclick=()=>{
+      const icon=btn.dataset.ktIcon||'◆';
+      $('#kt-icon').value=icon;
+      $('#kt-icon-pick [data-kt-icon]').forEach(x=>x.classList.toggle('on',x===btn));
+    });
+    $('#kt-icon').addEventListener('input',()=>{
+      const icon=$('#kt-icon').value.trim();
+      $('#kt-icon-pick [data-kt-icon]').forEach(x=>x.classList.toggle('on',x.dataset.ktIcon===icon));
+    });
     $('#kt-save').onclick=async()=>{
       const id=(editing?item.id:$('#kt-id').value.trim().toLowerCase());
       const label=$('#kt-label').value.trim();
