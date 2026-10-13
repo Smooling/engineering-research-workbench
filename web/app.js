@@ -146,6 +146,10 @@
     else if(dynamicKind){eyebrow='RESEARCH KNOWLEDGE';pageTitle=kindLabel(dynamicKind)}
     else { eyebrow='WORKBENCH'; pageTitle=route; }
     $('#page-eyebrow').textContent=eyebrow; $('#page-title').textContent=pageTitle;
+    document.documentElement.dataset.route=route;
+    const dynamicRouteKind=kindFromRoute(route);
+    if(dynamicRouteKind) document.documentElement.dataset.knowledgeKind=dynamicRouteKind;
+    else delete document.documentElement.dataset.knowledgeKind;
     const d=new Date(); $('#page-date').textContent = d.toLocaleDateString('zh-CN',{year:'numeric',month:'long',day:'numeric',weekday:'short'});
     document.title = `${pageTitle} · ${state.config?.app?.app_name || '科研工作台'}`;
   }
@@ -205,8 +209,29 @@
     const d=new Date((dash.today||today())+'T00:00:00');
     const dateTitle=d.toLocaleDateString('zh-CN',{month:'long',day:'numeric',weekday:'long'});
     const recentToday=(activity.days||[]).find(x=>x.date===dash.today)?.count||0;
-    $('#main').innerHTML = `<div class="overview-dashboard">
-      <div class="overview-top-row">
+    const openCount=todosList.filter(x=>!x.done).length;
+    $('#main').innerHTML = `<div class="overview-dashboard linear-dashboard">
+      <section class="overview-command">
+        <div class="overview-command-copy">
+          <div class="card-kicker">RESEARCH WORKSPACE / ${esc(dash.today||today())}</div>
+          <h3>今天，${esc(dateTitle)}</h3>
+          <p>从当前任务进入研究，把过程持续沉淀为可追踪的知识与项目资产。</p>
+        </div>
+        <div class="overview-command-metrics" aria-label="今日研究概况">
+          <div><span>OPEN TASKS</span><strong>${openCount}</strong><small>未完成</small></div>
+          <div><span>ACTIVE DAYS</span><strong>${activity.active_days_month||0}</strong><small>本月</small></div>
+          <div><span>RECORDS</span><strong>${activity.events_month||0}</strong><small>本月记录</small></div>
+          <div><span>TODAY</span><strong>${recentToday}</strong><small>今日记录</small></div>
+        </div>
+        <div class="overview-command-actions">
+          <button class="quick-action" data-quick-doc="ideas"><span>✦</span><b>灵感</b><small>Idea</small></button>
+          <button class="quick-action" data-quick-doc="journals"><span>▤</span><b>实验记录</b><small>Journal</small></button>
+          <button class="quick-action" data-quick-doc="notes"><span>▧</span><b>笔记</b><small>Note</small></button>
+          <button class="quick-action" data-quick-doc="literature"><span>◫</span><b>文献</b><small>Paper</small></button>
+        </div>
+      </section>
+
+      <div class="overview-primary-grid">
         ${researchHeatmapCard(activity)}
         <div class="overview-academic-grid">
           ${academicProgressCard(academic)}
@@ -214,50 +239,39 @@
         </div>
       </div>
 
-      <div class="overview-mid-row">
-        <section class="card overview-today">
-          <div>
-            <div class="card-kicker">TODAY / RESEARCH DESK</div>
-            <h3>今天 · ${esc(dateTitle)}</h3>
-            <p>把学业周期、科研资产、任务与研究节奏放在同一张仪表盘里。</p>
-          </div>
-          <div class="today-metrics">
-            <div><strong>${todosList.filter(x=>!x.done).length}</strong><span>未完成待办</span></div>
-            <div><strong>${activity.active_days_month||0}</strong><span>本月活跃日</span></div>
-            <div><strong>${activity.events_month||0}</strong><span>本月科研记录</span></div>
-            <div><strong>${recentToday}</strong><span>今日科研记录</span></div>
-          </div>
-        </section>
+      <section class="overview-section">
+        <div class="overview-section-head">
+          <div><div class="card-kicker">EXECUTION</div><h3>当前推进</h3></div>
+          <button class="ghost-btn" data-go="todos">查看全部任务</button>
+        </div>
+        <div class="overview-work-grid">
+          ${researchRhythmCard(activity,academic)}
+          <section class="card card-pad overview-task-panel"><div class="card-head"><div><div class="card-kicker">TODAY TASKS</div><h3>当前任务</h3></div><button class="ghost-btn" data-go="todos">全部</button></div>${listRows(openTodos.map(t=>({title:t.title,meta:`${t.project||'未归属项目'} · 截止 ${fmtDate(t.due)}`})), '暂无待办')}</section>
+          <section class="card card-pad overview-milestone-panel"><div class="card-head"><div><div class="card-kicker">NEXT MILESTONE</div><h3>近期节点</h3></div><button class="ghost-btn" data-go="milestones">时间轴</button></div>${listRows((dash.upcoming_milestones||[]).slice(0,5).map(x=>({title:x.title,meta:`${x.project||'未归属项目'} · ${fmtDate(x.due)} · ${x.status}`})), '暂无近期里程碑')}</section>
+        </div>
+      </section>
 
-        <section class="card quick-capture-card">
-          <div class="quick-capture-copy"><div class="card-kicker">QUICK CAPTURE</div><h3>快速记录</h3><p>把临时想法及时沉淀到 Workspace，减少页面跳转。</p></div>
-          <div class="quick-capture-actions">
-            <button class="quick-action" data-quick-doc="ideas"><span>✦</span><b>灵感</b><small>Idea</small></button>
-            <button class="quick-action" data-quick-doc="journals"><span>▤</span><b>实验记录</b><small>Journal</small></button>
-            <button class="quick-action" data-quick-doc="notes"><span>▧</span><b>笔记</b><small>Note</small></button>
-            <button class="quick-action" data-quick-doc="literature"><span>◫</span><b>文献</b><small>Paper</small></button>
-            <button class="quick-action" data-quick-doc="milestones"><span>⚑</span><b>里程碑</b><small>Milestone</small></button>
-          </div>
-        </section>
-      </div>
+      <section class="overview-section">
+        <div class="overview-section-head">
+          <div><div class="card-kicker">PROJECTS</div><h3>项目与研究资产</h3></div>
+          <button class="ghost-btn" data-go="folders">打开 Workspace</button>
+        </div>
+        ${projectPulseCard(dash.project_stats||[])}
+      </section>
 
-      <div class="grid grid-3 overview-ops-grid">
-        ${researchRhythmCard(activity,academic)}
-        <section class="card card-pad"><div class="card-head"><div><div class="card-kicker">TODAY TASKS</div><h3>当前任务</h3></div><button class="secondary-btn" data-go="todos">全部待办</button></div>${listRows(openTodos.map(t=>({title:t.title,meta:`${t.project||'未归属项目'} · 截止 ${fmtDate(t.due)}`})), '暂无待办')}</section>
-        <section class="card card-pad"><div class="card-head"><div><div class="card-kicker">NEXT MILESTONE</div><h3>近期节点</h3></div><button class="secondary-btn" data-go="milestones">时间轴</button></div>${listRows((dash.upcoming_milestones||[]).slice(0,5).map(d=>({title:d.title,meta:`${d.project||'未归属项目'} · ${fmtDate(d.due)} · ${d.status}`})), '暂无近期里程碑')}</section>
-      </div>
-
-      ${projectPulseCard(dash.project_stats||[])}
-
-      <div class="section-title"><div><h3>最近研究活动</h3><p>快速回到最近产生的科研内容</p></div><button class="secondary-btn" data-go="research-overview">研究总览</button></div>
-      <div class="grid grid-3">${recentCard('最近灵感',dash.recent.ideas,'ideas')}${recentCard('最近笔记',dash.recent.notes,'notes')}${recentCard('最近工作总结',dash.recent.summaries,'summaries')}</div>
-
-      <div class="grid grid-4 overview-stats">
-        ${stat('笔记',dash.counts.note||0,'NOTES')}
-        ${stat('文献',dash.counts.literature||0,'LITERATURE')}
-        ${stat('里程碑',dash.counts.milestone||0,'MILESTONES')}
-        ${stat('实验记录',dash.counts.journal||0,'JOURNALS')}
-      </div>
+      <section class="overview-section">
+        <div class="overview-section-head">
+          <div><div class="card-kicker">RECENT</div><h3>最近研究活动</h3></div>
+          <button class="ghost-btn" data-go="research-overview">研究总览</button>
+        </div>
+        <div class="overview-recent-grid">${recentCard('最近灵感',dash.recent.ideas,'ideas')}${recentCard('最近笔记',dash.recent.notes,'notes')}${recentCard('最近工作总结',dash.recent.summaries,'summaries')}</div>
+        <div class="overview-stats-strip">
+          ${stat('笔记',dash.counts.note||0,'NOTES')}
+          ${stat('文献',dash.counts.literature||0,'LITERATURE')}
+          ${stat('里程碑',dash.counts.milestone||0,'MILESTONES')}
+          ${stat('实验记录',dash.counts.journal||0,'JOURNALS')}
+        </div>
+      </section>
     </div>`;
     wireGo();
     fitResearchHeatmap();
@@ -680,7 +694,28 @@
     toast(`重建完成：补关联 ${r.linked||0} 篇，新登记 ${r.registered||0} 篇，补建条目 ${r.ensured||0} 篇`);
     if(state.route==='settings')renderSettings();else renderDocsPage('literature');
   }
-  function docsShell(kind,docs,projects){return `<div class="docs-layout"><aside class="card doc-list-panel"><div class="doc-filter"><div style="display:flex;gap:6px"><input class="search-input" id="doc-search" placeholder="搜索标题、正文、标签、项目、分类…"><button class="secondary-btn" id="new-doc">＋</button></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px"><select class="search-input" id="doc-status"><option value="">全部状态</option>${(state.statuses[kind]||[]).map(s=>`<option>${esc(s)}</option>`).join('')}</select><select class="search-input" id="doc-project"><option value="">全部项目</option>${projects.map(p=>`<option>${esc(p)}</option>`).join('')}</select><select class="search-input" id="doc-mark" style="grid-column:span 2"><option value="">全部分类</option>${allMarks().map(k=>`<option value="${esc(k.id)}">${esc(k.icon)} ${esc(k.label)}</option>`).join('')}</select></div>${kind==='literature'?'<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="secondary-btn" id="export-bib">批量导出 BibTeX</button><button class="secondary-btn" id="open-lit-workspace">PDF 阅读工作区</button></div>':''}</div><div class="doc-list" id="doc-list">${docItems(docs)}</div></aside><section class="card doc-editor empty-editor" id="doc-editor"></section></div>`}
+  function docsShell(kind,docs,projects){
+    const label=kindLabel(kind);
+    return `<div class="docs-layout docs-workbench" data-doc-kind="${esc(kind)}">
+      <aside class="card doc-list-panel">
+        <div class="doc-list-head">
+          <div><div class="card-kicker">KNOWLEDGE / ${esc(kind.toUpperCase())}</div><div class="doc-list-title"><strong>${esc(label)}</strong><span>${docs.length}</span></div></div>
+          <button class="primary-btn doc-create-btn" id="new-doc" title="新建${esc(label)}">＋</button>
+        </div>
+        <div class="doc-filter">
+          <div class="doc-search-row"><span class="doc-search-icon">⌕</span><input class="search-input" id="doc-search" placeholder="搜索${esc(label)}…"></div>
+          <div class="doc-filter-grid">
+            <select class="search-input" id="doc-status"><option value="">全部状态</option>${(state.statuses[kind]||[]).map(x=>`<option>${esc(x)}</option>`).join('')}</select>
+            <select class="search-input" id="doc-project"><option value="">全部项目</option>${projects.map(p=>`<option>${esc(p)}</option>`).join('')}</select>
+            <select class="search-input" id="doc-mark"><option value="">全部分类</option>${allMarks().map(k=>`<option value="${esc(k.id)}">${esc(k.icon)} ${esc(k.label)}</option>`).join('')}</select>
+          </div>
+          ${kind==='literature'?'<div class="doc-special-actions"><button class="ghost-btn" id="export-bib">导出 BibTeX</button><button class="secondary-btn" id="open-lit-workspace">进入 PDF 阅读工作区</button></div>':''}
+        </div>
+        <div class="doc-list" id="doc-list">${docItems(docs)}</div>
+      </aside>
+      <section class="card doc-editor empty-editor" id="doc-editor"></section>
+    </div>`;
+  }
   function markBadges(d){return (d.kind_marks||[]).slice(0,4).map(id=>{const c=allMarks().find(k=>k.id===id);if(!c)return '';const col=esc(c.color);return `<span class="badge mark-badge" style="color:${col};border-color:${col};background:${col}1a">${esc(c.icon)} ${esc(c.label)}</span>`}).join('')}
   /* v260929 · 暴露给 PDF 阅读工作区复用同一套标记徽章渲染，避免标记目录二次维护 */
   window.ERWMarkBadges = markBadges;
@@ -1478,7 +1513,7 @@
     try{await api('/api/health');location.reload();}catch{setTimeout(()=>waitForRestart(attempt+1),450);}
   }
 
-  async function loadBootstrap(){ const [cfg,statuses,projects,health,ws,knowledgeTypes]=await Promise.all([api('/api/config'),api('/api/statuses'),api('/api/projects'),api('/api/health'),api('/api/workspace/info'),api('/api/knowledge-types')]); state.config=cfg;state.statuses=statuses;state.projects=projects;state.knowledgeTypes=Array.isArray(knowledgeTypes)?knowledgeTypes:[];if(localStorage.getItem('sidebarPinned')===null){state.sidebarPinned=new Set(cfg.app.ui?.sidebar_pinned_groups||['core']);saveSidebarState();}$('#brand-title').textContent=cfg.app.app_name;$('#brand-subtitle').textContent=cfg.app.subtitle;$('#version-label').textContent=health.version;$('#workspace-mini').textContent='Workspace · '+ws.relative;state.milestoneView=cfg.app.ui?.milestone_default_view||state.milestoneView;state.graphView=cfg.app.ui?.graph_default_view||state.graphView;state.heatmapMonths=Math.max(1,Math.min(12,Number(cfg.app.ui?.heatmap_months)||state.heatmapMonths||12));localStorage.setItem('heatmapMonths',String(state.heatmapMonths));const theme=localStorage.getItem('theme')||cfg.app.ui?.theme||'light';applyTheme(theme); }
+  async function loadBootstrap(){ const [cfg,statuses,projects,health,ws,knowledgeTypes]=await Promise.all([api('/api/config'),api('/api/statuses'),api('/api/projects'),api('/api/health'),api('/api/workspace/info'),api('/api/knowledge-types')]); state.config=cfg;state.statuses=statuses;state.projects=projects;state.knowledgeTypes=Array.isArray(knowledgeTypes)?knowledgeTypes:[];if(localStorage.getItem('sidebarPinned')===null){state.sidebarPinned=new Set(cfg.app.ui?.sidebar_pinned_groups||['core']);saveSidebarState();}$('#brand-title').textContent=cfg.app.app_name;$('#brand-subtitle').textContent=cfg.app.subtitle;$('#version-label').textContent=health.version;$('#workspace-mini').textContent='Workspace · '+ws.relative;state.milestoneView=cfg.app.ui?.milestone_default_view||state.milestoneView;state.graphView=cfg.app.ui?.graph_default_view||state.graphView;state.heatmapMonths=Math.max(1,Math.min(12,Number(cfg.app.ui?.heatmap_months)||state.heatmapMonths||12));localStorage.setItem('heatmapMonths',String(state.heatmapMonths));const designVersion='linear-workbench-v2';if(localStorage.getItem('uiDesignVersion')!==designVersion){localStorage.setItem('uiDesignVersion',designVersion);localStorage.setItem('theme','dark');}const theme=localStorage.getItem('theme')||cfg.app.ui?.theme||'dark';applyTheme(theme); }
 
   function bindGlobal(){
     $('#modal-close').onclick=closeModal;$('#modal-backdrop').addEventListener('click',e=>{if(e.target===$('#modal-backdrop'))closeModal()});
