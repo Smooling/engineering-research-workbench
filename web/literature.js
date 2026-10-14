@@ -32,13 +32,42 @@ async function loadList(){
  const d=await api("/api/literature?q="+encodeURIComponent(q("#lit-search")?.value||"")+"&status="+encodeURIComponent(q("#lit-status")?.value||"")+"&mark="+encodeURIComponent(q("#lit-mark")?.value||"")+"&page_size=100");
  S.items=d.items||[];
  q("#lit-list").innerHTML=S.items.length?S.items.map(item).join(""):'<div class="lit-empty">暂无文献<br>点击“上传 PDF”开始</div>';
+ const total=q("#lit-hero-total"),reading=q("#lit-hero-reading"),done=q("#lit-hero-done"),marks=q("#lit-hero-marks");
+ if(total)total.textContent=String(d.total??S.items.length);
+ if(reading)reading.textContent=String(S.items.filter(x=>x.reading_status==="在读").length);
+ if(done)done.textContent=String(S.items.filter(x=>x.reading_status==="已读").length);
+ if(marks)marks.textContent=String(new Set(S.items.flatMap(x=>x.kind_marks||[])).size);
  const c=q("#lit-mark"),old=c.value;c.innerHTML='<option value="">全部分类</option>'+(window.ERWMarkList?window.ERWMarkList():[]).map(k=>'<option value="'+esc(k.id)+'"'+(k.id===old?" selected":"")+">"+esc(k.icon)+" "+esc(k.label)+"</option>").join("");
  qa("[data-paper]").forEach(e=>e.onclick=()=>openPaper(e.dataset.paper));
 }
 function shell(){
- q("#main").innerHTML='<div class="lit-shell"><aside class="card doc-list-panel lit-library"><div class="lit-library-head"><div><div class="card-kicker">LITERATURE LIBRARY</div><h3>文献库</h3></div><div class="lit-head-actions"><button class="ghost-btn" id="lit-back">← 返回文献列表</button><button class="primary-btn" id="lit-upload">＋ 上传 PDF</button></div></div><input id="lit-file" type="file" accept="application/pdf,.pdf" hidden><div class="doc-filter"><input class="search-input" id="lit-search" placeholder="搜索题名、作者、标签、分类…"><div class="lit-filters"><select class="search-input" id="lit-status"><option value="">全部进度</option><option>未读</option><option>在读</option><option>已读</option></select><select class="search-input" id="lit-mark"><option value="">全部分类</option></select></div></div><div class="doc-list lit-list" id="lit-list"></div></aside><section class="card lit-reader"><div id="lit-reader-empty" class="lit-empty lit-reader-empty">选择一篇文献开始阅读</div><div id="lit-reader-live" hidden><div class="lit-toolbar"><button data-ann="highlight" disabled>高亮</button><button data-ann="underline" disabled>下划线</button><button data-ann="strikeout" disabled>删除线</button><button id="lit-copy" disabled title="Ctrl+C">复制</button><span class="lit-sep"></span><button data-ai="translate" disabled title="将选中文本交给 AI 翻译为中文">AI 翻译</button><button data-ai="summarize" disabled title="将选中文本交给 AI 总结要点">AI 总结</button><button data-ai="organize" disabled title="将选中文本交给 AI 整理为知识笔记">AI 整理</button><span class="lit-sep"></span><button id="lit-area">框选区域</button><span class="lit-sep"></span><button id="lit-undo" disabled title="Ctrl+Z">↶ 撤销</button><span class="lit-sep"></span><span id="lit-page-label">1 / 1</span><button id="lit-zoom-out">−</button><span id="lit-zoom-label">115%</span><button id="lit-zoom-in">＋</button></div><div class="lit-canvas-scroll" id="lit-scroll"><div id="lit-pages" class="lit-pages"></div></div></div></section><aside class="card lit-side" id="lit-side"><div class="lit-empty">文献信息、批注和笔记将在这里显示</div></aside></div>';
+ q("#main").innerHTML='<div class="lit-workbench">'
+  +'<section class="lit-hero">'
+   +'<div class="lit-hero-copy"><span>欢迎回来，继续你的研究探索</span><h2>从文献阅读到机制理解，让研究更进一步</h2><p>在一个工作台中管理文献、批注与笔记，把阅读过程沉淀为可追踪的研究资产。</p>'
+   +'<div class="lit-hero-metrics"><div><b id="lit-hero-total">—</b><small>篇文献</small></div><div><b id="lit-hero-reading">—</b><small>在读</small></div><div><b id="lit-hero-done">—</b><small>已读</small></div><div><b id="lit-hero-marks">—</b><small>分类</small></div></div></div>'
+   +'<div class="lit-hero-art"><div class="lit-mountain m1"></div><div class="lit-mountain m2"></div><blockquote>“Good researchers turn complexity into clarity.”</blockquote></div>'
+  +'</section>'
+  +'<div class="lit-shell">'
+   +'<aside class="card doc-list-panel lit-library">'
+    +'<div class="lit-library-head"><div><div class="card-kicker">LIBRARY</div><h3>文献与资料</h3></div><div class="lit-head-actions"><button class="ghost-btn" id="lit-back">返回</button><button class="primary-btn" id="lit-upload">＋ 添加</button></div></div>'
+    +'<input id="lit-file" type="file" accept="application/pdf,.pdf" hidden>'
+    +'<div class="lit-library-segments"><button class="active">全部</button><button>文献</button><button>笔记</button><button>实验</button></div>'
+    +'<div class="doc-filter"><div class="lit-search-wrap"><span>⌕</span><input class="search-input" id="lit-search" placeholder="搜索文献标题、作者或关键词…"></div><div class="lit-filters"><select class="search-input" id="lit-status"><option value="">全部进度</option><option>未读</option><option>在读</option><option>已读</option></select><select class="search-input" id="lit-mark"><option value="">全部分类</option></select></div></div>'
+    +'<div class="doc-list lit-list" id="lit-list"></div>'
+   +'</aside>'
+   +'<section class="card lit-reader">'
+    +'<div id="lit-reader-empty" class="lit-empty lit-reader-empty"><div><span class="lit-empty-icon">▧</span><strong>选择一篇文献开始阅读</strong><small>PDF、批注与笔记会在同一工作区中联动。</small></div></div>'
+    +'<div id="lit-reader-live" hidden>'
+     +'<div class="lit-document-bar"><div class="lit-document-name"><span class="pdf-dot">PDF</span><strong id="lit-document-title">正在阅读</strong></div><div class="lit-document-tools"><span id="lit-page-label">1 / 1</span><button id="lit-zoom-out">−</button><span id="lit-zoom-label">115%</span><button id="lit-zoom-in">＋</button></div></div>'
+     +'<div class="lit-toolbar"><div class="lit-toolbar-group"><button data-ann="highlight" disabled>高亮</button><button data-ann="underline" disabled>下划线</button><button data-ann="strikeout" disabled>删除线</button><button id="lit-copy" disabled title="Ctrl+C">复制</button></div><div class="lit-toolbar-group ai"><button data-ai="translate" disabled>AI 翻译</button><button data-ai="summarize" disabled>AI 总结</button><button data-ai="organize" disabled>AI 整理</button></div><div class="lit-toolbar-group"><button id="lit-area">框选区域</button><button id="lit-undo" disabled title="Ctrl+Z">↶ 撤销</button></div></div>'
+     +'<div class="lit-canvas-scroll" id="lit-scroll"><div id="lit-pages" class="lit-pages"></div></div>'
+    +'</div>'
+   +'</section>'
+   +'<aside class="card lit-side" id="lit-side"><div class="lit-empty">文献信息、批注和笔记将在这里显示</div></aside>'
+  +'</div>'
+ +'</div>';
  q("#lit-upload").onclick=()=>q("#lit-file").click();q("#lit-file").onchange=e=>upload(e.target.files?.[0]);
- q("#lit-back").onclick=()=>window.dispatchEvent(new Event("erw-lit-back")); /* v260929 · 返回文献列表：经事件通知 app.js 重新渲染列表页（hash 未变不触发路由） */
+ q("#lit-back").onclick=()=>window.dispatchEvent(new Event("erw-lit-back"));
  let t;q("#lit-search").oninput=()=>{clearTimeout(t);t=setTimeout(loadList,160)};q("#lit-status").onchange=loadList;q("#lit-mark").onchange=loadList;
  qa("[data-ann]").forEach(b=>b.onclick=()=>commit(b.dataset.ann));qa("[data-ai]").forEach(b=>b.onclick=()=>aiFromSelection(b.dataset.ai));q("#lit-copy").onclick=copyPendingText;q("#lit-area").onclick=toggleArea;q("#lit-undo").onclick=undo;q("#lit-zoom-in").onclick=()=>zoom(.15);q("#lit-zoom-out").onclick=()=>zoom(-.15);
 }
@@ -52,7 +81,7 @@ async function openPaper(id){
   api("/api/literature/"+enc+"/annotations")
  ]);
  S.paper=paper;S.annotations=Array.isArray(annotations)?annotations:[];rebuildAnnotationIndex();
- q("#lit-reader-empty").hidden=true;q("#lit-reader-live").hidden=false;side();loadList().catch(()=>{}) /* v260929 · 列表刷新仅更新徽章，不阻塞 PDF 加载 */;
+ q("#lit-reader-empty").hidden=true;q("#lit-reader-live").hidden=false;const dt=q("#lit-document-title");if(dt)dt.textContent=paper.title||"PDF 文献";side();loadList().catch(()=>{}) /* v260929 · 列表刷新仅更新徽章，不阻塞 PDF 加载 */;
  try{await ensurePdfJs();S.pdf=await window.pdfjsLib.getDocument({url:"/api/literature/"+enc+"/pdf",rangeChunkSize:4*1024*1024}).promise;S.current=Math.max(1,Math.min(S.pdf.numPages,+S.paper.last_page||1));await build();requestAnimationFrame(()=>go(S.current,false))}
  catch(e){q("#lit-pages").innerHTML='<div class="lit-empty">PDF 渲染失败：'+esc(e.message)+"</div>"}
 }
@@ -450,7 +479,7 @@ async function annToNote(){
   loadList().catch(()=>{});
  }catch(e){if(btn){btn.textContent="失败";setTimeout(()=>btn&&(btn.textContent="加入笔记"),1500)}toast(e?.message||String(e),true)}
 }
-function side(){const p=S.paper;q("#lit-side").innerHTML='<div class="lit-side-tabs"><button class="active" data-tab="info">信息</button><button data-tab="annotations">批注</button><button data-tab="notes">笔记</button><button data-tab="ai" title="AI 翻译 / 总结 / 整理 / 笔记润色">AI</button></div><div id="lit-side-body"></div>';qa("[data-tab]").forEach(b=>b.onclick=()=>{if(b.dataset.tab!=="annotations")S.selectedAnn=null;qa("[data-tab]").forEach(x=>x.classList.toggle("active",x===b));sideTab(b.dataset.tab)});sideTab("info")}
+function side(){const p=S.paper;q("#lit-side").innerHTML='<div class="lit-side-tabs"><button class="active" data-tab="annotations">标注</button><button data-tab="info">信息</button><button data-tab="notes">笔记</button><button data-tab="ai" title="AI 翻译 / 总结 / 整理 / 笔记润色">AI 助手</button></div><div id="lit-side-body"></div>';qa("[data-tab]").forEach(b=>b.onclick=()=>{if(b.dataset.tab!=="annotations")S.selectedAnn=null;qa("[data-tab]").forEach(x=>x.classList.toggle("active",x===b));sideTab(b.dataset.tab)});sideTab("annotations")}
 function sideTab(tab){
  const root=q("#lit-side-body"),p=S.paper;
  if(tab==="info"){root.innerHTML='<div class="lit-info"><label>题名<input id="li-title" value="'+esc(p.title)+'"></label><label>作者<input id="li-authors" value="'+esc(p.authors||"")+'"></label><div class="lit-two"><label>年份<input id="li-year" value="'+esc(p.year||"")+'"></label><label>阅读状态<select id="li-status"><option '+(p.reading_status==="未读"?"selected":"")+'>未读</option><option '+(p.reading_status==="在读"?"selected":"")+'>在读</option><option '+(p.reading_status==="已读"?"selected":"")+'>已读</option></select></label></div><label class="lit-marks-label">分类标记</label><div class="mark-chip-box" id="li-marks"></div><label class="lit-marks-label">标签</label><div class="project-picker-row"><div class="project-chip-box" id="li-tags"></div><button type="button" class="secondary-btn project-add-btn" id="li-tag-add" title="添加标签：可勾选已有或输入新标签">＋</button></div><label>期刊 / 会议<input id="li-venue" value="'+esc(p.venue||"")+'"></label><div class="lit-two"><label>DOI<input id="li-doi" value="'+esc(p.doi||"")+'"></label><label>Cite Key<input id="li-cite" value="'+esc(p.cite_key||"")+'"></label></div><label class="lit-favorite"><input type="checkbox" id="li-favorite" '+(p.favorite?"checked":"")+'> 收藏此文献</label><button class="primary-btn" id="li-save">保存信息</button></div>';q("#li-save").onclick=saveInfo;renderLiMarks();paintLiTags(p.tags||[])}
