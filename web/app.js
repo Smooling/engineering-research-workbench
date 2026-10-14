@@ -146,6 +146,7 @@
     else if(dynamicKind){eyebrow='RESEARCH KNOWLEDGE';pageTitle=kindLabel(dynamicKind)}
     else { eyebrow='WORKBENCH'; pageTitle=route; }
     $('#page-eyebrow').textContent=eyebrow; $('#page-title').textContent=pageTitle;
+    const ctx=$('#page-context'); if(ctx) ctx.textContent = route==='overview' ? '研究工作台' : (eyebrow==='RESEARCH KNOWLEDGE' ? '研究 · 知识' : eyebrow==='RESOURCES' ? '资源' : eyebrow==='SYSTEM' ? '系统' : '核心工作');
     document.documentElement.dataset.route=route;
     const dynamicRouteKind=kindFromRoute(route);
     if(dynamicRouteKind) document.documentElement.dataset.knowledgeKind=dynamicRouteKind;
@@ -443,7 +444,7 @@
     const v=mode==='cozy'?'cozy':'compact';
     state.density=v;
     document.documentElement.dataset.density=v;
-    const btn=$('#density-btn'); if(btn){btn.textContent=v==='cozy'?'宽松型':'紧凑型';btn.title=v==='cozy'?'当前：宽松型（各卡片纵向排布、页面可下拉滚动）。点击切换为紧凑型':'当前：紧凑型（热力图与学业卡并排、一屏收纳免滚动）。点击切换为宽松型';}
+    const btn=$('#density-btn'); if(btn){btn.textContent=v==='cozy'?'宽松':'紧凑';btn.title=v==='cozy'?'当前：宽松型。点击切换为紧凑型':'当前：紧凑型。点击切换为宽松型';}
   }
 
   function projectPulseCard(items){
@@ -1513,7 +1514,7 @@
     try{await api('/api/health');location.reload();}catch{setTimeout(()=>waitForRestart(attempt+1),450);}
   }
 
-  async function loadBootstrap(){ const [cfg,statuses,projects,health,ws,knowledgeTypes]=await Promise.all([api('/api/config'),api('/api/statuses'),api('/api/projects'),api('/api/health'),api('/api/workspace/info'),api('/api/knowledge-types')]); state.config=cfg;state.statuses=statuses;state.projects=projects;state.knowledgeTypes=Array.isArray(knowledgeTypes)?knowledgeTypes:[];if(localStorage.getItem('sidebarPinned')===null){state.sidebarPinned=new Set(cfg.app.ui?.sidebar_pinned_groups||['core']);saveSidebarState();}$('#brand-title').textContent=cfg.app.app_name;$('#brand-subtitle').textContent=cfg.app.subtitle;$('#version-label').textContent=health.version;$('#workspace-mini').textContent='Workspace · '+ws.relative;state.milestoneView=cfg.app.ui?.milestone_default_view||state.milestoneView;state.graphView=cfg.app.ui?.graph_default_view||state.graphView;state.heatmapMonths=Math.max(1,Math.min(12,Number(cfg.app.ui?.heatmap_months)||state.heatmapMonths||12));localStorage.setItem('heatmapMonths',String(state.heatmapMonths));const designVersion='linear-workbench-v2';if(localStorage.getItem('uiDesignVersion')!==designVersion){localStorage.setItem('uiDesignVersion',designVersion);localStorage.setItem('theme','dark');}const theme=localStorage.getItem('theme')||cfg.app.ui?.theme||'dark';applyTheme(theme); }
+  async function loadBootstrap(){ const [cfg,statuses,projects,health,ws,knowledgeTypes]=await Promise.all([api('/api/config'),api('/api/statuses'),api('/api/projects'),api('/api/health'),api('/api/workspace/info'),api('/api/knowledge-types')]); state.config=cfg;state.statuses=statuses;state.projects=projects;state.knowledgeTypes=Array.isArray(knowledgeTypes)?knowledgeTypes:[];if(localStorage.getItem('sidebarPinned')===null){state.sidebarPinned=new Set(cfg.app.ui?.sidebar_pinned_groups||['core']);saveSidebarState();}$('#brand-title').textContent=cfg.app.app_name;$('#brand-subtitle').textContent=cfg.app.subtitle;$('#version-label').textContent=health.version;$('#workspace-mini').textContent='Workspace · '+ws.relative;state.milestoneView=cfg.app.ui?.milestone_default_view||state.milestoneView;state.graphView=cfg.app.ui?.graph_default_view||state.graphView;state.heatmapMonths=Math.max(1,Math.min(12,Number(cfg.app.ui?.heatmap_months)||state.heatmapMonths||12));localStorage.setItem('heatmapMonths',String(state.heatmapMonths));const designVersion='linear-light-luxe-v1';if(localStorage.getItem('uiDesignVersion')!==designVersion){localStorage.setItem('uiDesignVersion',designVersion);localStorage.setItem('theme','light');}const theme=localStorage.getItem('theme')||cfg.app.ui?.theme||'light';applyTheme(theme); }
 
   function bindGlobal(){
     $('#modal-close').onclick=closeModal;$('#modal-backdrop').addEventListener('click',e=>{if(e.target===$('#modal-backdrop'))closeModal()});
