@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="zh-CN" data-theme="dark">
+<html lang="zh-CN" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#010102">
+  <meta name="theme-color" content="#F7F8FB">
   <title>科研工作台</title>
   <link rel="icon" type="image/png" href="/favicon.png?v=260923">
   <link rel="apple-touch-icon" href="/favicon.png?v=260923">
@@ -21,7 +21,7 @@
   <link rel="stylesheet" href="/v261008-billing.css?v=261008"><!-- v261008 · 用量计费仪表盘样式 -->
   <link rel="stylesheet" href="/vendor/github.min.css" onerror="this.onerror=null;this.href='https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css'">
   <!-- Linear-inspired visual layer: loaded last so legacy feature CSS keeps behavior while this file owns the design system. -->
-  <link rel="stylesheet" href="/linear-workbench.css?v=261013a">
+  <link rel="stylesheet" href="/linear-workbench.css?v=261014a">
   <script>
     window.MathJax = {
       tex: {
@@ -58,18 +58,27 @@
 
     <div class="main-shell">
       <header class="topbar">
-        <div class="page-heading">
+        <div class="topbar-context">
           <div class="eyebrow" id="page-eyebrow">CORE WORK</div>
-          <h2 id="page-title">概览</h2>
+          <div class="topbar-breadcrumb">
+            <span class="topbar-home-dot">✦</span>
+            <span id="page-context">科研工作台</span>
+            <span class="topbar-slash">/</span>
+            <strong id="page-title">概览</strong>
+          </div>
           <div class="page-date" id="page-date"></div>
         </div>
+        <div class="topbar-search-slot">
+          <button class="top-search-btn" id="global-search-btn" type="button" title="全局搜索 · Ctrl/⌘ K">
+            <span class="search-glyph">⌕</span><span class="search-copy">搜索文献、笔记或问题…</span><kbd>⌘K</kbd>
+          </button>
+        </div>
         <div class="top-actions">
-          <button class="top-search-btn" id="global-search-btn" type="button" title="全局搜索 · Ctrl/⌘ K"><span>⌕</span><span>搜索</span><kbd>⌘K</kbd></button>
           <button class="weather-pill" id="weather-pill" type="button" title="天气详情">
             <span class="status-dot"></span><span id="weather-text">天气加载中</span>
           </button>
           <button class="icon-btn" id="theme-btn" type="button" title="切换主题">◐</button>
-          <button class="density-pill" id="density-btn" type="button" title="当前：紧凑型（热力图与学业卡并排、一屏收纳免滚动）。点击切换为宽松型">紧凑型</button>
+          <button class="density-pill" id="density-btn" type="button" title="切换界面密度">紧凑</button>
           <div class="zoom-wrap">
             <button class="zoom-pill" id="zoom-btn" type="button" title="界面缩放">100%</button>
             <div class="dropdown hidden" id="zoom-menu">
@@ -81,8 +90,8 @@
             </div>
           </div>
           <div class="reload-wrap">
-            <button class="primary-btn reload-btn" id="reload-btn" type="button" title="重新读取所有配置并刷新本地缓存">↻ Reload</button>
-            <button class="primary-btn reload-menu-btn" id="reload-menu-btn" type="button" aria-label="Reload 菜单">⌄</button>
+            <button class="secondary-btn reload-btn" id="reload-btn" type="button" title="同步配置与本地缓存">↻ 同步</button>
+            <button class="secondary-btn reload-menu-btn" id="reload-menu-btn" type="button" aria-label="同步菜单">⌄</button>
             <div class="dropdown hidden" id="reload-menu">
               <button type="button" data-system-action="reload">Reload 全部配置</button>
               <button type="button" data-system-action="restart">快速重启服务</button>
