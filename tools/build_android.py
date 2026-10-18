@@ -27,6 +27,19 @@ def verify_backend(apk: Path) -> None:
     print(f"Verified {len(expected)} packaged Python source files against the repository")
 
 
+def verify_frontend(apk: Path) -> None:
+    """An APK must contain the current UI, not an older Gradle assets archive."""
+    expected = [p for p in (ROOT / "web").rglob("*") if p.is_file()]
+    expected += [ROOT / "VERSION", ROOT / "LICENSE.txt"]
+    with zipfile.ZipFile(apk) as archive:
+        with zipfile.ZipFile(io.BytesIO(archive.read("assets/workbench.zip"))) as assets:
+            for path in expected:
+                name = path.relative_to(ROOT).as_posix()
+                if name not in assets.namelist() or assets.read(name) != path.read_bytes():
+                    raise RuntimeError(f"APK 中的前端资源不匹配：{name}；请使用 --clean 重新构建")
+    print(f"Verified {len(expected)} packaged frontend assets against the repository")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="构建科研工作台 Android 预览安装包")
     parser.add_argument("--output", type=Path, default=ROOT / "build/android/ResearchWorkbench-Android-preview.apk")
@@ -40,6 +53,7 @@ def main() -> None:
     subprocess.run(command, cwd=ROOT / "android", check=True)
     source = ROOT / "android/app/build/outputs/apk/debug/app-debug.apk"
     verify_backend(source)
+    verify_frontend(source)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, args.output)
     print(f"APK: {args.output.resolve()} ({args.output.stat().st_size / 1024 / 1024:.1f} MiB)")

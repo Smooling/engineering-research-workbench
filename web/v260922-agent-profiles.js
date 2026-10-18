@@ -73,7 +73,11 @@
   }
 
   async function enhanceAgentPage(){
-    if(route()!=='agent')return;const preset=$('#agent-preset');if(!preset||$('#agent-profile-select'))return;const cfg=await api('/api/config');const llm=cfg.app?.llm||{},profiles=llm.profiles||[];if(!profiles.length)return;
+    if(route()!=='agent')return;const preset=$('#agent-preset');if(!preset||$('#agent-profile-select')||preset.dataset.profileLoading==='true')return;
+    preset.dataset.profileLoading='true';let cfg;
+    try{cfg=await api('/api/config')}finally{delete preset.dataset.profileLoading;}
+    if(!preset.isConnected||$('#agent-profile-select'))return;
+    const llm=cfg.app?.llm||{},profiles=llm.profiles||[];if(!profiles.length)return;
     /* v261008c · 徽标改为显示「接口地址主机」而不是把选中项名字重复一遍：
        select 里已经有配置名，这里给的是 直连(域名) / 本地反代理(127.0.0.1:9355) / 方舟 这类一眼可辨的信息 */
     const hostOf=p=>{try{return new URL(p?.base_url||'').host||'—'}catch{return String(p?.base_url||'').replace(/^https?:\/\//,'').split('/')[0]||'—'}};

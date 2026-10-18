@@ -231,31 +231,32 @@ _PRICE_CACHE: dict[str, Any] = {"mtime": None, "data": None}
 
 def load_prices() -> dict[str, Any]:
     """读价格表；文件不存在时落一份预置模板。按 mtime 缓存，避免每次调用都读盘。"""
-    path = prices_path()
-    if not path.exists():
-        data = default_prices()
-        _write_json(path, data)
-        _PRICE_CACHE.update({"mtime": path.stat().st_mtime, "data": data})
-        return data
-    mtime = path.stat().st_mtime
+    # The initial dashboard requests summary, prices and records in parallel.
+    # Serialize initialization and writes which share the prices.json.tmp path.
     with _LOCK:
+        path = prices_path()
+        if not path.exists():
+            data = default_prices()
+            _write_json(path, data)
+            _PRICE_CACHE.update({"mtime": path.stat().st_mtime, "data": data})
+            return data
+        mtime = path.stat().st_mtime
         if _PRICE_CACHE["mtime"] == mtime and _PRICE_CACHE["data"] is not None:
             return _PRICE_CACHE["data"]
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        raw = default_prices()
-    data = normalize_prices(raw)
-    with _LOCK:
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            raw = default_prices()
+        data = normalize_prices(raw)
         _PRICE_CACHE.update({"mtime": mtime, "data": data})
-    return data
+        return data
 
 
 def save_prices(raw: Any) -> dict[str, Any]:
     data = normalize_prices(raw)
     path = prices_path()
-    _write_json(path, data)
     with _LOCK:
+        _write_json(path, data)
         _PRICE_CACHE.update({"mtime": path.stat().st_mtime, "data": data})
     return data
 

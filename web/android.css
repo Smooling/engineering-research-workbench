@@ -1,72 +1,238 @@
-/* Scoped to the Android host. Native system/IME insets are applied outside WebView. */
-html[data-platform="android"] { -webkit-text-size-adjust:100%; }
-html[data-platform="android"] :is(.zoom-wrap,#density-btn,#doc-open-file,#open-workspace,#migration-rescan,[data-open-folder]) {display:none!important}
-#android-nav,#android-doc-back,#android-drawer-close,#android-drawer-scrim{display:none}
-@media(max-width:820px) {
-  html[data-platform="android"] body{min-width:0!important;overflow-x:hidden}
-  html[data-platform="android"] #app.app-shell{display:block!important;min-height:100dvh!important;height:auto!important;padding-bottom:66px!important}
-  html[data-platform="android"] #app>.sidebar{position:fixed!important;inset:0 auto 0 0!important;width:min(300px,86vw)!important;height:100dvh!important;z-index:1002!important;display:flex!important;transform:translateX(-105%);transition:transform .18s ease;box-shadow:12px 0 40px #11182730;overflow:auto}
-  html[data-platform="android"][data-android-drawer="true"] #app>.sidebar{transform:translateX(0)}
-  html[data-platform="android"] .sidebar .brand{min-height:72px!important;flex:0 0 auto;display:flex!important}
-  html[data-platform="android"] .sidebar .brand-copy{display:block!important;opacity:1!important;max-width:none!important}
-  html[data-platform="android"] .sidebar :is(.nav-item>span:last-child,.group-toggle>span:last-child){display:inline!important;opacity:1!important;max-width:none!important}
-  html[data-platform="android"] .sidebar .nav-item{min-height:44px!important;padding-inline:14px!important;justify-content:flex-start!important}
-  html[data-platform="android"] .sidebar-nav{overflow-y:auto!important;flex:1}
-  html[data-platform="android"] #android-drawer-close{display:inline-flex;margin-left:auto;flex-shrink:0}
-  html[data-platform="android"][data-android-drawer="true"] #android-drawer-scrim{display:block;position:fixed;inset:0;z-index:1001;background:#10182770;border:0;backdrop-filter:blur(3px)}
-  html[data-platform="android"] #app>.main-shell{width:100%!important;margin:0!important;min-height:calc(100dvh - 66px)!important;overflow:visible!important}
-  html[data-platform="android"] #app .topbar{position:sticky!important;top:0!important;height:56px!important;min-height:56px!important;padding:6px 12px!important;gap:8px!important;z-index:50!important;align-items:center!important;flex-wrap:nowrap!important}
+/* Only the APK host opts in. Native code applies status, navigation and IME insets. */
+html[data-platform="android"]{-webkit-text-size-adjust:100%;--android-nav:64px;--android-top:56px}
+html[data-platform="android"] :is(.zoom-wrap,#density-btn,#doc-open-file,#open-workspace,#migration-rescan,[data-open-folder]){display:none!important}
+#android-nav,#android-editor-head,#android-drawer-close,#android-drawer-scrim,#android-agent-bar,#android-pdf-tabs{display:none}
+@media(min-width:1025px){
+  html[data-platform="android"] #android-editor-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  html[data-platform="android"] #android-save-status{flex:1;color:var(--muted);font-size:12px}
+}
+@media(max-width:1024px){
+  html[data-platform="android"]{height:100%;overflow:hidden}
+  html[data-platform="android"] body{height:100%;min-width:0!important;overflow:hidden;font-size:14px;overscroll-behavior:none}
+  html[data-platform="android"] #app.app-shell{display:flex!important;flex-direction:column!important;height:var(--android-height,100dvh)!important;min-height:0!important;padding:0 0 var(--android-nav)!important;overflow:hidden!important;box-sizing:border-box}
+  html[data-platform="android"] #app>.main-shell{display:flex!important;flex-direction:column!important;flex:1!important;min-height:0!important;width:100%!important;margin:0!important;overflow:hidden!important}
+  html[data-platform="android"] #app .topbar{position:relative!important;top:auto!important;flex:0 0 var(--android-top)!important;height:var(--android-top)!important;min-height:0!important;padding:6px 12px!important;gap:8px!important;z-index:50!important;align-items:center!important;flex-wrap:nowrap!important;background:var(--surface)!important}
   html[data-platform="android"] .topbar .page-heading{min-width:0;flex:1}
-  html[data-platform="android"] .topbar .page-heading h2{font-size:18px!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  html[data-platform="android"] :is(.page-date,.weather-pill,.top-search-btn kbd,.top-search-btn>span:nth-child(2)){display:none!important}
-  html[data-platform="android"] .top-actions{flex-wrap:nowrap!important;gap:5px!important;flex:0 0 auto}
-  html[data-platform="android"] #sidebar-toggle{display:inline-flex!important;min-width:40px!important;min-height:40px!important;align-items:center;justify-content:center;margin:0!important}
-  html[data-platform="android"] #global-search-btn{width:38px!important;min-width:38px!important;padding:0!important;justify-content:center}
-  html[data-platform="android"] #app>.main-shell>#main{padding:12px!important;overflow:visible!important;min-width:0!important}
-  html[data-platform="android"] #main :is(.overview-dashboard,.overview-top-row,.overview-academic-grid,.overview-ops-grid,.overview-split,.recent-cards,.grid-2,.grid-3,.grid-4,.settings-layout,.docs-layout,.workspace-layout,.agent-layout){display:grid!important;grid-template-columns:minmax(0,1fr)!important;height:auto!important;max-height:none!important;gap:12px!important}
-  html[data-platform="android"] #main .overview-dashboard>*{min-width:0!important;grid-column:auto!important;grid-row:auto!important}
-  html[data-platform="android"] #main :is(.overview-col,.overview-left-col,.overview-right-col){min-width:0!important;display:grid!important;grid-template-columns:minmax(0,1fr)!important}
-  html[data-platform="android"] #main :is(.one-screen,.one-screen .heatmap-card,.academic-progress-card,.graduation-card){height:auto!important;max-height:none!important;min-height:0!important;overflow:visible!important}
-  html[data-platform="android"] .today-metrics{min-width:0!important;width:100%!important;grid-template-columns:repeat(2,minmax(0,1fr))!important}
-  html[data-platform="android"] .quick-capture-copy{min-width:0!important}
-  html[data-platform="android"] #main :is(.card,.card-pad,.settings-panel,.field,.agent-main){min-width:0!important;max-width:100%;box-sizing:border-box}
-  html[data-platform="android"] #main .overview-dashboard .card{min-height:0!important}
-  html[data-platform="android"] #main .overview-dashboard .empty{min-height:80px!important;padding-block:20px!important}
-  html[data-platform="android"] #main .form-grid{grid-template-columns:minmax(0,1fr)!important}
+  html[data-platform="android"] .topbar .page-heading h2{font-size:19px!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4!important}
+  html[data-platform="android"] :is(.page-date,.weather-pill,.top-search-btn kbd,.top-search-btn>span:nth-child(2),.reload-wrap){display:none!important}
+  html[data-platform="android"] .top-actions{flex-wrap:nowrap!important;gap:4px!important;flex:0 0 auto}
+  html[data-platform="android"] #sidebar-toggle{display:inline-flex!important;width:44px!important;height:44px!important;min-width:44px!important;align-items:center;justify-content:center;margin:0!important;padding:10px!important;border:0!important;background:transparent!important;box-shadow:none!important}
+  html[data-platform="android"] #sidebar-toggle svg,#android-nav svg{width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+  html[data-platform="android"] :is(#global-search-btn,#theme-btn){width:44px!important;min-width:44px!important;height:44px!important;padding:0!important;justify-content:center;font-size:21px!important;border:0!important;background:transparent!important;box-shadow:none!important}
+  html[data-platform="android"] #app>.main-shell>#main{flex:1 1 auto!important;padding:12px!important;overflow:auto!important;min-height:0!important;min-width:0!important;scroll-padding-block:12px 24px;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch}
+  html[data-platform="android"] #main :is(.card,.card-pad,.settings-panel,.field){min-width:0!important;max-width:100%;box-sizing:border-box}
+  html[data-platform="android"] #main .card{overflow-wrap:anywhere}
+  html[data-platform="android"] #main :is(.grid-2,.grid-3,.grid-4,.settings-layout,.docs-layout,.workspace-layout,.project-manager-grid){display:grid!important;grid-template-columns:minmax(0,1fr)!important;height:auto!important;max-height:none!important;gap:12px!important}
+  html[data-platform="android"] :is(input,select,textarea){font-size:16px!important;max-width:100%;min-width:0;box-sizing:border-box}
+  html[data-platform="android"] :is(input:not([type=checkbox]):not([type=radio]):not([type=range]),select){min-height:44px!important}
+  html[data-platform="android"] :is(.primary-btn,.secondary-btn,.ghost-btn,.icon-btn){min-height:44px!important;touch-action:manipulation}
+  html[data-platform="android"] #main :is(.form-grid,.project-form){grid-template-columns:minmax(0,1fr)!important}
   html[data-platform="android"] #main .field{grid-column:auto!important}
-  html[data-platform="android"] :is(input,select,textarea){font-size:16px!important;max-width:100%;box-sizing:border-box}
-  html[data-platform="android"] :is(.primary-btn,.secondary-btn,.ghost-btn,.icon-btn){min-height:40px!important}
-  html[data-platform="android"] .settings-nav{position:static!important;display:flex!important;flex-direction:row!important;height:auto!important;overflow-x:auto!important;white-space:nowrap}
-  html[data-platform="android"] .settings-nav button{flex-shrink:0;min-height:42px}
-  html[data-platform="android"] .doc-list-panel{height:auto!important;max-height:none!important}
+  html[data-platform="android"] :is(.card-head,.section-title,.field-label-row,.selection-toolbar){gap:8px;flex-wrap:wrap;min-width:0}
+  html[data-platform="android"] .card-head>div{min-width:0!important;max-width:100%}
+  html[data-platform="android"] .card-head .row-meta{white-space:normal!important;overflow-wrap:anywhere!important}
+  html[data-platform="android"] :is(.row-title,.row-main,.todo-copy,.list-row>div,.project-card-top>div){min-width:0;overflow-wrap:anywhere}
+  html[data-platform="android"] :is(.row-meta,.field-help){overflow-wrap:anywhere}
+  html[data-platform="android"] :is(.doc-filter,.doc-list-head,.card-pad){padding:12px!important}
+  html[data-platform="android"] :is(.view-tabs,.doc-list-actions,.billing-tabs){max-width:100%;overflow-x:auto;flex-wrap:nowrap;white-space:nowrap}
+  html[data-platform="android"] :is(.view-tabs,.doc-list-actions,.billing-tabs)>button{flex-shrink:0;min-height:44px!important}
+  /* Navigation drawer */
+  html[data-platform="android"] #app>.sidebar{position:fixed!important;inset:0 auto 0 0!important;width:min(304px,86vw)!important;height:var(--android-height,100dvh)!important;z-index:1002!important;display:flex!important;visibility:visible!important;pointer-events:auto!important;transform:translateX(-105%);transition:transform .18s ease;box-shadow:12px 0 40px #11182730;overflow:auto}
+  html[data-platform="android"][data-android-drawer="true"] #app>.sidebar{transform:translateX(0)}
+  html[data-platform="android"] .sidebar .brand{min-height:80px!important;flex:0 0 auto;display:flex!important;padding:16px!important;gap:10px!important}
+  html[data-platform="android"] .sidebar .brand-copy{display:block!important;opacity:1!important;max-width:none!important;min-width:0}
+  html[data-platform="android"] .sidebar .brand-copy p{font-size:10px!important}
+  html[data-platform="android"] .sidebar :is(.nav-item>span:last-child,.group-toggle>span:last-child){display:inline!important;opacity:1!important;max-width:none!important}
+  html[data-platform="android"] .sidebar .nav-item{min-height:48px!important;padding-inline:14px!important;justify-content:flex-start!important;font-size:14px!important}
+  html[data-platform="android"] .sidebar .group-toggle{min-height:44px!important}
+  html[data-platform="android"] .sidebar-nav{overflow-y:auto!important;flex:1}
+  html[data-platform="android"] #android-drawer-close{display:inline-flex;margin-left:auto;flex-shrink:0;min-width:44px;padding:0;align-items:center;justify-content:center;font-size:26px}
+  html[data-platform="android"][data-android-drawer="true"] #android-drawer-scrim{display:block;position:fixed;inset:0;z-index:1001;background:#10182770;border:0;backdrop-filter:blur(3px)}
+  html[data-platform="android"] #android-nav{display:grid;grid-template-columns:repeat(4,1fr);position:fixed;inset:auto 0 0;height:var(--android-nav);z-index:900;background:var(--surface);border-top:1px solid var(--line);box-shadow:0 -4px 20px #11182708}
+  html[data-platform="android"] #android-nav button{display:flex;flex-direction:column;gap:2px;align-items:center;justify-content:center;border:0;background:transparent;color:var(--muted);font-size:11px;min-height:64px;padding:5px;font-weight:500}
+  html[data-platform="android"] .android-nav-icon{display:grid;place-items:center;width:56px;height:29px;border-radius:18px}
+  html[data-platform="android"] #android-nav button.active{color:var(--accent)}
+  html[data-platform="android"] #android-nav button.active .android-nav-icon{background:var(--accent-soft)}
+  /* Compact dashboard; the tools used every day come first. */
+  html[data-platform="android"] #main .overview-dashboard{display:flex!important;flex-direction:column!important;height:auto!important;gap:12px!important;padding:0!important}
+  html[data-platform="android"] #main :is(.overview-top-row,.overview-mid-row,.overview-academic-grid,.overview-ops-grid,.overview-lower-band,.overview-lower-left,.overview-recent-group){display:grid!important;grid-template-columns:minmax(0,1fr)!important;grid-template-rows:auto!important;height:auto!important;min-height:0!important;max-height:none!important;gap:12px!important}
+  html[data-platform="android"] #main .overview-dashboard>*{grid-column:auto!important;grid-row:auto!important;min-width:0!important}
+  html[data-platform="android"] #main .overview-dashboard .card{height:auto!important;min-height:0!important;max-height:none!important;overflow:hidden!important}
+  html[data-platform="android"] #main :is(.overview-today,.quick-capture-card){padding:14px!important}
+  html[data-platform="android"] #main .today-metrics{width:100%!important;min-width:0!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:6px!important}
+  html[data-platform="android"] .today-metrics span{font-size:10px!important;white-space:normal!important}
+  html[data-platform="android"] .today-metrics strong{font-size:23px!important}
+  html[data-platform="android"] #main .quick-capture-actions{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:5px!important;width:100%!important}
+  html[data-platform="android"] #main .quick-action{display:flex!important;flex-direction:column;align-items:center;justify-content:center;gap:6px!important;min-width:0!important;min-height:66px!important;padding:8px 2px!important;grid-column:auto!important}
+  html[data-platform="android"] .quick-action b{font-size:11px!important;white-space:nowrap}
+  html[data-platform="android"] .quick-action span{font-size:19px!important}
+  html[data-platform="android"] #main :is(.overview-task-list,.overview-milestone-list){height:auto!important;min-height:0!important;max-height:280px!important;overflow:auto!important;scrollbar-gutter:auto!important}
+  html[data-platform="android"] #main :is(.overview-task-row,.overview-milestone-row){height:auto!important;min-height:60px!important;max-height:none!important;padding:8px!important;grid-template-columns:28px minmax(0,1fr) auto!important}
+  html[data-platform="android"] #main .overview-task-row time{display:none}
+  html[data-platform="android"] #main .overview-milestone-row{grid-template-columns:72px minmax(0,1fr) auto!important}
+  html[data-platform="android"] #main .overview-list-spacer{display:none!important}
+  html[data-platform="android"] #main .overview-dashboard .empty{height:auto!important;min-height:72px!important;padding:24px 12px!important}
+  html[data-platform="android"] #main .overview-stats{grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:6px!important}
+  html[data-platform="android"] #main .stat-card{padding:10px 8px!important;min-height:68px!important}
+  html[data-platform="android"] .stat-label{font-size:10px!important}
+  html[data-platform="android"] .stat-en{display:none}
+  html[data-platform="android"] .android-progress{border:1px solid var(--line);border-radius:12px;background:var(--surface);min-width:0}
+  html[data-platform="android"] .android-progress>summary{padding:16px;font-weight:650;cursor:pointer;line-height:1.6}
+  html[data-platform="android"] .android-progress>summary>span{display:block;color:var(--muted);font-size:11px;font-weight:400;margin:4px 0 0 18px}
+  html[data-platform="android"] .android-progress[open]>summary{border-bottom:1px solid var(--line);margin-bottom:10px}
+  html[data-platform="android"] #main .android-progress .overview-top-row{padding:0 10px 10px!important}
+  /* Lists and forms */
+  html[data-platform="android"] .doc-list-panel{height:auto!important;max-height:none!important;position:static!important}
   html[data-platform="android"] .doc-list{max-height:none!important;overflow:visible!important}
-  html[data-platform="android"] .doc-item{min-height:64px!important}
+  html[data-platform="android"] .doc-item{min-height:88px!important;padding:14px!important}
+  html[data-platform="android"] .doc-item .title{font-size:15px!important;line-height:1.5!important}
+  html[data-platform="android"] .doc-item .excerpt{font-size:12px!important;line-height:1.6!important}
+  html[data-platform="android"] .todo-add{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important}
+  html[data-platform="android"] #todo-title{grid-column:1/-1}
+  html[data-platform="android"] .todo-add-actions{display:flex;justify-content:flex-end;gap:6px}
+  html[data-platform="android"] .todo-row{grid-template-columns:32px minmax(0,1fr) auto!important;gap:8px!important;padding:12px 4px!important;min-height:68px!important}
+  html[data-platform="android"] .todo-row>time{grid-column:2;font-size:11px}
+  html[data-platform="android"] .todo-row>.badge{grid-column:2;justify-self:start}
+  html[data-platform="android"] .todo-complete{width:32px!important;height:44px!important}
+  html[data-platform="android"] .todo-row>[data-todo-del]{grid-column:3;grid-row:1/4;min-height:44px!important;min-width:44px!important}
+  html[data-platform="android"] .project-card-metrics{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+  html[data-platform="android"] .project-card-top h3{white-space:normal!important;overflow-wrap:anywhere}
+  html[data-platform="android"] .milestone-page-head>div:last-child{width:100%;flex-wrap:wrap}
+  html[data-platform="android"] .milestone-page-head .view-tabs{flex:1}
+  html[data-platform="android"] .timeline-item{grid-template-columns:62px 14px minmax(0,1fr)!important;gap:5px!important}
+  html[data-platform="android"] .mdt-body{min-width:0!important}
+  html[data-platform="android"] .mdt-scroll{min-width:0!important;overflow:auto!important}
+  html[data-platform="android"] :is(.mdt-toolbar,.mdt-controls,.graph-controls){flex-wrap:wrap!important;gap:8px!important}
+  html[data-platform="android"] .graph-filter-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  html[data-platform="android"] .graph-panel{height:65dvh!important;min-height:300px!important}
+  html[data-platform="android"] .settings-nav{position:static!important;display:flex!important;flex-direction:row!important;height:auto!important;overflow-x:auto!important;white-space:nowrap;padding:4px!important;gap:4px!important;scrollbar-width:none}
+  html[data-platform="android"] .settings-nav button{flex:0 0 auto!important;min-height:44px!important;width:auto!important;min-width:66px!important}
+  html[data-platform="android"] .settings-panel{padding:14px!important}
+  html[data-platform="android"] .settings-panel .row-meta{white-space:normal!important;overflow-wrap:anywhere!important}
+  html[data-platform="android"] .settings-panel .list-row{flex-wrap:wrap;gap:8px!important;align-items:center}
+  html[data-platform="android"] :is(.agent-profile-settings,.agent-profile-grid){grid-template-columns:minmax(0,1fr)!important;min-height:0!important}
+  html[data-platform="android"] :is(.agent-profile-item,.agent-profile-editor,.agent-settings-footer,.agent-settings-footer>.left){min-width:0!important;max-width:100%!important;box-sizing:border-box}
+  html[data-platform="android"] .agent-profile-editor-head{flex-direction:column!important;align-items:stretch!important}
+  html[data-platform="android"] .agent-profile-editor-actions{justify-content:flex-start!important}
+  html[data-platform="android"] .agent-mode-head{flex-wrap:wrap;align-items:flex-start!important}
+  html[data-platform="android"] .agent-mode-head>div{min-width:0;max-width:100%}
+  html[data-platform="android"] .agent-settings-footer>.left>.row-meta{width:100%}
+  html[data-platform="android"] :is(.billing-cards,.focus-duration-grid){grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  html[data-platform="android"] .billing-card{padding:12px!important;min-width:0}
+  html[data-platform="android"] :is(.workspace-toolbar,.folder-toolbar){flex-wrap:wrap!important}
+  /* A document is a full-height screen: actions stay above the keyboard. */
   html[data-platform="android"] .doc-editor.empty-editor{display:none!important}
   html[data-platform="android"][data-android-editor="true"] .docs-layout>.doc-list-panel{display:none!important}
-  html[data-platform="android"] #android-doc-back{display:inline-flex;align-self:flex-start;margin:0 0 8px;padding-left:0}
-  html[data-platform="android"] #main .docs-layout .doc-editor:not(.empty-editor){height:auto!important;min-height:calc(100dvh - 150px)!important;overflow:visible!important;padding:12px!important}
-  html[data-platform="android"] #main .doc-editor-content{overflow:visible!important;flex:none!important}
-  html[data-platform="android"] #main .docs-layout .editor-wrap{flex:none!important;min-height:400px!important;height:58dvh!important}
-  html[data-platform="android"] .editor-pane{min-height:0!important;grid-template-rows:minmax(0,1fr)!important}
-  html[data-platform="android"] .editor-pane .md-input{min-height:0!important;width:100%!important}
+  html[data-platform="android"][data-android-page="editor"] #app>.main-shell>#main{padding:0!important;overflow:hidden!important;display:flex!important;flex-direction:column!important}
+  html[data-platform="android"][data-android-page="editor"] #main .docs-layout{display:flex!important;flex-direction:column!important;flex:1!important;height:100%!important;min-height:0!important;gap:0!important}
+  html[data-platform="android"] #main .docs-layout .doc-editor:not(.empty-editor){flex:1!important;height:100%!important;min-height:0!important;border:0!important;border-radius:0!important;padding:0!important;overflow:hidden!important}
+  html[data-platform="android"] #android-editor-head{display:flex;align-items:center;gap:6px;min-height:58px;padding:6px 12px;border-bottom:1px solid var(--line);background:var(--surface);flex:0 0 auto}
+  html[data-platform="android"] #android-doc-back{padding-inline:6px;font-size:14px;white-space:nowrap}
+  html[data-platform="android"] #android-save-status{flex:1;color:var(--muted);font-size:11px;white-space:nowrap}
+  html[data-platform="android"] #android-save-status[data-dirty="true"]{color:var(--accent)}
+  html[data-platform="android"] #doc-delete{border:0!important;background:transparent!important;color:var(--muted)!important;box-shadow:none!important;font-size:12px!important;padding:0 8px!important}
+  html[data-platform="android"] #doc-save{min-width:66px;font-size:14px!important}
+  html[data-platform="android"] #main .doc-editor-content{flex:1 1 auto!important;overflow:auto!important;min-height:0!important;padding:0 12px 12px;gap:0!important}
+  html[data-platform="android"] #main .docs-layout .meta-block{padding:0!important;margin-bottom:10px!important;border:0!important;border-radius:0!important;background:transparent!important}
+  html[data-platform="android"] #main .meta-head{padding:4px 0!important;gap:6px!important;min-height:44px}
+  html[data-platform="android"] .meta-head-title{font-size:12px!important}
+  html[data-platform="android"] .meta-summary{font-size:11px!important;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  html[data-platform="android"] #main .meta-toggle{min-height:44px!important}
+  html[data-platform="android"] #main .meta-block.collapsed #meta-fields{display:grid!important}
+  html[data-platform="android"] #main .meta-block.collapsed #meta-fields>.field:not(:first-child){display:none!important}
+  html[data-platform="android"] #f-title{font-size:20px!important;line-height:1.5!important;font-weight:600!important;height:auto!important;padding:10px!important}
+  html[data-platform="android"] .doc-editor .field-help{display:none}
+  html[data-platform="android"] #main .docs-layout .editor-wrap{display:flex!important;flex-direction:column!important;flex:1 0 260px!important;min-height:260px!important;height:auto!important;border-radius:10px!important;overflow:hidden!important}
+  html[data-platform="android"] #main .doc-editor .toolbar{display:flex!important;flex-wrap:nowrap!important;min-height:46px!important;flex:0 0 46px!important;padding:0 2px!important;gap:0!important;overflow-x:auto!important;overflow-y:hidden!important;scrollbar-width:none}
+  html[data-platform="android"] .doc-editor .toolbar>button{flex:0 0 44px;min-width:44px!important;min-height:44px!important;font-size:13px!important}
+  html[data-platform="android"] .doc-editor .toolbar .sep{flex-shrink:0}
+  html[data-platform="android"] .doc-editor .toolbar .editor-tabs{position:sticky;right:0;margin-left:auto!important;display:flex!important;flex-shrink:0;background:var(--surface);box-shadow:-10px 0 12px var(--surface);align-self:stretch;align-items:center}
+  html[data-platform="android"] .editor-tabs button{min-height:44px!important;min-width:48px!important;font-size:13px!important}
+  html[data-platform="android"] :is([data-edit-mode="split"],.editor-zoom-controls,.editor-divider,.editor-resizer){display:none!important}
+  html[data-platform="android"] #main .editor-pane{display:grid!important;grid-template-columns:minmax(0,1fr)!important;grid-template-rows:minmax(0,1fr)!important;flex:1!important;min-height:0!important;overflow:hidden!important}
+  html[data-platform="android"] #main .editor-pane .md-input{min-height:0!important;width:100%!important;padding:16px!important;font:16px/1.9 ui-monospace,monospace!important;resize:none!important}
   html[data-platform="android"] .editor-pane:not(.preview-only) .md-preview{display:none!important}
-  html[data-platform="android"] .editor-actions{position:sticky;bottom:66px;background:var(--surface);z-index:10;padding-top:8px;flex-wrap:wrap}
-  html[data-platform="android"] .editor-actions>.row-meta{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  html[data-platform="android"] .editor-actions>.right{margin-left:auto}
-  html[data-platform="android"] .modal-backdrop{padding:10px!important}
-  html[data-platform="android"] .modal{width:100%!important;max-width:100%!important;max-height:90dvh!important}
-  html[data-platform="android"] .modal-body{overflow:auto;max-width:100%}
-  html[data-platform="android"] .workbench-dialog-backdrop{padding:16px!important}
-  html[data-platform="android"] .sync-menu{position:fixed!important;inset:60px 10px auto!important;max-height:70dvh!important;width:auto!important;min-width:0!important;overflow:auto}
-  html[data-platform="android"] .lit-shell{display:flex!important;flex-direction:column!important;height:auto!important}
-  html[data-platform="android"] .lit-list{max-height:280px!important;flex:none!important}
-  html[data-platform="android"] .lit-reader{height:65dvh!important;min-height:360px!important}
-  html[data-platform="android"] .lit-side{position:static!important;width:auto!important;max-height:60dvh!important;overflow:auto!important}
-  html[data-platform="android"] #erw-fab-ball{bottom:82px!important;right:16px!important}
+  html[data-platform="android"] .editor-pane.preview-only .md-input{display:none!important}
+  html[data-platform="android"] .editor-pane .md-preview{font-size:16px!important;padding:16px!important;overflow:auto!important;overflow-wrap:anywhere}
+  html[data-platform="android"] .editor-actions{display:none!important}
+  html[data-platform="android"] #main .milestone-page-card:has(.doc-editor:not(.empty-editor)){flex:1!important;min-height:0!important;display:flex!important;flex-direction:column!important;padding:0!important;border:0!important}
+  html[data-platform="android"] .milestone-page-card:has(.doc-editor:not(.empty-editor))>.milestone-page-head{display:none!important}
+  html[data-platform="android"] .milestone-page-card:has(.doc-editor:not(.empty-editor))>#ms-view{flex:1;min-height:0;display:flex}
+  /* Chat and PDF use separate phone panes instead of stacked desktop columns. */
+  html[data-platform="android"][data-android-page="agent"] #app>.main-shell>#main,html[data-platform="android"][data-android-page="pdf"] #app>.main-shell>#main{overflow:hidden!important;padding:8px!important;display:flex!important;flex-direction:column!important}
+  html[data-platform="android"] #main .agent-layout,html[data-platform="android"] #main .lit-shell{display:flex!important;flex-direction:column!important;gap:8px!important;flex:1!important;height:100%!important;min-height:0!important;max-height:none!important}
+  html[data-platform="android"] #android-agent-bar{display:flex;justify-content:space-between;flex:0 0 auto}
+  html[data-platform="android"] #main .agent-sessions{flex:1!important;max-height:none!important;min-height:0!important;overflow:hidden!important;padding:12px!important}
+  html[data-platform="android"] .agent-session-list{max-height:none!important;flex:1!important;overflow:auto!important}
+  html[data-platform="android"] .agent-session strong{font-size:14px!important}
+  html[data-platform="android"] .agent-session small{font-size:11px!important}
+  html[data-platform="android"] .agent-layout[data-android-agent-pane="chat"]>.agent-sessions,html[data-platform="android"] .agent-layout[data-android-agent-pane="sessions"]>.agent-chat{display:none!important}
+  html[data-platform="android"] #main .agent-chat{flex:1!important;min-height:0!important;padding:10px!important;grid-template-rows:auto minmax(0,1fr) auto auto!important;overflow:hidden!important}
+  html[data-platform="android"] .agent-chat-head{padding-bottom:6px!important;gap:6px!important}
+  html[data-platform="android"] #agent-chat-title{font-size:15px!important}
+  html[data-platform="android"] .agent-head-actions{gap:3px!important;flex-wrap:nowrap!important}
+  html[data-platform="android"] #agent-ref{font-size:11px!important;padding-inline:7px!important}
+  html[data-platform="android"] #agent-delete{font-size:11px!important;padding-inline:5px!important}
+  html[data-platform="android"] .agent-messages{min-height:0!important;max-height:none!important;padding:12px 0!important;overflow:auto!important;gap:14px!important}
+  html[data-platform="android"] .agent-message{grid-template-columns:minmax(0,1fr)!important;max-width:100%!important;width:96%!important}
+  html[data-platform="android"] .agent-avatar{display:none}
+  html[data-platform="android"] .agent-bubble{padding:12px!important}
+  html[data-platform="android"] .agent-message-body{font-size:15px!important}
+  html[data-platform="android"] :is(.agent-context-strip,.agent-composer){margin:0!important}
+  html[data-platform="android"] .agent-context-strip:empty{padding:0!important}
+  html[data-platform="android"] .agent-composer{padding:8px!important;min-width:0}
+  html[data-platform="android"] .agent-composer textarea{height:80px!important;min-height:64px!important;max-height:120px!important;resize:none!important;padding:4px!important}
+  html[data-platform="android"] .agent-compose-actions{gap:6px!important}
+  html[data-platform="android"] .agent-compose-left{display:grid!important;grid-template-columns:44px minmax(0,1fr) minmax(0,1fr)!important;gap:4px!important;min-width:0;flex:1}
+  html[data-platform="android"] .agent-runtime-selects{min-width:0;display:block!important}
+  html[data-platform="android"] .agent-runtime-selects label{display:block!important;font-size:0!important}
+  html[data-platform="android"] #agent-profile-select{min-width:0!important;width:100%!important;font-size:12px!important;padding:4px!important}
+  html[data-platform="android"] .agent-profile-badge{display:none!important}
+  html[data-platform="android"] .agent-compose-left>.row-meta{display:none!important}
+  html[data-platform="android"] .agent-preset-label{font-size:0!important;min-width:0;display:flex!important}
+  html[data-platform="android"] #agent-preset{font-size:12px!important;min-width:0!important;width:100%!important;padding:4px!important}
+  html[data-platform="android"] #agent-image{padding:4px!important;font-size:12px!important;white-space:nowrap!important;min-width:44px!important}
+  html[data-platform="android"] #agent-send{min-width:58px!important;flex-shrink:0}
+  html[data-platform="android"] #android-pdf-tabs{display:grid;grid-template-columns:repeat(3,1fr);flex:0 0 auto;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:3px}
+  html[data-platform="android"] #android-pdf-tabs button{padding:6px!important;font-size:13px!important}
+  html[data-platform="android"] #android-pdf-tabs button.active{background:var(--accent-soft)!important;color:var(--accent)!important}
+  html[data-platform="android"] .lit-shell>.card{flex:1!important;height:100%!important;min-height:0!important;max-height:none!important}
+  html[data-platform="android"] .lit-shell:not([data-android-pdf-pane="library"])>.lit-library,html[data-platform="android"] .lit-shell:not([data-android-pdf-pane="reader"])>.lit-reader,html[data-platform="android"] .lit-shell:not([data-android-pdf-pane="side"])>.lit-side{display:none!important}
+  html[data-platform="android"] .lit-library{display:flex!important;flex-direction:column!important;overflow:hidden!important}
+  html[data-platform="android"] .lit-list{flex:1!important;min-height:0!important;max-height:none!important;overflow:auto!important}
+  html[data-platform="android"] .lit-library-head{padding:12px 12px 0!important}
+  html[data-platform="android"] .lit-head-actions{justify-content:space-between}
+  html[data-platform="android"] .lit-head-actions>button{font-size:12px!important}
+  html[data-platform="android"] .lit-toolbar{height:48px!important;padding:0 4px!important;gap:0!important;scrollbar-width:none}
+  html[data-platform="android"] .lit-toolbar button{min-height:44px!important;min-width:44px!important;flex-shrink:0;padding:6px 10px!important;font-size:13px!important}
+  html[data-platform="android"] .lit-toolbar>span{flex-shrink:0;white-space:nowrap}
+  html[data-platform="android"] .lit-canvas-scroll{height:calc(100% - 48px)!important;padding:10px!important}
+  html[data-platform="android"] .lit-side{position:static!important;width:auto!important;display:flex!important;flex-direction:column!important;box-shadow:none!important;overflow:hidden!important}
+  html[data-platform="android"] #lit-side-body{flex:1;min-height:0;overflow:auto!important}
+  html[data-platform="android"] .lit-side-tabs button{min-height:44px!important;font-size:13px!important}
+  html[data-platform="android"] .lit-note{min-height:200px!important;height:40dvh!important}
+  html[data-platform="android"] .lit-note-actions{flex-wrap:wrap!important;gap:8px!important}
+  html[data-platform="android"] .lit-note-actions>span:last-child{width:100%;flex-wrap:wrap}
+  /* Sheets stay within the resized viewport, with independently scrolling bodies. */
+  html[data-platform="android"] .modal-backdrop{padding:12px!important;align-items:flex-end!important;z-index:1100!important}
+  html[data-platform="android"] .modal{display:flex!important;flex-direction:column!important;width:100%!important;max-width:100%!important;max-height:calc(var(--android-height,100dvh) - 24px)!important;border-radius:18px!important;min-height:0!important}
+  html[data-platform="android"] .modal>header{flex:0 0 auto;padding:14px 16px!important;gap:10px}
+  html[data-platform="android"] .modal-body{flex:1 1 auto;min-height:0;overflow:auto!important;max-width:100%;padding:16px!important}
+  html[data-platform="android"] .modal>footer{flex:0 0 auto;display:flex;flex-wrap:wrap;gap:8px;padding:12px 16px!important}
+  html[data-platform="android"] .workbench-dialog-backdrop{padding:16px!important;z-index:1200!important}
+  html[data-platform="android"] .workbench-dialog{width:100%!important;max-width:420px!important;max-height:calc(var(--android-height,100dvh) - 32px)!important;overflow:auto!important}
+  html[data-platform="android"] .sync-menu{position:fixed!important;inset:60px 10px auto!important;max-height:calc(var(--android-height,100dvh) - 140px)!important;width:auto!important;min-width:0!important;overflow:auto}
+  html[data-platform="android"] #erw-fab-ball{top:auto!important;left:auto!important;bottom:80px!important;right:16px!important;width:48px!important;height:48px!important}
+  html[data-platform="android"][data-android-page="editor"] #erw-fab-ball,html[data-platform="android"][data-android-page="agent"] #erw-fab-ball,html[data-platform="android"][data-android-page="pdf"] #erw-fab-ball{display:none!important}
   html[data-platform="android"] #erw-fab-panel{inset:8px 8px 74px!important;width:auto!important;height:auto!important;max-height:none!important}
-  html[data-platform="android"] #android-nav{display:grid;grid-template-columns:repeat(4,1fr);position:fixed;inset:auto 0 0;min-height:62px;z-index:900;background:var(--surface);border-top:1px solid var(--line);box-shadow:0 -4px 20px #11182708}
-  html[data-platform="android"] #android-nav button{display:flex;flex-direction:column;gap:3px;align-items:center;justify-content:center;border:0;background:transparent;color:var(--muted);font-size:11px;min-height:62px;padding:6px}
-  html[data-platform="android"] #android-nav button>span:first-child{font-size:22px;line-height:25px}
-  html[data-platform="android"] #android-nav button.active{color:var(--accent);background:var(--accent-soft)}
-  html[data-platform="android"] #toast-stack{bottom:80px!important;right:12px!important;left:12px!important;max-width:none!important}
+  html[data-platform="android"] #toast-stack{bottom:80px!important;right:12px!important;left:12px!important;max-width:none!important;pointer-events:none}
+  html[data-platform="android"][data-android-keyboard="true"]{--android-nav:0px}
+  html[data-platform="android"][data-android-keyboard="true"] :is(#android-nav,#erw-fab-ball){display:none!important}
+  html[data-platform="android"][data-android-keyboard="true"] #main .meta-block:not(:focus-within){display:none!important}
+  html[data-platform="android"][data-android-keyboard="true"] #main .docs-layout .editor-wrap{flex-basis:140px!important;min-height:140px!important}
+  html[data-platform="android"][data-android-keyboard="true"] #android-agent-bar{display:none!important}
+  html[data-platform="android"][data-android-keyboard="true"] .agent-chat-head{display:none!important}
+  html[data-platform="android"][data-android-keyboard="true"] .agent-composer textarea{height:60px!important;min-height:44px!important}
+  html[data-platform="android"][data-android-keyboard="true"] #toast-stack{bottom:12px!important}
+  @media(prefers-reduced-motion:reduce){html[data-platform="android"] .sidebar{transition:none!important}}
 }

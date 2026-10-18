@@ -72,6 +72,9 @@ public class MainActivity extends Activity {
                     WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
                 int keyboard = insets.getInsets(WindowInsets.Type.ime()).bottom;
                 view.setPadding(bars.left, bars.top, bars.right, Math.max(bars.bottom, keyboard));
+                if (webView != null) webView.evaluateJavascript(
+                    "window.ERWAndroid && window.ERWAndroid.setKeyboardVisible(" +
+                    insets.isVisible(WindowInsets.Type.ime()) + ");", null);
                 return WindowInsets.CONSUMED;
             }
             view.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(),

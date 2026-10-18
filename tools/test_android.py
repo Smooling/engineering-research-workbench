@@ -7,6 +7,7 @@ import tempfile
 import time
 import unittest
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import quote
 from urllib.request import Request, urlopen, ProxyHandler, build_opener
@@ -47,6 +48,14 @@ class AndroidRuntimeTests(unittest.TestCase):
             with self.http.open(self.url + path, timeout=10) as response:
                 self.assertEqual(response.status, 200)
                 self.assertTrue(response.read())
+
+    def test_billing_parallel_first_open(self):
+        # The mobile dashboard loads these together before a prices file exists.
+        paths = ['/api/billing/summary', '/api/billing/prices', '/api/billing/records'] * 3
+        with ThreadPoolExecutor(max_workers=9) as pool:
+            results = list(pool.map(self.request, paths))
+        self.assertTrue(all(isinstance(result, dict) for result in results))
+        self.assertTrue(self.request('/api/billing/prices')['models'])
 
     def test_edit_restart_and_backup_preserve_metadata_without_keys(self):
         doc = self.request("/api/docs", {"kind": "note", "title": "Android 离线验证", "body": "手机本地笔记"})

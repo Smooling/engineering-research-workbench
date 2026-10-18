@@ -816,7 +816,7 @@
     $('#agent-new').onclick=async()=>{const s=await api('/api/agent/sessions',{method:'POST',body:{}});state.agentSession=s.id;state.agentRefs=[];state.agentImages=[];renderAgent()};
     $$('[data-agent-session]').forEach(b=>b.onclick=()=>{state.agentSession=b.dataset.agentSession;state.agentRefs=[];state.agentImages=[];renderAgent()});
     $('#agent-ref').onclick=openAgentReferencePicker;$('#agent-image').onclick=pickAgentImage;$('#agent-delete').onclick=async()=>{if(state.agentSession&&await window.ERWDialog.confirm('将该对话移入 Trash？')){await api('/api/agent/sessions/'+encodeURIComponent(state.agentSession),{method:'DELETE'});state.agentSession=null;renderAgent()}};
-    const input=$('#agent-input');input.addEventListener('paste',onAgentPasteImage);input.addEventListener('dragover',e=>e.preventDefault());input.addEventListener('drop',onAgentDropImage);input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();sendAgentMessage()}});$('#agent-send').onclick=sendAgentMessage;const presetSelect=$('#agent-preset');if(presetSelect)presetSelect.onchange=()=>{state.agentPreset=presetSelect.value;localStorage.setItem('agentRequestPreset',state.agentPreset)};
+    const input=$('#agent-input');input.addEventListener('paste',onAgentPasteImage);input.addEventListener('dragover',e=>e.preventDefault());input.addEventListener('drop',onAgentDropImage);input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing&&document.documentElement.dataset.platform!=='android'){e.preventDefault();sendAgentMessage()}});$('#agent-send').onclick=sendAgentMessage;const presetSelect=$('#agent-preset');if(presetSelect)presetSelect.onchange=()=>{state.agentPreset=presetSelect.value;localStorage.setItem('agentRequestPreset',state.agentPreset)};
     paintAgentContext(); paintAgentImages(); if(state.agentSession)await loadAgentSession(state.agentSession);
   }
   async function loadAgentSession(id){try{const s=await api('/api/agent/sessions/'+encodeURIComponent(id));if(state.route!=='agent'||state.agentSession!==id)return;$('#agent-chat-title').textContent=s.title||'科研 Agent';const root=$('#agent-messages');root.innerHTML=(s.messages||[]).length?(s.messages||[]).map(agentMessageHtml).join(''):'<div class="empty">暂无消息。你可以直接提问，或先引用研究资料。</div>';for(const el of $$('.agent-message-body',root))await renderMarkdownInto(el,el.dataset.raw||'');for(const el of $$('.agent-reasoning-body',root))await renderMarkdownInto(el,el.dataset.raw||'');root.scrollTop=root.scrollHeight}catch(e){toast(e.message,true)}}
@@ -931,7 +931,7 @@
     $('#main').innerHTML=docsShell(kind,docs,projects);
     wireDocList(kind); wireDocFilters(kind); $('#new-doc').onclick=()=>createAndSelect(kind);
     if(kind==='literature'){$('#export-bib').onclick=exportBibtex;const ws=$('#open-lit-workspace');if(ws)ws.onclick=openLiteratureWorkspace;}
-    const phone=document.documentElement.dataset.platform==='android'&&matchMedia('(max-width:820px)').matches;
+    const phone=document.documentElement.dataset.platform==='android'&&matchMedia('(max-width:1024px)').matches;
     if(docs.length&&(!phone||syncRefresh)) await selectDoc(docs.some(d=>d.id===activeId)?activeId:docs[0].id); else showEmptyEditor(kind);
     return true;
   }
@@ -1083,7 +1083,7 @@
     renderDocEditor(doc);
   }
   /* v260929 · 条目信息（填写一次即固定）可收起：收起后只留一行摘要，腾出正文撰写/阅读空间；收起状态按条目类型分别记忆 */
-  function metaCollapsed(kind){try{return localStorage.getItem('erwMetaCollapsed:'+kind)==='1'}catch{return false}}
+  function metaCollapsed(kind){try{const saved=localStorage.getItem('erwMetaCollapsed:'+kind);return saved===null?document.documentElement.dataset.platform==='android':saved==='1'}catch{return document.documentElement.dataset.platform==='android'}}
   function metaSummary(doc){
     const parts=String(doc.authors||'').split(/[;,，；]/).map(x=>x.trim()).filter(Boolean);
     const authors=parts.length?parts.length>1?parts[0]+' 等':parts[0]:'';
