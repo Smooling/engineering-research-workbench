@@ -124,6 +124,33 @@ def _init_db(conn: sqlite3.Connection) -> bool:
         return _initialize_schema(conn)
 
 
+def _create_search_table(conn: sqlite3.Connection) -> str:
+    """Use the available SQLite features without making FTS5 a requirement."""
+    for tokenizer in ("trigram", "unicode61"):
+        try:
+            conn.execute(
+                "CREATE VIRTUAL TABLE documents_fts USING fts5("
+                f"doc_id UNINDEXED, title, body, tags, projects, tokenize='{tokenizer}')"
+            )
+            return tokenizer
+        except sqlite3.OperationalError as exc:
+            message = str(exc).lower()
+            if "no such module: fts5" in message:
+                break
+            if tokenizer == "trigram" and "no such tokenizer: trigram" in message:
+                continue
+            # Storage, permission and other SQL failures must remain visible.
+            raise
+    # Chaquopy's SQLite may omit FTS5 entirely. Preserve the same searchable
+    # fields and document rowids: existing LIKE queries and CRUD work unchanged.
+    conn.execute(
+        "CREATE TABLE documents_fts (rowid INTEGER PRIMARY KEY, "
+        "doc_id TEXT NOT NULL UNIQUE, title TEXT NOT NULL, body TEXT NOT NULL, "
+        "tags TEXT NOT NULL, projects TEXT NOT NULL)"
+    )
+    return "like"
+
+
 def _initialize_schema(conn: sqlite3.Connection) -> bool:
     global _FTS_TOKENIZER
     conn.executescript(
@@ -265,24 +292,16 @@ def _initialize_schema(conn: sqlite3.Connection) -> bool:
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='documents_fts'"
     ).fetchone()
     if not fts_exists:
-        try:
-            conn.execute(
-                "CREATE VIRTUAL TABLE documents_fts USING fts5("
-                "doc_id UNINDEXED, title, body, tags, projects, tokenize='trigram')"
-            )
-            _FTS_TOKENIZER = "trigram"
-        except sqlite3.OperationalError:
-            conn.execute(
-                "CREATE VIRTUAL TABLE documents_fts USING fts5("
-                "doc_id UNINDEXED, title, body, tags, projects, tokenize='unicode61')"
-            )
-            _FTS_TOKENIZER = "unicode61"
+        _FTS_TOKENIZER = _create_search_table(conn)
+        # Also recover an interrupted first start where meta/documents exist
+        # but the search table was never created. Markdown is authoritative.
+        upgraded = True
     else:
         sql = conn.execute(
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='documents_fts'"
         ).fetchone()
-        text = str(sql[0] if sql else "")
-        _FTS_TOKENIZER = "trigram" if "trigram" in text else "unicode61"
+        text = str(sql[0] if sql else "").lower()
+        _FTS_TOKENIZER = ("trigram" if "trigram" in text else "unicode61") if "using fts5" in text else "like"
     if upgraded:
         # Older FTS rowids were independent of documents.rowid. initialize()
         # reparses files once to establish the mapping and normalized columns.

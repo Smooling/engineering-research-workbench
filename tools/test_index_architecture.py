@@ -274,5 +274,43 @@ class IndexArchitectureTests(unittest.TestCase):
         self.assertFalse(indexer.search_docs("beforefailure"))
 
 
+class _WithoutFts5(db._Connection):
+    """Keep real SQLite transactions/queries but model Android's absent module."""
+
+    def execute(self, sql, *args, **kwargs):
+        normalized = " ".join(sql.lower().split())
+        if normalized.startswith("create virtual table") and "using fts5(" in normalized:
+            raise sqlite3.OperationalError("no such module: fts5")
+        return super().execute(sql, *args, **kwargs)
+
+
+class WithoutFts5Tests(IndexArchitectureTests):
+    def setUp(self):
+        unavailable = patch.object(db, "_Connection", _WithoutFts5)
+        unavailable.start()
+        self.addCleanup(unavailable.stop)
+        super().setUp()
+
+    def test_search_survives_reopen_and_rebuild_without_fts5(self):
+        doc = self.doc(body="padding " * 100 + " Android 全文验证 100%_cache")
+        self.assertEqual(indexer.status()["fts_tokenizer"], "like")
+        for query in ("全文验证", "全文", "Android", "100%_cache"):
+            self.assertEqual(indexer.search_docs(query)[0]["id"], doc["id"])
+            self.assertEqual(indexer.list_docs(query=query, paged=True)["total"], 1)
+        db._SCHEMA_READY.pop(str(db._db_path()), None)
+        indexer.initialize()
+        self.assertEqual(indexer.status()["fts_tokenizer"], "like")
+        indexer.rebuild()
+        self.assertEqual(indexer.search_docs("全文验证")[0]["id"], doc["id"])
+
+    def test_missing_search_table_is_rebuilt_from_existing_markdown(self):
+        doc = self.doc(body="recover-from-incomplete-first-start")
+        with db._connect() as con:
+            con.execute("DROP TABLE documents_fts")
+        db._SCHEMA_READY.pop(str(db._db_path()), None)
+        indexer.initialize()
+        self.assertEqual(indexer.search_docs("incomplete-first-start")[0]["id"], doc["id"])
+
+
 if __name__ == "__main__":
     unittest.main()

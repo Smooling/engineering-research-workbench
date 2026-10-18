@@ -22,6 +22,8 @@
 
 ## 数据、备份与生命周期
 
+- `261018.2` 修复部分 Android 内置 SQLite 缺少 FTS5 导致启动失败的问题。自动使用普通表和 LIKE 检索，仍支持完整正文搜索；支持 FTS5 的桌面环境继续使用原有检索方式。兼容模式的大规模搜索可能较慢。
+- 修复包提高了 versionCode，使用原签名，可直接覆盖安装上一预览版，无需卸载或清除数据。
 - 数据保存在应用私有目录 `files/workbench/`，静态资源在独立缓存目录。更新 APK 不会覆盖 Workspace。
 - 设置 → 服务与存储 → 导出数据备份，可通过系统文件选择器把 ZIP 保存到指定位置。
 - 备份包含 Workspace、文献 `Index/library.json` 和通用配置；跳过索引缓存、PDF 预览缓存、同步运行状态及 `config/secret.json`、`secrets.json`。
@@ -41,7 +43,11 @@
 python tools/build_android.py
 ```
 
-输出 `build/android/ResearchWorkbench-Android-preview.apk`。也可直接：
+输出 `build/android/ResearchWorkbench-Android-preview.apk`。
+
+预览包保留后端 Python 源码以便查看错误栈。构建脚本会逐文件核验 APK 内的后端源码与仓库一致，防止交付旧缓存；需要完全重建时使用 `python tools/build_android.py --clean`。
+
+也可直接调用 Gradle 编译（交付前建议使用上面的构建脚本核验）：
 
 ```bash
 cd android

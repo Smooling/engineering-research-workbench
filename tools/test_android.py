@@ -8,6 +8,7 @@ import time
 import unittest
 import zipfile
 from pathlib import Path
+from urllib.parse import quote
 from urllib.request import Request, urlopen, ProxyHandler, build_opener
 
 REPO = Path(__file__).resolve().parents[1]
@@ -50,6 +51,8 @@ class AndroidRuntimeTests(unittest.TestCase):
     def test_edit_restart_and_backup_preserve_metadata_without_keys(self):
         doc = self.request("/api/docs", {"kind": "note", "title": "Android 离线验证", "body": "手机本地笔记"})
         self.assertEqual(self.request("/api/docs/" + doc["id"])["body"].strip(), "手机本地笔记")
+        matches = self.request("/api/docs?kind=note&q=" + quote("手机本地"))
+        self.assertEqual(matches[0]["id"], doc["id"])
         self.request("/api/system/restart", {})
         deadline = time.monotonic() + 5
         while True:
