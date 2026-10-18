@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -21,5 +22,12 @@ if FROZEN:
 else:
     DATA_ROOT = Path(__file__).resolve().parents[1]
     ASSET_ROOT = DATA_ROOT
+
+# Embedded runtimes keep executable assets separate from persistent app data.
+# These overrides are set by the Android host before importing the backend.
+if os.environ.get("WORKBENCH_DATA_ROOT"):
+    DATA_ROOT = Path(os.environ["WORKBENCH_DATA_ROOT"]).expanduser().resolve()
+if os.environ.get("WORKBENCH_ASSET_ROOT"):
+    ASSET_ROOT = Path(os.environ["WORKBENCH_ASSET_ROOT"]).expanduser().resolve()
 
 __all__ = ["FROZEN", "DATA_ROOT", "ASSET_ROOT"]

@@ -41,7 +41,22 @@
 !web/**/*.css
 !web/favicon.png
 !web/workbench-mark.svg
+!web/vendor/PDFJS-LICENSE.txt
 !tools/ui_usability_check.js
+
+# Android host and reproducible Gradle wrapper (never include app data or keys).
+!android/*.gradle
+!android/gradle.properties
+!android/gradlew
+!android/gradlew.bat
+!android/gradle/wrapper/gradle-wrapper.jar
+!android/gradle/wrapper/gradle-wrapper.properties
+!android/app/*.gradle
+!android/app/src/main/**/*.java
+!android/app/src/main/**/*.py
+!android/app/src/main/**/*.xml
+!android/app/src/main/res/**/*.png
+!tools/test_android_ui.js
 
 # ==========================================================
 # 文档
@@ -60,6 +75,10 @@ config/
 Workspace/
 .update_backups/
 build/
+android/.gradle/
+android/local.properties
+*.jks
+*.keystore
 
 # 操作临时数据空间（本地专用：永不提交、不入同步、7 天保留自动清理）
 # 细则见 .scratch/README.md；清理入口 tools/scratch_clean.py

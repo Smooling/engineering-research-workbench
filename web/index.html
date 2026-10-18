@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#F7F8FB">
   <script>try{document.documentElement.dataset.theme=localStorage.getItem('theme')||'light'}catch{}</script>
+  <script>if(navigator.userAgent.includes('ResearchWorkbenchAndroid/'))document.documentElement.dataset.platform='android';</script>
   <title>科研工作台</title>
   <link rel="icon" type="image/svg+xml" href="/workbench-mark.svg?v=261015">
   <link rel="apple-touch-icon" href="/favicon.png?v=261015">
@@ -27,6 +28,7 @@
   <link rel="stylesheet" href="/theme-dark.css?v=261016b">
   <link rel="stylesheet" href="/workbench-ui.css?v=261016e">
   <link rel="stylesheet" href="/sync.css?v=261016g">
+  <link rel="stylesheet" href="/android.css?v=261018a">
   <link rel="stylesheet" href="/vendor/github.min.css" onerror="this.onerror=null;this.href='https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css'">
   <script>
     window.MathJax = {
@@ -139,5 +141,6 @@
   <script defer src="/v261008-billing.js?v=261016b"></script><!-- v261008 · 用量计费仪表盘（window.ERWBilling） -->
   <script defer src="/v261014-shell.js?v=261015a"></script>
   <script defer src="/v261014-soft-chromatic.js?v=261014q"></script><!-- Markdown 分栏拖拽与视觉增强 --><!-- v261014e · 柔和工作台壳层 + 可拖拽侧栏宽度 -->
+  <script defer src="/android.js?v=261018a"></script>
 </body>
 </html>

@@ -10,9 +10,9 @@ const S={items:[],paper:null,pdf:null,scale:1.15,current:1,pages:new Map(),obser
 async function api(url,opts={}){const r=await fetch(url,opts);let d={};try{d=await r.json()}catch{}if(!r.ok)throw new Error(d.message||d.error||("HTTP "+r.status));return d}
 async function ensurePdfJs(){
  if(window.pdfjsLib)return;
- await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
+ await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="/vendor/pdf.min.js";s.onload=ok;s.onerror=()=>{s.onerror=bad;s.src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"};document.head.appendChild(s)});
  if(!window.pdfjsLib)throw new Error("PDF.js 加载失败");
- window.pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+ window.pdfjsLib.GlobalWorkerOptions.workerSrc="/vendor/pdf.worker.min.js";
 }
 /* v260929 · 阅读区列表条目统一为文献列表页风格（.doc-item 同构）：标题→摘要→徽章行→项目+日期
    徽章行 = 阅读状态 + 收藏 + 分类标记；附件徽章去掉（点击条目本身即打开 PDF，徽章冗余）

@@ -702,7 +702,8 @@ def _scratch_boot_cleanup() -> None:
         print(f"[scratch] 跳过清理：{type(exc).__name__}: {exc}")
 
 
-def build_server(port_override: int | None = None, auto_open_browser: bool | None = None):
+def build_server(port_override: int | None = None, auto_open_browser: bool | None = None,
+                 host_override: str | None = None):
     """初始化 workspace/索引并绑定 HTTP 服务。供 main() 与桌面客户端 client.py 共用。
 
     port_override：端口被占用时由调用方传入空闲端口。
@@ -714,11 +715,11 @@ def build_server(port_override: int | None = None, auto_open_browser: bool | Non
         projects.ensure_registry()
     index_state = indexer.initialize(force=False)
     cfg = config.get_app()
-    host = str(cfg.get("host") or "127.0.0.1")
-    port = int(port_override or cfg.get("port") or 8765)
+    host = host_override if host_override is not None else str(cfg.get("host") or "127.0.0.1")
+    port = int(port_override if port_override is not None else cfg.get("port") or 8765)
     server = WorkbenchHTTPServer((host, port), Handler)
     sync_service.get()
-    url = f"http://{host}:{port}"
+    url = f"http://{host}:{server.server_address[1]}"
     print(f"Engineering Research Workbench running at {url}")
     print(f"Workspace: {workspace.ensure_workspace()}")
     print(f"Index: {index_state.get('counts', {}).get('documents', 0)} docs · {index_state.get('path', '')}")

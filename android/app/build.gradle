@@ -1,0 +1,57 @@
+plugins {
+    id 'com.android.application'
+    id 'com.chaquo.python'
+}
+
+def repositoryRoot = rootProject.projectDir.parentFile
+def generatedPython = layout.buildDirectory.dir('generated/workbenchPython')
+def generatedAssets = layout.buildDirectory.dir('generated/workbenchAssets')
+
+android {
+    namespace 'com.smooling.researchworkbench'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'com.smooling.researchworkbench'
+        minSdk 24
+        targetSdk 35
+        versionCode 1
+        versionName '261018.1-android-preview'
+        ndk { abiFilters 'arm64-v8a', 'x86_64' }
+    }
+    buildFeatures { buildConfig true }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    sourceSets.main.assets.srcDir(generatedAssets)
+}
+
+chaquopy {
+    defaultConfig {
+        version = '3.12'
+        // Backend has no third-party Python requirements.
+    }
+    sourceSets {
+        main { srcDir(generatedPython) }
+    }
+}
+
+def preparePython = tasks.register('prepareWorkbenchPython', Sync) {
+    from(repositoryRoot) {
+        include 'server.py', 'app/**/*.py'
+        exclude '**/__pycache__/**'
+    }
+    into(generatedPython)
+}
+def prepareAssets = tasks.register('prepareWorkbenchAssets', Zip) {
+    from(repositoryRoot) { include 'web/**', 'VERSION', 'LICENSE.txt' }
+    archiveFileName = 'workbench.zip'
+    destinationDirectory = generatedAssets
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+}
+tasks.configureEach {
+    if (name.endsWith('PythonSources')) dependsOn(preparePython)
+    if (name.startsWith('merge') && name.endsWith('Assets')) dependsOn(prepareAssets)
+}
+tasks.named('preBuild') { dependsOn(preparePython, prepareAssets) }

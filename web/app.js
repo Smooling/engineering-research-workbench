@@ -511,7 +511,7 @@
   }
 
   function applyUiScale(pct){
-    const v=Math.max(80,Math.min(125,Math.round(Number(pct)||100)));
+    const v=document.documentElement.dataset.platform==='android'?100:Math.max(80,Math.min(125,Math.round(Number(pct)||100)));
     state.uiScale=v; localStorage.setItem('uiScale',String(v));
     document.documentElement.style.zoom=v===100?'':String(v/100);
     syncViewportVars(); /* v260929g · zoom 变化后重算折算视口变量 */
@@ -931,7 +931,8 @@
     $('#main').innerHTML=docsShell(kind,docs,projects);
     wireDocList(kind); wireDocFilters(kind); $('#new-doc').onclick=()=>createAndSelect(kind);
     if(kind==='literature'){$('#export-bib').onclick=exportBibtex;const ws=$('#open-lit-workspace');if(ws)ws.onclick=openLiteratureWorkspace;}
-    if(docs.length) await selectDoc(docs.some(d=>d.id===activeId)?activeId:docs[0].id); else showEmptyEditor(kind);
+    const phone=document.documentElement.dataset.platform==='android'&&matchMedia('(max-width:820px)').matches;
+    if(docs.length&&(!phone||syncRefresh)) await selectDoc(docs.some(d=>d.id===activeId)?activeId:docs[0].id); else showEmptyEditor(kind);
     return true;
   }
   /* v260929 · 文献列表页 → PDF 阅读工作区入口：编辑中先提示保存；进入后清选中态，
@@ -982,7 +983,7 @@
   window.ERWLLMReady = () => state.config?.app?.llm?.enabled === true;
   /* v260930d · M5 阅读中知识关联：悬浮球/气泡跳转到指定知识条目（导航+选中跨脚本桥） */
   /* v260930g9c · 关联知识「打开条目」跳转：六类→对应路由并选中；literature 额外自动进 PDF 阅读工作区（引用跳文献即看原文） */
-  window.ERWNav = { open: async (kind, id) => {
+  window.ERWNav = { navigate, backToList: () => navigate(state.route), open: async (kind, id) => {
     const ok=await openDocRoute(routeForKind(kind),id);
     if(ok===false)return; /* 用户在未保存确认框点了取消：中止，不在旧页面执行 selectDoc */
     if(kind==='literature'){ setTimeout(async()=>{
@@ -1484,7 +1485,7 @@
     await window.ERWKnowledgeGraph.mount($('#graph-canvas'), g);
   }
 
-  async function copyText(text){try{await navigator.clipboard.writeText(text);toast('已复制到剪贴板')}catch{const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();toast('已复制到剪贴板')}}
+  async function copyText(text){if(document.documentElement.dataset.platform==='android'&&window.AndroidHost?.copyText){window.AndroidHost.copyText(text);toast('已复制到剪贴板');return}try{await navigator.clipboard.writeText(text);toast('已复制到剪贴板')}catch{const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();toast('已复制到剪贴板')}}
 
 
   async function renderFolders(){const [tree,info]=await Promise.all([api('/api/workspace/tree'),api('/api/workspace/info')]);
@@ -1698,6 +1699,10 @@
     else if(tab==='knowledge'){renderKnowledgeTypesSettings(p,app,cfg);}
     else if(tab==='desktop'){renderDesktopSettings(p);}
     else if(tab==='service'){
+      if(document.documentElement.dataset.platform==='android'){
+        p.innerHTML='<div class="card-head"><h3>手机存储与备份</h3></div><p>资料保存在本机应用的私有目录，可离线使用。通过“同步”设置连接电脑或服务器，与桌面版双向同步。</p><p class="field-help">卸载应用或清除应用数据会删除本机资料。备份包含 Workspace、文献索引和通用设置，不包含 API 密钥与同步连接设置；可解压到电脑版目录恢复。Android 预览版暂不提供直接导入备份。</p><button class="primary-btn" id="android-backup">导出数据备份</button>';
+        $('#android-backup').onclick=()=>window.AndroidHost?.requestBackup();return;
+      }
       const mig=app.workspace_migration||{};
       p.innerHTML=`<div class="card-head"><div><h3>服务与存储</h3><p class="row-meta">这些参数直接对应 config/app.json 中的运行与 Workspace 配置。</p></div><span class="badge warn">Host / Port 修改后需快速重启</span></div><div class="form-grid"><div class="field span-2"><label>监听地址 Host</label><input id="svc-host" value="${esc(app.host||'127.0.0.1')}" placeholder="127.0.0.1"><span class="field-help">仅本机使用建议 127.0.0.1；局域网访问可配置 0.0.0.0，并自行确认防火墙安全。</span></div><div class="field"><label>端口 Port</label><input id="svc-port" type="number" min="1" max="65535" value="${Number(app.port||8765)}"></div><div class="field"><label>启动时打开浏览器</label><select id="svc-browser"><option value="1" ${app.auto_open_browser!==false?'selected':''}>是</option><option value="0" ${app.auto_open_browser===false?'selected':''}>否 / 静默启动</option></select></div><div class="field span-4"><label>Workspace 路径</label><input id="svc-workspace" value="${esc(app.workspace||'Workspace')}" placeholder="Workspace"><span class="field-help">支持项目相对路径或绝对路径。修改后后续数据读写会使用新目录；建议修改前先备份 Workspace。</span></div><div class="field"><label>旧数据自动识别</label><select id="svc-migrate"><option value="1" ${mig.enabled!==false?'selected':''}>启用</option><option value="0" ${mig.enabled===false?'selected':''}>关闭</option></select></div><div class="field"><label>迁移时复制旧数据</label><select id="svc-copy"><option value="1" ${mig.copy_legacy_data!==false?'selected':''}>复制（非破坏）</option><option value="0" ${mig.copy_legacy_data===false?'selected':''}>仅识别</option></select></div></div><div style="margin-top:14px;display:flex;gap:8px"><button class="primary-btn" id="svc-save">保存服务与存储设置</button><button class="secondary-btn" id="svc-restart">保存后快速重启</button></div>`;
       const collect=async()=>{const newWs=$('#svc-workspace').value.trim()||'Workspace';if(newWs!==String(app.workspace||'Workspace')&&!await window.ERWDialog.confirm(`Workspace 将从“${app.workspace||'Workspace'}”切换到“${newWs}”。确定保存吗？`))return null;app.host=$('#svc-host').value.trim()||'127.0.0.1';app.port=Math.max(1,Math.min(65535,+$('#svc-port').value||8765));app.auto_open_browser=$('#svc-browser').value==='1';app.workspace=newWs;app.workspace_migration={...mig,enabled:$('#svc-migrate').value==='1',copy_legacy_data:$('#svc-copy').value==='1'};return app};

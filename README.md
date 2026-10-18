@@ -6,6 +6,8 @@
 
 **Windows 桌面版**：双击 `ResearchWorkbench.exe` 打开独立窗口，支持右侧窗口控制、可配置关闭行为、托盘后台运行和重复启动唤回。最大化保留 Windows 任务栏。源码构建执行 `build_client.bat`，操作与数据位置见 [Windows 使用说明](docs/WINDOWS.md)。
 
+**Android 预览版**：内置 Python 后端，可在手机本地离线管理资料，支持手机导航、系统文件选择、离线 PDF 阅读和与电脑双向同步。执行 `python tools/build_android.py` 编译 APK，安装、数据备份和适用范围见 [Android 使用说明](docs/ANDROID.md)。
+
 ---
 
 ## ✨ 项目简介
