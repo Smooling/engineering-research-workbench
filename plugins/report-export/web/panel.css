@@ -1,0 +1,50 @@
+/* 报告导出 · 面板样式
+ * 所有选择器都落在 [data-plugin="report-export"] 内（内核给挂载容器打这个属性）：
+ * 插件样式不会泄漏到内核页面，也不会与别的插件互踩。
+ */
+
+[data-plugin="report-export"] .re-card { display: grid; gap: 12px; }
+
+[data-plugin="report-export"] .re-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+[data-plugin="report-export"] .re-field { display: grid; gap: 4px; }
+[data-plugin="report-export"] .re-field > span { font-size: 12px; color: var(--muted); }
+[data-plugin="report-export"] .re-field select,
+[data-plugin="report-export"] .re-field input {
+  font: inherit; padding: 7px 9px; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--surface); color: inherit; min-width: 0;
+}
+
+[data-plugin="report-export"] .re-opts { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--muted); }
+[data-plugin="report-export"] .re-opts label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+
+[data-plugin="report-export"] .re-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+[data-plugin="report-export"] .re-actions a { text-decoration: none; }
+
+[data-plugin="report-export"] .re-total { font-size: 11px; color: var(--muted); line-height: 1.7; }
+
+[data-plugin="report-export"] .re-pv-head { font-size: 12px; margin: 4px 0 6px; }
+[data-plugin="report-export"] .re-pv-list {
+  margin: 0; padding: 0; list-style: none; display: grid; gap: 3px;
+  max-height: 300px; overflow: auto;
+  border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+  background: color-mix(in srgb, var(--line) 12%, transparent);
+}
+[data-plugin="report-export"] .re-pv-list li { display: flex; gap: 8px; align-items: baseline; font-size: 11px; line-height: 1.6; }
+[data-plugin="report-export"] .re-kind {
+  flex: 0 0 auto; font-size: 10px; padding: 0 5px; border-radius: 5px;
+  border: 1px solid var(--line); color: var(--muted);
+}
+[data-plugin="report-export"] .re-title { flex: 1 1 auto; overflow-wrap: anywhere; }
+[data-plugin="report-export"] .re-status { flex: 0 0 auto; color: var(--muted); }
+[data-plugin="report-export"] .re-chars { flex: 0 0 auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+[data-plugin="report-export"] .re-ok {
+  border: 1px solid var(--line); border-left: 3px solid var(--ok); border-radius: 8px;
+  padding: 9px 11px; font-size: 12px; margin-bottom: 8px;
+}
+[data-plugin="report-export"] .re-alert {
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--line)); border-radius: 8px;
+  padding: 9px 11px; font-size: 12px; background: color-mix(in srgb, var(--danger) 6%, transparent);
+}
+[data-plugin="report-export"] .re-hint,
+[data-plugin="report-export"] .re-empty { font-size: 10px; color: var(--muted); line-height: 1.7; margin-top: 6px; }

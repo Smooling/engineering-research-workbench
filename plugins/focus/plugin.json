@@ -1,0 +1,34 @@
+{
+  "id": "focus",
+  "name": "专注计时",
+  "version": "1.1.0",
+  "description": "专注/休息计时器；时长设置保存在浏览器本地",
+  "api_version": 1,
+  "core_min": "v261009",
+  "kind": "inprocess",
+  "distribution": "bundled",
+  "default_enabled": true,
+  "permissions": [
+    "ui:panel"
+  ],
+  "nav": [
+    {
+      "id": "focus",
+      "label": "专注",
+      "icon": "◷",
+      "mount": "web/panel.js"
+    }
+  ],
+  "preview": {
+    "summary": "专注/休息计时器，时长可自定义（保存在浏览器本地）",
+    "features": [
+      "专注/休息倒计时，带环形进度",
+      "时长与快速预设（25/45/60/90 分钟）",
+      "设置存浏览器本地，不写服务器"
+    ],
+    "where": "侧栏 → 专注",
+    "screens": [
+      "web/preview.png"
+    ]
+  }
+}

@@ -1,0 +1,89 @@
+/* 指标表 · 面板样式（全部落在 [data-plugin="metrics-table"] 内） */
+
+[data-plugin="metrics-table"] .mt-card { display: grid; gap: 12px; }
+
+[data-plugin="metrics-table"] .mt-controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+[data-plugin="metrics-table"] .mt-controls label { display: inline-flex; gap: 5px; align-items: center; font-size: 12px; color: var(--muted); }
+[data-plugin="metrics-table"] .mt-controls select,
+[data-plugin="metrics-table"] .mt-controls input[type="text"],
+[data-plugin="metrics-table"] .mt-controls input[type="number"] {
+  font: inherit; padding: 5px 8px; border: 1px solid var(--line);
+  border-radius: 7px; background: var(--surface); color: inherit;
+}
+[data-plugin="metrics-table"] .mt-controls select { max-width: 220px; }
+[data-plugin="metrics-table"] .mt-controls input[type="number"] { width: 62px; }
+[data-plugin="metrics-table"] .mt-controls input[type="text"] { width: 130px; }
+[data-plugin="metrics-table"] .mt-controls a { text-decoration: none; }
+
+[data-plugin="metrics-table"] .mt-summary { display: flex; gap: 8px; flex-wrap: wrap; }
+[data-plugin="metrics-table"] .mt-chip {
+  font-size: 11px; padding: 2px 9px; border-radius: 999px;
+  border: 1px solid var(--line); color: var(--muted);
+}
+[data-plugin="metrics-table"] .mt-chip.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--line)); }
+
+[data-plugin="metrics-table"] .mt-group { margin-bottom: 14px; }
+[data-plugin="metrics-table"] .mt-group-head {
+  display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap;
+  font-size: 12px; margin-bottom: 5px; padding-left: 8px; border-left: 3px solid var(--accent);
+}
+[data-plugin="metrics-table"] .mt-group-head .mt-muted { font-size: 10px; color: var(--muted); }
+[data-plugin="metrics-table"] .mt-group .mt-scroll { max-height: 42vh; }
+
+[data-plugin="metrics-table"] .mt-scroll { overflow: auto; max-height: 60vh; border: 1px solid var(--line); border-radius: 10px; }
+[data-plugin="metrics-table"] .mt-table { border-collapse: collapse; font-size: 11px; width: 100%; }
+[data-plugin="metrics-table"] .mt-table th,
+[data-plugin="metrics-table"] .mt-table td {
+  border-bottom: 1px solid var(--line); padding: 5px 8px; text-align: left;
+  white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+[data-plugin="metrics-table"] .mt-table thead th {
+  position: sticky; top: 0; background: var(--surface); z-index: 2; font-weight: 600;
+}
+[data-plugin="metrics-table"] .mt-table .mt-sticky {
+  position: sticky; left: 0; background: var(--surface); z-index: 1;
+  max-width: 320px; white-space: normal;
+}
+[data-plugin="metrics-table"] .mt-table tbody tr { cursor: pointer; }
+[data-plugin="metrics-table"] .mt-table tbody tr:hover { background: color-mix(in srgb, var(--line) 16%, transparent); }
+[data-plugin="metrics-table"] .mt-stat td { color: var(--muted); font-size: 10px; }
+[data-plugin="metrics-table"] .mt-stat em { font-style: normal; color: var(--warning); }
+[data-plugin="metrics-table"] .mt-kind {
+  font-size: 10px; padding: 0 5px; border-radius: 5px; border: 1px solid var(--line); color: var(--muted);
+}
+[data-plugin="metrics-table"] .mt-src {
+  font-size: 10px; padding: 0 5px; border-radius: 5px; white-space: nowrap;
+  border: 1px solid var(--line); color: var(--muted);
+}
+[data-plugin="metrics-table"] .mt-src.tbl { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+[data-plugin="metrics-table"] .mt-src.blk { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--line)); }
+[data-plugin="metrics-table"] .mt-scope { color: var(--muted); max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+[data-plugin="metrics-table"] .mt-table th i { font-style: normal; color: var(--muted); font-size: 9px; }
+[data-plugin="metrics-table"] .mt-miss { color: var(--muted); }
+[data-plugin="metrics-table"] .mt-extra { color: var(--muted); }
+[data-plugin="metrics-table"] .mt-title { overflow-wrap: anywhere; }
+
+[data-plugin="metrics-table"] .mt-warn {
+  font-size: 11px; color: var(--warning); border-left: 3px solid var(--warning);
+  padding: 6px 10px; margin-top: 8px;
+}
+[data-plugin="metrics-table"] .mt-empty,
+[data-plugin="metrics-table"] .mt-hint { font-size: 11px; color: var(--muted); line-height: 1.8; }
+[data-plugin="metrics-table"] .mt-empty { padding: 10px 12px; border: 1px dashed var(--line); border-radius: 8px; white-space: pre-wrap; }
+[data-plugin="metrics-table"] .mt-hint code,
+[data-plugin="metrics-table"] .mt-detail-box code {
+  font: 10px/1.5 Consolas, monospace; background: color-mix(in srgb, var(--line) 35%, transparent);
+  padding: 1px 5px; border-radius: 5px;
+}
+
+[data-plugin="metrics-table"] .mt-detail-box {
+  margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line);
+  border-radius: 8px; display: grid; gap: 6px; font-size: 12px;
+}
+[data-plugin="metrics-table"] .mt-muted { font-size: 10px; color: var(--muted); }
+[data-plugin="metrics-table"] .mt-kv { margin: 0; padding-left: 18px; font-size: 11px; }
+[data-plugin="metrics-table"] .mt-preview {
+  margin: 0; max-height: 160px; overflow: auto; font: 10px/1.6 Consolas, monospace;
+  background: color-mix(in srgb, var(--line) 14%, transparent); padding: 8px 10px; border-radius: 7px;
+  white-space: pre-wrap;
+}

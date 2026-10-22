@@ -1,0 +1,5 @@
+interface:
+  display_name: "研究分析"
+  short_description: "规划实验、核查数据与可复现计算"
+policy:
+  allow_implicit_invocation: true

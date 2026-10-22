@@ -1,0 +1,83 @@
+{
+  "id": "backup-snapshot",
+  "name": "备份与快照",
+  "version": "1.0.0",
+  "description": "把知识库与配置打成时间戳快照（zip），按间隔自动执行并按份数清理；可下载、可外置目标目录",
+  "api_version": 1,
+  "core_min": "v261009.24",
+  "kind": "inprocess",
+  "distribution": "optional",
+  "default_enabled": false,
+  "entry": "backend.py",
+  "permissions": [
+    "ui:panel",
+    "storage:own",
+    "config:own"
+  ],
+  "nav": [
+    {
+      "id": "backup-snapshot",
+      "label": "备份快照",
+      "icon": "❐",
+      "mount": "web/panel.js"
+    }
+  ],
+  "panel": {
+    "mount": "web/panel.js",
+    "style": "web/panel.css"
+  },
+  "routes": [
+    {
+      "method": "GET",
+      "path": "status"
+    },
+    {
+      "method": "GET",
+      "path": "config"
+    },
+    {
+      "method": "POST",
+      "path": "config"
+    },
+    {
+      "method": "POST",
+      "path": "snapshot"
+    },
+    {
+      "method": "POST",
+      "path": "delete"
+    },
+    {
+      "method": "POST",
+      "path": "inspect"
+    },
+    {
+      "method": "GET",
+      "path": "download"
+    }
+  ],
+  "mcp_tools": [
+    "snapshot_now",
+    "list_snapshots"
+  ],
+  "jobs": [
+    {
+      "id": "auto",
+      "interval_min": 1440
+    }
+  ],
+  "preview": {
+    "summary": "把知识库本体与配置打成时间戳 zip：按间隔自动备份、按份数清理",
+    "features": [
+      "内核后台任务按间隔自动备份（重启工作台不会连点）",
+      "默认只收小体积关键数据：知识条目 + 状态 + 配置；附件与派生索引按需打开",
+      "快照可下载、可「查看内容」（恢复前先看清里面有什么）",
+      "只清理自己生成的快照，目标目录可改到外部盘",
+      "**不做自动恢复**——覆盖用户数据必须由人确认"
+    ],
+    "where": "侧栏 → 备份快照",
+    "screens": [
+      "web/preview.png"
+    ]
+  }
+}

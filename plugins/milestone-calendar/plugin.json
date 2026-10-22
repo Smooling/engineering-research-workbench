@@ -1,0 +1,66 @@
+{
+  "id": "milestone-calendar",
+  "name": "日历",
+  "version": "1.0.1",
+  "description": "里程碑与待办的日历视图 + 顶栏常驻角标（逾期/今日/近期待办一眼可见）",
+  "api_version": 1,
+  "core_min": "v261009.24",
+  "kind": "inprocess",
+  "distribution": "optional",
+  "default_enabled": false,
+  "entry": "backend.py",
+  "permissions": [
+    "ui:panel",
+    "config:own"
+  ],
+  "nav": [
+    {
+      "id": "milestone-calendar",
+      "label": "日历",
+      "icon": "▦",
+      "mount": "web/panel.js"
+    },
+    {
+      "id": "milestone-calendar-badge",
+      "label": "到期",
+      "icon": "⚠",
+      "slot": "topbar",
+      "mount": "web/panel.js"
+    }
+  ],
+  "panel": {
+    "mount": "web/panel.js",
+    "style": "web/panel.css"
+  },
+  "routes": [
+    {
+      "method": "GET",
+      "path": "agenda"
+    },
+    {
+      "method": "GET",
+      "path": "config"
+    },
+    {
+      "method": "POST",
+      "path": "config"
+    }
+  ],
+  "mcp_tools": [
+    "agenda"
+  ],
+  "preview": {
+    "summary": "里程碑与待办的到期视图，顶栏还有常驻角标（逾期/今日一眼可见）",
+    "features": [
+      "月历 + 逾期 / 今天 / 近期 / 无日期 四段清单，点某天看当天明细",
+      "顶栏槽位角标：⚠ 逾期数、◔ 今日数，切到别的页面仍然常驻",
+      "「近期」窗口可配（默认 7 天）；逾期天数逐条标出",
+      "刻意不做系统通知——常驻角标比会漏的弹窗可靠",
+      "Agent 工具：问「有什么逾期/今天要做的」"
+    ],
+    "where": "侧栏 → 核心工作 → 日历；顶栏角标",
+    "screens": [
+      "web/preview.png"
+    ]
+  }
+}

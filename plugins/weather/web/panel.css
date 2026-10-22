@@ -1,0 +1,15 @@
+/* 天气面板样式 · 插件 weather v1.0.0
+ *
+ * 从 web/styles.css 搬出的天气专有规则（状态点、窄屏隐藏），按 PLUGIN_SPEC §2 统一加
+ * `[data-plugin="weather"]` 作用域——内核只给槽位容器加这个属性，不改内核 DOM。
+ * 按钮的基础外观（边框/圆角/高度/内边距）仍由内核的通用按钮规则提供（pill 就是一个按钮）。
+ */
+
+[data-plugin="weather"] .weather-pill{white-space:nowrap}
+[data-plugin="weather"] .weather-text{max-width:24ch;overflow:hidden;text-overflow:ellipsis}
+[data-plugin="weather"] .status-dot{width:7px;height:7px;border-radius:50%;background:var(--accent)}
+
+/* 窄屏（≤820px）顶栏空间紧张：与搬出前一致，隐藏天气卡片 */
+@media(max-width:820px){
+  [data-plugin="weather"] .weather-pill{display:none}
+}

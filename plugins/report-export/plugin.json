@@ -1,0 +1,73 @@
+{
+  "id": "report-export",
+  "name": "报告导出",
+  "version": "1.0.0",
+  "description": "把项目/某类条目整理成交付文档：DOCX（零依赖）、HTML（浏览器打印即成 PDF）、Markdown",
+  "api_version": 1,
+  "core_min": "v261009.23",
+  "kind": "inprocess",
+  "distribution": "optional",
+  "default_enabled": false,
+  "entry": "backend.py",
+  "permissions": [
+    "ui:panel",
+    "storage:own",
+    "config:own"
+  ],
+  "nav": [
+    {
+      "id": "report-export",
+      "label": "报告导出",
+      "icon": "▤",
+      "mount": "web/panel.js"
+    }
+  ],
+  "panel": {
+    "mount": "web/panel.js",
+    "style": "web/panel.css"
+  },
+  "routes": [
+    {
+      "method": "GET",
+      "path": "capabilities"
+    },
+    {
+      "method": "GET",
+      "path": "scopes"
+    },
+    {
+      "method": "POST",
+      "path": "preview"
+    },
+    {
+      "method": "POST",
+      "path": "export"
+    },
+    {
+      "method": "GET",
+      "path": "download"
+    },
+    {
+      "method": "GET",
+      "path": "view"
+    }
+  ],
+  "mcp_tools": [
+    "list_scopes",
+    "export_report"
+  ],
+  "preview": {
+    "summary": "把项目或某一类条目导出成交付文档：DOCX、HTML（可打印成 PDF）、Markdown",
+    "features": [
+      "DOCX 用标准库直接写 OOXML——**不需要**安装 python-docx",
+      "HTML 走浏览器「打印 → 另存为 PDF」，中文字体交给系统处理",
+      "范围可选（项目/类别/全部）、可只收录元信息、可设条数上限",
+      "页内先预览范围再导出，导出后直接给下载链接",
+      "两个 Agent 工具：列可导出范围、按范围导出并返回文件名"
+    ],
+    "where": "侧栏 → 报告导出",
+    "screens": [
+      "web/preview.png"
+    ]
+  }
+}

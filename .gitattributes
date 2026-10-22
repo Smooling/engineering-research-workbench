@@ -1,0 +1,23 @@
+# 行尾与二进制处理（GitHub 上传前的归一）
+#
+# 背景：本仓库主要在 Windows 上开发，工作区是 CRLF，而版本库里一直是 LF；
+# 不写死规则时每次 add 都会刷 "LF will be replaced by CRLF" 的警告，别人 clone 到 Linux 也可能踩到。
+* text=auto
+
+# Windows 脚本保持 CRLF，双击即用
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# 二进制：不要做行尾转换，也不要 diff
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.exe binary
+*.dll binary
+*.sqlite binary
+*.woff binary
+*.woff2 binary

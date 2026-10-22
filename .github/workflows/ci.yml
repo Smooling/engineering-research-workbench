@@ -1,0 +1,67 @@
+name: CI
+
+# 只跑**不依赖本机数据**的部分：
+#   · 静态闸门（项目声明的"改完必须跑"）——失败即红；
+#   · 纯逻辑用例（tests/ 里不需要浏览器、不需要真实知识库的那些）——失败即红；
+#   · 需要浏览器（playwright）与真实 Workspace 的用例**不在 CI 跑**（它们靠本机
+#     `python tools/run_tests.py` 做完整档，见 docs/PUBLISH.md）。
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  static-gates:
+    name: 静态闸门（${{ matrix.os }} / py${{ matrix.python }}）
+    runs-on: ${{ matrix.os }}
+    # Windows runner 默认 stdout 是 cp1252：kb_smoke 等脚本会打印 ⚗ 等符号，
+    # 不设 UTF-8 会直接 UnicodeEncodeError 把整步打红。
+    env:
+      PYTHONIOENCODING: utf-8
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: 知识库冒烟（无 Workspace 时自动跳过数据断言，只跑纯逻辑）
+        run: python tools/kb_smoke.py
+
+      - name: 前端静态体检（语法 / 装配清单 / 接缝 / 加载顺序）
+        run: python tools/web_check.py
+
+      - name: 装配清单与 index.html 一致
+        run: python tools/web_manifest.py --check
+
+      - name: 插件隔离体检（I2/I3、零插件可跑）
+        run: python tools/plugin_check.py --assert-core-only
+
+      - name: 插件发现与清单校验
+        run: python -m core.plugins verify
+
+      - name: MCP 工具表自检
+        run: python -m mcp.server --selftest
+
+      - name: 只读体检（不因既有数据问题失败，输出供参考）
+        run: python -m core.doctor
+        continue-on-error: true
+
+  logic-tests:
+    name: 纯逻辑用例
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # 这些用例自带临时目录/临时服务，不碰真实知识库，也不开浏览器
+      - name: 跑不需要浏览器的用例
+        run: python tools/run_tests.py --fast --no-server
+        env:
+          PYTHONIOENCODING: utf-8

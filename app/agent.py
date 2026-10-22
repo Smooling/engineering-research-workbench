@@ -1,20 +1,26 @@
 from __future__ import annotations
 
 import base64
+import http.client
 import json
 import mimetypes
 import os
 import re
 import shutil
 import threading
+import time
+import urllib.request
+
+from core import events, net   # v261009.1 · 代理兜底；events：把「用量」广播出去而不是直接调计费
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
-from . import config, store, activity
+from . import config, store, activity, agent_tools, agent_memory, agent_context
 from .workspace import ensure_workspace
 
 _LOCK = threading.RLock()
@@ -36,83 +42,53 @@ def _root() -> Path:
 
 
 def _atomic_json(path: Path, data: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(tmp, path)
+    agent_memory.save_session(data)
 
 
 def _session_path(session_id: str) -> Path:
-    if not re.fullmatch(r"chat-[a-zA-Z0-9_-]{6,80}", session_id or ""):
-        raise ValueError("Invalid session id")
-    return _root() / f"{session_id}.json"
-
-
-def _load(path: Path) -> dict[str, Any]:
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
+    return _root() / (agent_memory.validate_session_id(session_id) + ".json")
 
 
 def list_sessions() -> list[dict[str, Any]]:
-    out: list[dict[str, Any]] = []
-    with _LOCK:
-        for path in _root().glob("chat-*.json"):
-            data = _load(path)
-            if not data:
-                continue
-            messages = data.get("messages") if isinstance(data.get("messages"), list) else []
-            last = messages[-1].get("content", "") if messages else ""
-            out.append({
-                "id": data.get("id") or path.stem,
-                "title": data.get("title") or "新对话",
-                "created": data.get("created") or "",
-                "updated": data.get("updated") or "",
-                "message_count": len(messages),
-                "preview": str(last)[:160],
-            })
-    out.sort(key=lambda x: x.get("updated") or x.get("created") or "", reverse=True)
-    return out
+    return agent_memory.list_sessions()
 
 
 def get_session(session_id: str) -> dict[str, Any]:
-    path = _session_path(session_id)
-    if not path.exists():
-        raise FileNotFoundError(session_id)
-    data = _load(path)
-    if not data:
-        raise FileNotFoundError(session_id)
-    return data
+    session = agent_memory.get_session(session_id)
+    with agent_memory.connection() as connection:
+        statuses = dict(connection.execute("SELECT id,status FROM runs WHERE session_id=?", (session_id,)))
+    for message in session.get("messages", []):
+        if message.get("role") == "assistant":
+            names = {} if message.get("expose_internal_ids") else message.get("reference_names") or agent_context.reference_names(message.get("evidence") or [])
+            message["content"] = agent_context.display_text(message.get("content"), names)
+            message["response_parts"] = agent_context.response_parts(message)
+            message["retrievals"] = agent_context.retrievals_from_evidence(message.get("evidence") or []) or message.get("retrievals", [])
+            if message.get("run_id") in statuses:
+                message["run_status"] = statuses[message["run_id"]]
+    return session
 
 
 def create_session(title: str = "") -> dict[str, Any]:
     now = _now()
-    session_id = "chat-" + uuid.uuid4().hex[:12]
-    data = {"id": session_id, "title": (title or "新对话").strip()[:120], "created": now, "updated": now, "messages": []}
-    with _LOCK:
-        _atomic_json(_session_path(session_id), data)
-    return data
+    return agent_memory.save_session({"id": "chat-" + uuid.uuid4().hex[:12], "title": (title or "新对话").strip()[:120], "created": now, "updated": now, "messages": []})
 
 
 def rename_session(session_id: str, title: str) -> dict[str, Any]:
     with _LOCK:
         data = get_session(session_id)
-        data["title"] = (title or "新对话").strip()[:120]
-        data["updated"] = _now()
-        _atomic_json(_session_path(session_id), data)
-        return data
+        data.update(title=(title or "新对话").strip()[:120], updated=_now())
+        return agent_memory.save_session(data)
+
+
+def archive_session(session_id: str, flag: bool) -> dict[str, Any]:
+    with _LOCK:
+        data = get_session(session_id)
+        data["archived"] = bool(flag)
+        return agent_memory.save_session(data)
 
 
 def delete_session(session_id: str) -> dict[str, Any]:
-    path = _session_path(session_id)
-    if not path.exists():
-        raise FileNotFoundError(session_id)
-    trash = _root() / "Trash" / f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-{path.name}"
-    with _LOCK:
-        shutil.move(str(path), str(trash))
-    return {"ok": True}
+    return agent_memory.delete_session(session_id)
 
 
 def save_image(data_url: str, original_name: str = "image.png") -> dict[str, Any]:
@@ -163,7 +139,8 @@ def _reference_context(ref_ids: list[str]) -> tuple[str, list[dict[str, str]]]:
             continue
         seen.add(doc_id)
         try:
-            doc = store.get_doc(str(doc_id))
+            from . import indexer
+            doc = indexer.get_doc(str(doc_id))
         except FileNotFoundError:
             continue
         body = str(doc.get("body") or "")[:_MAX_DOC_CHARS]
@@ -177,7 +154,7 @@ def _reference_context(ref_ids: list[str]) -> tuple[str, list[dict[str, str]]]:
                 break
             chunk = chunk[:remain]
         chunks.append(chunk)
-        refs.append({"id": doc["id"], "title": str(doc.get("title") or doc["id"]), "kind": str(doc.get("kind") or ""), "project": str(doc.get("project") or "")})
+        refs.append({"id": doc["id"], "title": str(doc.get("title") or doc["id"]), "kind": str(doc.get("kind") or ""), "project": str(doc.get("project") or ""), "projects": projects_list})
         total += len(chunk)
         if total >= _MAX_CONTEXT_CHARS:
             break
@@ -204,11 +181,100 @@ def _endpoint(base_url: str, suffix: str) -> str:
     return base + suffix
 
 
-def _http_json(url: str, payload: dict[str, Any] | None, api_key: str, timeout: int = 120, method: str = "POST") -> dict[str, Any]:
-    body = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
-    req = Request(url, data=body, method=method, headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}", "User-Agent": "Workbench/260922.3"})
+_HTTP_POOL: dict[tuple[str, str, int], list[http.client.HTTPConnection]] = {}  # v260929c · Keep-Alive 连接池：复用已建立的 TLS 连接，省去每次请求的 DNS/TCP/TLS 握手
+_HTTP_POOL_LOCK = threading.Lock()
+_MAX_POOL_PER_HOST = 4
+
+
+_DEFAULT_UA = "Workbench/260922.3"  # 注意：opencode.ai 侧按 UA 做边缘拦截（Python-urllib 默认 UA 会触发 Cloudflare 1010），改动后需实测
+
+
+def _api_headers(api_key: str, extra: dict[str, Any] | None = None) -> dict[str, str]:
+    """v261008 · extra：档案级自定义请求头（config/secret.json 的 profiles[].headers）。
+
+    先铺自定义头再落核心头，故 Content-Type 与 Authorization 不可被覆盖（密钥始终取档案的 api_key）；
+    User-Agent / Accept 允许自定义头改写，便于适配有 UA 或边缘校验要求的网关。
+    """
+    headers = {str(k): str(v) for k, v in (extra or {}).items() if str(k).strip()}
+    headers["Content-Type"] = "application/json"
+    headers["Authorization"] = f"Bearer {api_key}"
+    headers.setdefault("User-Agent", _DEFAULT_UA)
+    headers.setdefault("Accept", "application/json")
+    return headers
+
+
+def _http_error_message(status: int, raw: str) -> str:
+    detail = raw[:2000]
     try:
-        with urlopen(req, timeout=max(5, min(int(timeout or 120), 600))) as resp:
+        msg = json.loads(raw).get("error", {}).get("message") or detail
+    except Exception:
+        msg = detail
+    return f"LLM API HTTP {status}: {msg}"
+
+
+def _pool_get(key: tuple[str, str, int], timeout: int) -> tuple[http.client.HTTPConnection, bool]:
+    with _HTTP_POOL_LOCK:
+        conns = _HTTP_POOL.get(key)
+        if conns:
+            return conns.pop(), True  # 复用池中连接
+    scheme, host, port = key
+    conn = http.client.HTTPSConnection(host, port, timeout=timeout) if scheme == "https" else http.client.HTTPConnection(host, port, timeout=timeout)
+    return conn, False
+
+
+def _pool_put(key: tuple[str, str, int], conn: http.client.HTTPConnection) -> None:
+    with _HTTP_POOL_LOCK:
+        conns = _HTTP_POOL.setdefault(key, [])
+        if len(conns) < _MAX_POOL_PER_HOST:
+            conns.append(conn)
+            return
+    try:
+        conn.close()
+    except Exception:
+        pass
+
+
+def _http_json(url: str, payload: dict[str, Any] | None, api_key: str, timeout: int = 120, method: str = "POST", extra_headers: dict[str, Any] | None = None) -> dict[str, Any]:
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
+    headers = _api_headers(api_key, extra_headers)
+    tmo = max(5, min(int(timeout or 120), 600))
+    # v260929c · 响应提速：未配置系统 https 代理时走 Keep-Alive 连接池（直连复用）；配置了代理则维持 urlopen 旧路径，行为不变
+    if net.direct_preferred("https"):   # v261009.1 · 配置的代理是「没起来的回环代理」时也走直连
+        u = urlparse(url)
+        host = u.hostname or ""
+        port = u.port or (443 if u.scheme == "https" else 80)
+        key = (u.scheme, host, port)
+        path = u.path + (("?" + u.query) if u.query else "")
+        for attempt in (1, 0):  # 复用连接可能已被服务端关闭 → 新连接重试一次
+            conn, reused = _pool_get(key, tmo)
+            try:
+                conn.request(method, path, body=body, headers=headers)
+                resp = conn.getresponse()
+                raw = resp.read().decode("utf-8", errors="replace")
+                if resp.will_close:
+                    conn.close()
+                else:
+                    _pool_put(key, conn)
+                if resp.status >= 400:
+                    raise ValueError(_http_error_message(resp.status, raw))
+                return json.loads(raw) if raw else {}
+            except ValueError:
+                raise
+            except TimeoutError:
+                raise ValueError(f"无法连接 LLM API：请求超时（>{tmo}s），可在 设置 → Agent / LLM 调大超时") from None
+            except Exception as e:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                from .agent_runtime import Suspended
+                if isinstance(e, Suspended):
+                    raise
+                if not reused or attempt == 0:
+                    raise ValueError(f"无法连接 LLM API：{e}") from None
+    req = Request(url, data=body, method=method, headers=headers)
+    try:
+        with urlopen(req, timeout=tmo) as resp:
             raw = resp.read().decode("utf-8", errors="replace")
             return json.loads(raw) if raw else {}
     except HTTPError as e:
@@ -288,7 +354,289 @@ def _reasoning_text(value: Any) -> str:
     return str(value).strip()
 
 
-def _chat_completions(cfg: dict[str, Any], system_prompt: str, history: list[dict[str, Any]], user_text: str, image_paths: list[str], request_params: dict[str, Any] | None = None) -> tuple[str, str]:
+def _stream_chat(cfg: dict[str, Any], payload: dict[str, Any], tmo: int, on_delta) -> dict[str, Any]:
+    """v260930k · 方案 A 流式：stream=True 发送，逐行读 SSE 聚合为完整 message（与 _post_chat 返回同构）。
+    每收到一片 content delta 即回调 on_delta(text)；tool_calls 分片按 index 拼接。
+    超时语义变为「相邻两片之间 ≤tmo 秒」——模型持续吐 token 则永不整体超时，根治长回答超时。"""
+    payload = dict(payload)
+    payload["stream"] = True
+    payload.setdefault("stream_options", {"include_usage": True})  # v261008 · 请求末帧携带 usage（端点不支持时由 _STREAM_4XX_RE 降级非流式）
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    headers = _api_headers(str(cfg["api_key"]), cfg.get("headers"))  # v261008 · 流式同样带档案自定义头
+    headers["Accept"] = "text/event-stream"
+
+    content_parts: list[str] = []
+    reasoning_parts: list[str] = []
+    tool_calls: dict[int, dict[str, Any]] = {}
+    usage_holder: dict[str, Any] = {}  # v261008 · 计费：捕获末帧 usage
+
+    def _feed(line: str) -> None:
+        if cfg.get("_check_cancel"):
+            cfg["_check_cancel"]()
+        if not line.startswith("data:"):
+            return
+        data = line[5:].strip()
+        if not data or data == "[DONE]":
+            return
+        try:
+            chunk = json.loads(data)
+        except Exception:
+            return
+        if isinstance(chunk.get("usage"), dict):
+            usage_holder["usage"] = chunk["usage"]
+        for ch in chunk.get("choices") or []:
+            delta = ch.get("delta") or {}
+            piece = delta.get("content")
+            if piece:
+                content_parts.append(piece)
+                on_delta(piece)
+            r = delta.get("reasoning_content")
+            if r:
+                reasoning_parts.append(r if isinstance(r, str) else _reasoning_text(r))
+            for tc in delta.get("tool_calls") or []:
+                idx = int(tc.get("index") or 0)
+                slot = tool_calls.setdefault(idx, {"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
+                if tc.get("id"):
+                    slot["id"] = str(tc["id"])
+                fn = tc.get("function") or {}
+                if fn.get("name"):
+                    slot["function"]["name"] += str(fn["name"])
+                if fn.get("arguments"):
+                    slot["function"]["arguments"] += str(fn["arguments"])
+
+    interrupt_socket = None
+    def response_lines(response, connection=None):
+        while line := response.readline():
+            yield line
+
+    def bind_interrupt(connection, response=None):
+        nonlocal interrupt_socket
+        if not cfg.get("_register_interrupt"):
+            return
+        import socket
+        candidate = getattr(connection, "sock", None) or getattr(getattr(getattr(response, "fp", None), "raw", None), "_sock", None)
+        if candidate and interrupt_socket is None:
+            try:
+                # HTTP/1.0 may close the socket object while its response file
+                # still owns the handle. Keep a separate handle for shutdown;
+                # a plain socket also supports cancelling SSL connections.
+                interrupt_socket = socket.socket(candidate.family, candidate.type, candidate.proto, fileno=socket.dup(candidate.fileno()))
+            except OSError:
+                pass
+        def interrupt():
+            sock = interrupt_socket
+            if sock:
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+        cfg["_register_interrupt"](interrupt)
+
+    endpoint = _endpoint(str(cfg["base_url"]), "/chat/completions")
+    # v260930k · 直连池路径：与 _http_json 相同的 Keep-Alive 复用，但逐行读响应
+    if net.direct_preferred("https"):   # v261009.1 · 配置的代理是「没起来的回环代理」时也走直连
+        u = urlparse(endpoint)
+        host = u.hostname or ""
+        port = u.port or (443 if u.scheme == "https" else 80)
+        key = (u.scheme, host, port)
+        path = u.path + (("?" + u.query) if u.query else "")
+        for attempt in (1, 0):
+            conn, reused = _pool_get(key, tmo)
+            try:
+                conn.request("POST", path, body=body, headers=headers)
+                bind_interrupt(conn)
+                resp = conn.getresponse()
+                bind_interrupt(conn, resp)
+                if resp.status >= 400:
+                    raw = resp.read().decode("utf-8", errors="replace")
+                    if resp.will_close:
+                        conn.close()
+                    else:
+                        _pool_put(key, conn)
+                    raise ValueError(_http_error_message(resp.status, raw))
+                for line in response_lines(resp, conn):
+                    _feed(line.decode("utf-8", errors="replace").rstrip("\r\n"))
+                if cfg.get("_check_cancel"):
+                    cfg["_check_cancel"]()
+                if resp.will_close:
+                    conn.close()
+                else:
+                    _pool_put(key, conn)
+                break
+            except ValueError:
+                if cfg.get("_check_cancel"):
+                    cfg["_check_cancel"]()
+                raise
+            except TimeoutError:
+                if cfg.get("_check_cancel"):
+                    cfg["_check_cancel"]()
+                raise ValueError(f"LLM 流式响应中断（>{tmo}s 无新内容）") from None
+            except Exception as e:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                if cfg.get("_check_cancel"):
+                    cfg["_check_cancel"]()
+                from .agent_runtime import Suspended
+                if isinstance(e, Suspended):
+                    raise
+                if not reused or attempt == 0:
+                    raise ValueError(f"无法连接 LLM API：{e}") from None
+            finally:
+                if cfg.get("_register_interrupt"):
+                    cfg["_register_interrupt"](None)
+                if interrupt_socket:
+                    interrupt_socket.close()
+                    interrupt_socket = None
+    else:  # v260930k · 代理路径：urlopen 逐行读
+        req = Request(endpoint, data=body, method="POST", headers=headers)
+        try:
+            resp = urlopen(req, timeout=tmo)
+            try:
+                bind_interrupt(None, resp)
+                for raw_line in response_lines(resp):
+                    _feed(raw_line.decode("utf-8", errors="replace").rstrip("\r\n"))
+                if cfg.get("_check_cancel"):
+                    cfg["_check_cancel"]()
+            finally:
+                resp.close()
+        except HTTPError as e:
+            detail = e.read().decode("utf-8", errors="replace")[:2000]
+            try:
+                msg = json.loads(detail).get("error", {}).get("message") or detail
+            except Exception:
+                msg = detail
+            raise ValueError(f"LLM API HTTP {e.code}: {msg}") from None
+        except TimeoutError:
+            if cfg.get("_check_cancel"):
+                cfg["_check_cancel"]()
+            raise ValueError(f"LLM 流式响应中断（>{tmo}s 无新内容）") from None
+        except Exception:
+            if cfg.get("_check_cancel"):
+                cfg["_check_cancel"]()
+            raise
+        finally:
+            if cfg.get("_register_interrupt"):
+                cfg["_register_interrupt"](None)
+            if interrupt_socket:
+                interrupt_socket.close()
+
+    message: dict[str, Any] = {"content": "".join(content_parts)}
+    if reasoning_parts:
+        message["reasoning_content"] = "".join(reasoning_parts)
+    calls = [tool_calls[i] for i in sorted(tool_calls)]
+    if calls:
+        message["tool_calls"] = calls
+    _emit_usage(cfg, usage_holder.get("usage"))  # v261009.8 · 计费已插件化：内核只广播事实
+    return message
+
+
+def _emit_usage(cfg: dict[str, Any], usage_raw: Any) -> None:
+    """把一次 LLM 调用的用量**广播**出去（v261009.8 · P14 钩子倒置）。
+
+    此前这里是 `billing.record(cfg, usage)`——内核直接依赖计费模块，摘掉计费就会报错。
+    现在内核只说事实，谁关心谁订阅（官方计费插件订阅 `llm.usage`）；
+    **没有订阅者时什么也不发生**，内核照常跑（零插件也是合法状态，I1）。
+    """
+    billing_ctx = cfg.get("_billing") if isinstance(cfg, dict) else None
+    if not isinstance(billing_ctx, dict) or not billing_ctx.get("session_id"):
+        return          # 探针类调用没有归属上下文，不计费（与搬出前一致）
+    events.emit("llm.usage", {
+        "billing": dict(billing_ctx),
+        "usage": usage_raw,
+        "model": str(cfg.get("model") or ""),
+        "profile_id": str(cfg.get("id") or ""),
+        "profile_name": str(cfg.get("name") or ""),
+    })
+
+
+def _post_chat(cfg: dict[str, Any], messages: list[dict[str, Any]], request_params: dict[str, Any] | None = None, tools: list[dict[str, Any]] | None = None, on_delta=None) -> dict[str, Any]:
+    """v260930 · M1 底层补全请求：发送完整 messages，返回原始 assistant message（含 tool_calls）。
+    tools 传入时走原生 function calling；端点不支持时由调用方降级文本协议。"""
+    if cfg.get("_check_cancel"):
+        cfg["_check_cancel"]()
+        if not cfg.get("_background_request"):
+            # Header waits and Windows socket reads must not block cancellation.
+            # Only the run worker delivers deltas and consumes the final result.
+            import queue
+            pending = queue.Queue(maxsize=32)
+            stopped = threading.Event()
+            def deliver(kind, value):
+                while not stopped.is_set():
+                    try:
+                        pending.put((kind, value), timeout=.1)
+                        return
+                    except queue.Full:
+                        continue
+            def request():
+                try:
+                    result = _post_chat({**cfg, "_background_request": True}, messages, request_params, tools, on_delta=(lambda text: deliver("delta", text)) if on_delta else None)
+                    deliver("result", result)
+                except Exception as exc:
+                    deliver("error", exc)
+            threading.Thread(target=request, name="agent-provider-request", daemon=True).start()
+            try:
+                while True:
+                    cfg["_check_cancel"]()
+                    try:
+                        kind, value = pending.get(timeout=.1)
+                    except queue.Empty:
+                        continue
+                    if kind == "delta":
+                        on_delta(value)
+                    elif kind == "error":
+                        raise value
+                    else:
+                        return value
+            finally:
+                stopped.set()
+    payload: dict[str, Any] = {"model": cfg["model"], "messages": messages, "stream": False}
+    if cfg.get("temperature") is not None:
+        payload["temperature"] = float(cfg.get("temperature"))
+    if int(cfg.get("max_output_tokens") or 0) > 0:
+        payload["max_tokens"] = int(cfg["max_output_tokens"])
+    if tools:
+        payload["tools"] = tools
+        payload["tool_choice"] = "auto"
+    payload = _deep_merge_request(payload, request_params or {}, {"model", "messages", "stream", "tools", "tool_choice"})
+    tmo = int(cfg.get("timeout") or 120)
+    if on_delta:  # v260930k · 方案 A：流式优先；端点拒绝流式（4xx）时降级非流式，行为与旧路径一致
+        try:
+            return _stream_chat(cfg, payload, tmo, on_delta)
+        except ValueError as e:
+            if not _STREAM_4XX_RE.search(str(e)):
+                raise
+    data = _http_json(_endpoint(str(cfg["base_url"]), "/chat/completions"), payload, str(cfg["api_key"]), tmo, extra_headers=cfg.get("headers"))
+    _emit_usage(cfg, data.get("usage"))  # v261009.8 · 计费已插件化：内核只广播事实
+    choices = data.get("choices") or []
+    if not choices:
+        raise ValueError("模型返回中没有 choices")
+    message = choices[0].get("message", {}) or {}
+    if not isinstance(message, dict):
+        raise ValueError("模型返回的 message 结构异常")
+    return message
+
+
+def _message_text(message: dict[str, Any]) -> str:
+    content = message.get("content", "")
+    if isinstance(content, list):
+        content = "\n".join(str(x.get("text") or "") for x in content if isinstance(x, dict))
+    return str(content or "").strip()
+
+
+def _message_reasoning(cfg: dict[str, Any], message: dict[str, Any]) -> str:
+    if not cfg.get("show_reasoning", True):
+        return ""
+    for key in ("reasoning_content", "reasoning", "thinking", "analysis"):
+        if message.get(key) is not None:
+            reasoning = _reasoning_text(message.get(key))
+            if reasoning:
+                return reasoning
+    return ""
+
+
+def _chat_completions(cfg: dict[str, Any], system_prompt: str, history: list[dict[str, Any]], user_text: str, image_paths: list[str], request_params: dict[str, Any] | None = None, image_data_urls: list[str] | None = None) -> tuple[str, str]:
     messages: list[dict[str, Any]] = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
@@ -296,40 +644,113 @@ def _chat_completions(cfg: dict[str, Any], system_prompt: str, history: list[dic
         role = m.get("role")
         if role in ("user", "assistant") and str(m.get("content") or "").strip():
             messages.append({"role": role, "content": str(m.get("content") or "")})
+    img_urls: list[str] = []  # v260929c · 多模态消息：workspace 图片路径 + 直接传入的截图 data URL 合并
     if image_paths:
+        img_urls.extend(_image_data_url(p) for p in image_paths[:6])
+    if image_data_urls:
+        img_urls.extend(str(u) for u in image_data_urls[:6] if str(u).startswith("data:image/"))
+    if img_urls:
         content: list[dict[str, Any]] = [{"type": "text", "text": user_text or "请分析这些图片。"}]
-        for p in image_paths[:6]:
-            content.append({"type": "image_url", "image_url": {"url": _image_data_url(p)}})
+        for u in img_urls:
+            content.append({"type": "image_url", "image_url": {"url": u}})
         messages.append({"role": "user", "content": content})
     else:
         messages.append({"role": "user", "content": user_text})
-    payload: dict[str, Any] = {"model": cfg["model"], "messages": messages, "stream": False}
-    if cfg.get("temperature") is not None:
-        payload["temperature"] = float(cfg.get("temperature"))
-    if int(cfg.get("max_output_tokens") or 0) > 0:
-        payload["max_tokens"] = int(cfg["max_output_tokens"])
-    payload = _deep_merge_request(payload, request_params or {}, {"model", "messages", "stream"})
-    data = _http_json(_endpoint(str(cfg["base_url"]), "/chat/completions"), payload, str(cfg["api_key"]), int(cfg.get("timeout") or 120))
-    choices = data.get("choices") or []
-    if not choices:
-        raise ValueError("模型返回中没有 choices")
-    message = choices[0].get("message", {}) or {}
-    content = message.get("content", "")
-    if isinstance(content, list):
-        content = "\n".join(str(x.get("text") or "") for x in content if isinstance(x, dict))
-    reasoning = ""
-    if cfg.get("show_reasoning", True):
-        for key in ("reasoning_content", "reasoning", "thinking", "analysis"):
-            if message.get(key) is not None:
-                reasoning = _reasoning_text(message.get(key))
-                if reasoning:
-                    break
-    return str(content or "").strip(), reasoning
+    message = _post_chat(cfg, messages, request_params)
+    return _message_text(message), _message_reasoning(cfg, message)
 
 
-def send_message(session_id: str, text: str, ref_ids: list[str] | None = None, image_paths: list[str] | None = None, request_preset: str = "") -> dict[str, Any]:
+_MAX_TOOL_STEPS = 12  # v260930l · 8→12：批量建档（如一次建 6 条）单轮检索+创建+更新步数不够
+_TOOL_BUDGET_SECONDS = 480  # v260930l · 工具循环整体时间预算：超时强制收尾作答，不再无限等待
+_TOOL_JSON_RE = re.compile(r"```json\s*(\{.*?\})\s*```", re.S)
+_FALLBACK_STATUS_RE = re.compile(r"LLM API HTTP 4(?:00|04|22)")
+_STREAM_4XX_RE = re.compile(r"LLM API HTTP 4\d\d")  # v260930k · 流式被端点拒绝（4xx）→ 降级非流式重试
+
+
+def _page_context(context: Any) -> str:
+    """v260930 · M1 页面上下文注入：把前端传来的「你在哪/选中了什么」写进系统提示词，
+    工具层同享该上下文（文献类工具不传 paper_id 时默认使用它）。"""
+    if not isinstance(context, dict):
+        return ""
+    parts: list[str] = []
+    paper_id = str(context.get("paper_id") or "").strip()
+    page = context.get("page")
+    doc_id = str(context.get("doc_id") or "").strip()
+    view = str(context.get("view") or "").strip()
+    selection = str(context.get("selection") or "").strip()
+    if paper_id:
+        try:
+            from . import literature
+            item = literature.get_item(paper_id)
+            parts.append(f"正在阅读文献《{item.get('title')}》（paper_id={paper_id}" + (f"，第 {page} 页" if page else "") + "）")
+        except Exception:
+            parts.append(f"正在阅读文献（paper_id={paper_id}）")
+    elif view:
+        parts.append(f"当前页面：{view}" + (f"，第 {page} 页" if page else ""))
+    if doc_id:
+        parts.append(f"当前打开的知识条目：doc_id={doc_id}")
+    if selection:
+        parts.append("用户当前选中的内容：\n" + selection[:4000] + ("…" if len(selection) > 4000 else ""))
+    page_text = str(context.get("page_text") or "").strip()
+    if page_text:  # v260930 · M4 术语提取：文献当前页正文（前端 pdf.js 文本层采集），供提取专业名词
+        parts.append("文献当前页正文（供术语提取与问答，勿向用户复述全文）：\n" + page_text[:6000] + ("…" if len(page_text) > 6000 else ""))
+    quote = str(context.get("quote_text") or "").strip()
+    if quote:  # v260930j · 引用历史对话：前端从被引用会话提取的消息文本，跨会话延续上下文
+        parts.append("用户引用的历史对话内容（供参考，回答时可引用；勿复述全文）：\n" + quote[:4000] + ("…" if len(quote) > 4000 else ""))
+    if not parts:
+        return ""
+    return "\n\n当前页面上下文（文献类工具不传 paper_id 时默认使用此文献）：\n" + "\n".join(f"- {p}" for p in parts)
+
+
+def _exec_tool_call(name: str, args_raw: Any, ctx: dict[str, Any]) -> dict[str, Any]:
+    """执行单个工具调用：参数解析失败也转 ok=False 结果，交回模型自修正。"""
+    if isinstance(args_raw, str):
+        try:
+            args = json.loads(args_raw) if args_raw.strip() else {}
+        except Exception:
+            return {"ok": False, "error": f"工具参数不是合法 JSON：{args_raw[:200]}"}
+    elif isinstance(args_raw, dict):
+        args = args_raw
+    else:
+        args = {}
+    return agent_tools.execute(name, args, ctx)
+
+
+def _run_with_tools(cfg: dict[str, Any], system_prompt: str, history: list[dict[str, Any]], user_text: str, image_paths: list[str], request_params: dict[str, Any], ctx: dict[str, Any], on_delta=None, on_round=None, on_tool=None) -> tuple[str, str, list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    from .agent_runtime import execute_loop
+    return execute_loop(cfg, system_prompt, history, user_text, image_paths, request_params, ctx, on_delta, on_round, on_tool)
+
+
+def persist_interrupted_reply(run_id: str, status: str) -> dict:
+    """Keep public partial output in the canonical chat, including after reload."""
+    run = agent_memory.get_run(run_id)
+    state = run["state"]
+    session = get_session(run["session_id"])
+    user = next((m for m in session["messages"] if m.get("run_id") == run_id and m.get("role") == "user"), {})
+    message = {k: user[k] for k in ("model", "profile_id", "profile_name", "persona_id", "persona_name", "request_preset", "request_preset_label") if k in user}
+    names = {} if state.get("expose_internal_ids") else state.get("reference_names") or agent_context.reference_names(state.get("evidence", []))
+    message.update(id="msg-" + uuid.uuid4().hex[:10], role="assistant", run_id=run_id, run_status=status, created=_now(),
+                   content=agent_context.public_text(state.get("partial_answer") or "", names), evidence=state.get("evidence", []), reference_names=names, expose_internal_ids=state.get("expose_internal_ids", False),
+                   tool_trace=state.get("trace", []), drafts=state.get("drafts", []))
+    message["response_parts"] = agent_context.response_parts(message)
+    message["interruption"] = "已停止生成，已生成内容和原有提问已保留。" if status == "cancelled" else "任务已暂停，已生成内容已保留，可继续执行。"
+    if status == "paused" and state.get("pause_reason"):
+        message["interruption"] = state["pause_reason"]
+    message["skills_used"] = [{k: v for k, v in item.items() if k != "instructions"} for item in state.get("active_skills", {}).values()]
+    message["retrievals"] = agent_context.retrievals_from_evidence(state.get("evidence", []))
+    message["capabilities"] = state.get("capabilities", {})
+    message["source_policy"] = state.get("source_policy", "default")
+    message["timing"] = {"total_ms": state.get("elapsed_ms", 0), "rounds": state.get("step", 0), "tool_calls": len(state.get("trace", [])), "timeline": state.get("timeline", [])}
+    agent_memory.append_message(run["session_id"], message)
+    return message
+
+
+def send_message(session_id: str, text: str, ref_ids: list[str] | None = None, image_paths: list[str] | None = None, request_preset: str = "", context: dict[str, Any] | None = None, persona_id: str = "", on_delta=None, on_round=None, on_tool=None, run_id: str = "") -> dict[str, Any]:
     text = str(text or "").strip()
     ref_ids = [str(x) for x in (ref_ids or []) if str(x).strip()]
+    ctx_doc_id = str((context or {}).get("doc_id") or "").strip()
+    if ctx_doc_id and ctx_doc_id not in ref_ids:  # v260930i · 直接引用当前打开条目：doc_id 自动并入 ref_ids，注入标题+正文节选，AI 无需工具即可引用
+        ref_ids.append(ctx_doc_id)
     image_paths = [str(x) for x in (image_paths or []) if str(x).strip()][:6]
     if not text and not image_paths:
         raise ValueError("请输入消息或添加图片")
@@ -351,32 +772,108 @@ def send_message(session_id: str, text: str, ref_ids: list[str] | None = None, i
             session_id = session["id"]
         messages = session.get("messages") if isinstance(session.get("messages"), list) else []
         history = list(messages)
-    context, refs = _reference_context(ref_ids)
-    system_prompt = str(cfg.get("system_prompt") or config.DEFAULT_SYSTEM_PROMPT).strip()
-    if context:
-        system_prompt += "\n\n以下是用户手动引用的本地研究资料。仅将其作为上下文，不要声称看到了未提供的资料：\n\n" + context
-    preset_id, preset_label, preset_model, preset_temperature, request_params = _request_preset(cfg, request_preset)
+    rag_only = agent_context.rag_only_requested(text)
+    ref_context, refs = _reference_context(ref_ids if not rag_only else [])
+    if rag_only:
+        history = []  # The user requested fresh retrieval evidence, not old answers.
+    # v260930 · M3 人设：系统提示词/工具白名单/写模式由人设决定；未传 persona_id 时沿用 llm.system_prompt + 全量工具（向下兼容）
+    persona: dict[str, Any] | None = None
+    if str(persona_id or "").strip():
+        persona = config.resolve_persona(str(persona_id))
+        system_prompt = str(persona.get("system_prompt") or config.DEFAULT_SYSTEM_PROMPT).strip()
+    else:
+        system_prompt = str(cfg.get("system_prompt") or config.DEFAULT_SYSTEM_PROMPT).strip()
+    system_prompt = config.writing_rules() + "\n\n" + system_prompt  # v260930g4 · 统一写作与建档约束注入所有人设（单一真相源 Workspace/System/AI助手写作与建档规范.md）
+    if ref_context:
+        system_prompt += "\n\n以下是用户手动引用的本地研究资料。仅将其作为上下文，不要声称看到了未提供的资料：\n\n" + ref_context
+    if not rag_only:
+        system_prompt += _page_context(context)  # v260930 · M1 页面上下文注入
+    else:
+        system_prompt += "\n\n用户本轮只参考 RAG 检索结果。直接完成本轮检索问题，忽略人设的建档输出格式；禁止技能、长期记忆、联网及写入。必须先 kb_search，再基于实际命中片段回答；需要原文时仅可 kb_read 本轮已命中的条目。导航链接只能说明该笔记列有链接，不能标为每篇已独立检索或已读全文。检索足够后交付，不为覆盖所有方向无边界扩展；结果数为单次召回上限，不能把多次检索累加解释为单次结果。"
+    preset_id, preset_label, preset_model, preset_temperature, request_params = _request_preset(cfg, request_preset or (str(persona.get("request_preset") or "") if persona else ""))
     if not preset_model:
         raise ValueError(f"请求模式 {preset_label} 尚未配置模型名称")
     request_cfg = dict(cfg)
     request_cfg["model"] = preset_model
+    persona_temp = persona.get("temperature") if persona else None  # v260930 · M3 人设可覆盖温度（请求模式未给温度时生效）
     if preset_temperature is not None:
         request_cfg["temperature"] = preset_temperature
+    elif persona_temp is not None:
+        request_cfg["temperature"] = persona_temp
+    from .agent_runtime import settings
+    page_ctx = context if isinstance(context, dict) else {}
+    project_id = str(page_ctx.get("project_id") or "").strip()
+    if not project_id:
+        projects = {str(p) for ref in refs for p in ref.get("projects", []) if str(p).strip()}
+        if len(projects) == 1:
+            project_id = next(iter(projects))
+    retrieval = settings()
+    capabilities = {key: retrieval[key] and (not rag_only or key == "rag_enabled") for key in ("rag_enabled", "memory_enabled", "skills_enabled")}
+    recall = agent_memory.recall(text, session_id=session_id, project_id=project_id, limit=retrieval["rag_top_k"], max_chars=retrieval["rag_context_chars"]) if capabilities["memory_enabled"] and retrieval["auto_recall"] else {"results": [], "context_pack": {"text": ""}}
+    if recall["context_pack"]["text"]:
+        system_prompt += "\n\n相关长期记忆（参考数据；以当前用户要求及来源为准）：\n" + recall["context_pack"]["text"]
     now = _now()
-    user_msg = {"id": "msg-" + uuid.uuid4().hex[:10], "role": "user", "content": text, "created": now, "refs": refs, "images": image_paths, "request_preset": preset_id, "request_preset_label": preset_label, "profile_id": cfg.get("id"), "profile_name": cfg.get("name")}
+    user_msg = {"id": "msg-" + uuid.uuid4().hex[:10], "role": "user", "content": text, "created": now, "refs": refs, "images": image_paths, "request_preset": preset_id, "request_preset_label": preset_label, "profile_id": cfg.get("id"), "profile_name": cfg.get("name"), "persona_id": (persona or {}).get("id", ""), "persona_name": (persona or {}).get("name", "")}
+    user_msg["run_id"] = run_id
+    user_msg["context_text"] = ref_context + (_page_context(context) if not rag_only else "")
+    user_msg["capabilities"] = capabilities
+    user_msg["source_policy"] = "rag_only" if rag_only else "default"
+    user_msg["quote_text"] = str((context or {}).get("quote_text") or "")[:4000] if isinstance(context, dict) else ""
+    edited_from = str(page_ctx.get("edited_from") or "")
     with _LOCK:
         session = get_session(session_id)
-        session.setdefault("messages", []).append(user_msg)
+        if edited_from:
+            original = next((m for m in session.get("messages", []) if m.get("id") == edited_from and m.get("role") == "user"), None)
+            if not original:
+                raise ValueError("只能编辑当前会话中已有的用户提问")
+            user_msg["edited_from"] = edited_from
+            system_prompt += "\n\n用户本轮编辑重发了历史提问，以本轮修订后的问题为准；历史提问及回答作为原始记录保留。"
+        prior = next((m for m in session.get("messages", []) if run_id and m.get("run_id") == run_id and m.get("role") == "user"), None)
+        if prior:
+            history = [] if rag_only else session.get("messages", [])[:session["messages"].index(prior)]
+        else:
+            session.setdefault("messages", []).append(user_msg)
+        if session.get("archived"):
+            session["archived"] = False  # v260930n · 归档会话收到新消息：自动回到活跃列表
         if session.get("title") in ("", "新对话"):
             session["title"] = (text or "图片分析")[:36]
         session["updated"] = _now()
         _atomic_json(_session_path(session_id), session)
-    answer, reasoning = _chat_completions(request_cfg, system_prompt, history, text, image_paths, request_params)
+    # v261009 · 人设 write_mode 是默认值；前端可在当前会话显式覆盖为 direct/confirm。
+    # 只要页面上下文明确传入 write_mode，就以用户本次选择为准；未传时才回退人设默认。
+    page_ctx = context if isinstance(context, dict) else {}
+    persona_mode = str(persona.get("write_mode") or "confirm") if persona else "confirm"
+    page_mode = str(page_ctx.get("write_mode") or "").strip()
+    write_mode = page_mode if page_mode in ("direct", "confirm") else persona_mode
+    ctx = {
+        "run_id": run_id, "session_id": session_id, "project_id": project_id,
+        "reference_names": agent_context.reference_names(refs),
+        "paper_id": str(page_ctx.get("paper_id") or "").strip(),
+        "write_mode": write_mode,
+        "source_policy": "rag_only" if rag_only else "default", "capabilities": capabilities,
+        "tools": list(persona.get("tools") or []) if persona else list(agent_tools.all_tool_names()),  # v260930 · M3 人设工具白名单（v261009 起含插件工具）
+    }
+    request_cfg["_billing"] = {  # v261008 · 计费归属：会话 + 请求模式（探针类调用无此上下文，自动不计费）
+        "session_id": session_id,
+        "session_title": str(session.get("title") or ""),
+        "preset_label": preset_label,
+        "source": "chat",
+    }
+    answer, reasoning, tool_trace, drafts, timing = _run_with_tools(request_cfg, system_prompt, history, text, [] if rag_only else image_paths, request_params, ctx, on_delta=on_delta, on_round=on_round, on_tool=on_tool)
     assistant_msg = {
         "id": "msg-" + uuid.uuid4().hex[:10], "role": "assistant", "content": answer, "reasoning": reasoning,
         "created": _now(), "model": preset_model, "request_preset": preset_id, "request_preset_label": preset_label,
         "profile_id": cfg.get("id"), "profile_name": cfg.get("name"),
+        "persona_id": (persona or {}).get("id", ""), "persona_name": (persona or {}).get("name", ""),  # v260930 · M3 回复标记人设
+        "run_id": run_id, "evidence": ctx.get("evidence", []), "memory_sources": recall.get("context_pack", {}).get("sources", []),
+        "tool_trace": tool_trace, "drafts": drafts,  # v260930 · M1 工具轨迹与本轮待确认草稿（前端可展示）
+        "timing": timing,  # v261008b · 计时与时间轴：前端据此画时间条 + 显示总耗时（SSE done 事件随 assistant 一并回传）
+        "reference_names": ctx.get("reference_names", {}), "expose_internal_ids": ctx.get("expose_internal_ids", False),
+        "skills_used": ctx.get("skills_used", []),
+        "retrievals": ctx.get("retrievals", []), "capabilities": capabilities, "source_policy": ctx["source_policy"],
     }
+    assistant_msg["response_parts"] = agent_context.response_parts(assistant_msg)
+    assistant_msg["run_status"] = "waiting_approval" if ctx.get("waiting_drafts") else "completed"
     with _LOCK:
         session = get_session(session_id)
         session.setdefault("messages", []).append(assistant_msg)
@@ -386,10 +883,193 @@ def send_message(session_id: str, text: str, ref_ids: list[str] | None = None, i
     return {"ok": True, "session": session, "assistant": assistant_msg}
 
 
-def test_connection() -> dict[str, Any]:
+_ASSIST_PROMPTS = {  # v260929 · PDF 阅读区 AI 助手：按动作切换系统提示词，全部要求 Markdown 输出；具体行为可经 设置→文献/PDF→AI 阅读助手 调整
+    "translate": "你是科研文献翻译助手。将用户提供的学术内容准确翻译为目标语言：专业术语首次出现时在括号内保留原文；公式、变量、单位、人名保持原样。只输出译文本身，不要任何解释或原文重复。",
+    "summarize": "你是科研文献阅读助手。用中文对用户提供的内容做要点总结：提炼核心观点、方法与结论，输出为简洁的 Markdown 列表；只依据给定内容，不得编造其中不存在的信息。",
+    "organize": "你是科研知识整理助手。把用户提供的内容整理为结构化中文知识笔记（Markdown 分节）：核心要点、关键术语、方法/数据、可引用结论；条目化并保留关键数字与公式；只依据给定内容，不得编造。",
+    "polish": "你是科研笔记编辑助手。整理润色用户提供的文献笔记（Markdown）：统一为清晰的结构（如 摘要/要点/方法/结论/摘录），修正错别字与冗余表达；必须保留用户笔记中的全部原有信息，不得删改实质内容，不得添加虚构内容。",
+}
+_MAX_ASSIST_CHARS = 24_000  # 默认输入上限，可经 设置→文献/PDF→AI 阅读助手 调整（1000–60000）
+
+
+def assist(action: str, text: str, instruction: str = "", image: str = "") -> dict[str, Any]:
+    """v260929 · PDF 阅读区 AI 助手（无会话状态的一次性补全）：
+    复用 设置→Agent/LLM 的模型档案；行为参数（启用/请求模式/翻译目标语言/附加风格指令/输入上限/
+    自定义动作）来自 设置→文献/PDF→AI 阅读助手（config/app.json llm.assist）。
+    v260929c · image：页面/框选截图 data URL，代替选中文本交多模态模型处理（需在 Agent/LLM 开启多模态）。"""
+    action = str(action or "").strip() or "custom"
+    instruction = str(instruction or "").strip()
+    text = str(text or "").strip()
+    image = str(image or "").strip()
+    if not text and not image:
+        raise ValueError("没有可处理的文本或截图")
     cfg = _llm_cfg()
+    if image:  # v260929c · 截图模式：多模态门控 + 数据校验
+        if not cfg.get("vision_enabled"):
+            raise ValueError("多模态未开启：可在 设置 → Agent / LLM 开启「多模态 / 截图识别」，并确认当前模型支持图片输入")
+        if not image.startswith("data:image/") or ";base64," not in image[:64]:
+            raise ValueError("截图数据无效")
+        if len(image) > 10 * 1024 * 1024:
+            raise ValueError("截图过大（超过 10 MB），请缩小截图范围或降低页面缩放后重试")
+    st = cfg.get("assist") if isinstance(cfg.get("assist"), dict) else {}
+    if st.get("enabled") is False:
+        raise ValueError("AI 阅读助手已在 设置 → 文献 / PDF 中关闭")
+    try:
+        max_chars = max(1000, min(60000, int(st.get("max_chars") or _MAX_ASSIST_CHARS)))
+    except Exception:
+        max_chars = _MAX_ASSIST_CHARS
+    if len(text) > max_chars:
+        text = text[:max_chars]
+    action_label = ""  # v260929b · 自定义动作的显示名（用于报错信息）
+    custom = next((x for x in (st.get("custom_actions") if isinstance(st.get("custom_actions"), list) else [])
+                   if isinstance(x, dict) and str(x.get("id") or "") == action), None)  # v260929b · 自定义阅读动作：id 匹配则用其提示词
+    if custom:
+        action_label = str(custom.get("name") or "自定义动作")
+        system_prompt = str(custom.get("prompt") or "").strip()
+        if not system_prompt:
+            raise ValueError(f"自定义动作「{action_label}」尚未配置提示词，可在 设置 → 文献 / PDF → AI 阅读助手 中补充")
+    elif action in _ASSIST_PROMPTS:
+        # v260929x · 预设动作提示词可覆盖（设置→文献/PDF→AI 阅读助手），留空用内置默认
+        overrides = st.get("prompts") if isinstance(st.get("prompts"), dict) else {}
+        system_prompt = str(overrides.get(action) or "").strip() or _ASSIST_PROMPTS[action]
+        if action == "translate":
+            lang = str(st.get("target_language") or "中文").strip() or "中文"
+            system_prompt += f"\n目标语言：{lang}。"
+    else:
+        if not instruction:
+            raise ValueError("自定义指令不能为空")
+        system_prompt = "你是科研工作台里的 AI 助手，严格按用户给出的指令处理提供的文本，输出中文 Markdown。"
+    style = str(st.get("style_instruction") or "").strip()
+    if style:
+        system_prompt += "\n\n附加要求：\n" + style
+    if image:  # v260929c · 截图模式：提示模型先做精确的图内识别，提高公式/表格提取正确率
+        system_prompt += "\n用户以截图提供内容：请先从图片中精确识别文字、公式与图表信息（保持 LaTeX 形式），再按上述要求处理。"
+    presets = cfg.get("request_presets") if isinstance(cfg.get("request_presets"), list) else []  # v260929b · 阅读助手未指定请求模式时直接用第一个，不走 Agent 默认解析
+    first = presets[0] if presets and isinstance(presets[0], dict) else {}
+    preset_id, preset_label, preset_model, preset_temperature, request_params = _request_preset(cfg, str(st.get("request_preset") or str(first.get("id") or "default")))
+    model_override = str(st.get("model_override") or "").strip()  # v260929 · 阅读助手可无视所选请求模式，直接覆盖模型/温度/附加参数
+    if model_override:
+        preset_model = model_override
+    if not preset_model:
+        raise ValueError(f"请求模式 {preset_label} 尚未配置模型名称，可在 设置 → 文献/PDF → AI 阅读助手 的「模型覆盖」中填写")
+    request_cfg = dict(cfg)
+    request_cfg["model"] = preset_model
+    resolved_temp = preset_temperature
+    if st.get("temperature_override") is not None:
+        try:
+            resolved_temp = float(st.get("temperature_override"))
+        except Exception:
+            pass
+    if resolved_temp is not None:
+        request_cfg["temperature"] = resolved_temp
+    extra = st.get("extra_params") if isinstance(st.get("extra_params"), dict) else {}
+    if extra:
+        request_params = _deep_merge_request(request_params, extra, {"model", "messages", "stream"})
+    user_text = (text + (f"\n\n---\n指令：{instruction}" if instruction and action == "custom" else "")) or ("请处理这张截图中的内容。" if image else "")
+    request_cfg["_billing"] = {  # v261008 · 计费归属：阅读助手无会话，归入虚拟会话统一统计
+        "session_id": "__assist__",
+        "session_title": "AI 阅读助手",
+        "preset_label": preset_label,
+        "source": "assist",
+    }
+    content, reasoning = _chat_completions(request_cfg, system_prompt, [], user_text, None, request_params, [image] if image else None)
+    return {"ok": True, "action": action, "label": action_label, "content": content, "model": preset_model,
+            "reasoning": reasoning if cfg.get("show_reasoning", True) else ""}
+
+
+_MODELS_UNSUPPORTED_RE = re.compile(r"LLM API HTTP (?:404|405|501)\b")  # v261008 · 网关不提供 GET /models 的信号
+
+
+def test_connection() -> dict[str, Any]:
+    """连通性探针：优先 GET /models 列出模型。
+
+    v261008 · 部分 OpenAI 兼容网关（如火山方舟 Agent Plan 的 /api/plan/v3）不提供 /models，
+    返回 404 会让「能用但测不通」；此时退化为一次最小 Chat Completions 探针（默认请求模式的模型，
+    16 tokens），返回 choices 即视为连通。其余错误（401/429/5xx 等）仍原样抛出，保留诊断信息。
+    """
+    cfg = _llm_cfg()
+    timeout = min(int(cfg.get("timeout") or 30), 45)
     url = _endpoint(str(cfg["base_url"]), "/models")
-    data = _http_json(url, None, str(cfg["api_key"]), min(int(cfg.get("timeout") or 30), 45), method="GET")
+    try:
+        data = _http_json(url, None, str(cfg["api_key"]), timeout, method="GET", extra_headers=cfg.get("headers"))
+    except ValueError as e:
+        if not _MODELS_UNSUPPORTED_RE.search(str(e)):
+            raise
+        _preset_id, preset_label, model, _preset_temp, params = _request_preset(cfg, "")
+        if not model:
+            raise ValueError(f"{e}；且默认请求模式 {preset_label} 未配置模型名，无法用对话探针替代") from None
+        payload = _deep_merge_request(
+            {"model": model, "messages": [{"role": "user", "content": "ping"}], "max_tokens": 16, "stream": False},
+            params,
+            {"model", "messages", "stream"},
+        )
+        data = _http_json(_endpoint(str(cfg["base_url"]), "/chat/completions"), payload, str(cfg["api_key"]), max(timeout, 60), extra_headers=cfg.get("headers"))
+        if not (isinstance(data, dict) and data.get("choices")):
+            raise ValueError("对话探针没有返回 choices，网关可能不是 OpenAI 兼容的 Chat Completions") from None
+        return {
+            "ok": True,
+            "models": [model],
+            "message": f"连接成功（网关不提供 GET /models，已用对话探针验证 {model}）",
+            "profile": cfg.get("name") or "",
+            "probe": "chat_completions",
+        }
     models = data.get("data") if isinstance(data, dict) else []
     names = [str(x.get("id")) for x in (models or []) if isinstance(x, dict) and x.get("id")][:12]
-    return {"ok": True, "models": names, "message": "连接成功", "profile": cfg.get("name") or ""}
+    return {"ok": True, "models": names, "message": "连接成功", "profile": cfg.get("name") or "", "probe": "models"}
+
+
+# ---------------------------------------------------------------- 一次性结构化补全（v261020）
+# 供内核模块 / 插件门面使用：不走会话、不落 draft，只要一个 JSON 结果。
+# 典型用途：版本族自动合并时的「逐节选来源」。
+
+def _extract_json_object(text: str) -> dict[str, Any]:
+    """从模型文本里取出第一个 JSON 对象（容忍 ```json 代码块与前后说明）。"""
+    raw = str(text or "").strip()
+    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, re.S)
+    if fenced:
+        raw = fenced.group(1)
+    else:
+        start, end = raw.find("{"), raw.rfind("}")
+        if start >= 0 and end > start:
+            raw = raw[start:end + 1]
+    try:
+        obj = json.loads(raw)
+    except Exception as exc:  # noqa: BLE001 —— 统一转成可读错误
+        raise ValueError(f"模型没有返回合法 JSON：{exc}") from exc
+    if not isinstance(obj, dict):
+        raise ValueError("模型返回的 JSON 不是对象")
+    return obj
+
+
+def complete_json(system_prompt: str, user_text: str, *, temperature: float = 0.0,
+                  max_tokens: int = 1400, request_params: dict[str, Any] | None = None) -> dict[str, Any]:
+    """一次性补全并解析 JSON：返回 {json, text, model}。
+
+    `request_params` 会合并进这次请求（例如对推理模型传 `reasoning_effort` 降低思考长度）。
+    计费走 `llm.usage` 事件（与对话一致）；失败时抛 ValueError，由调用方决定是否回退。
+    """
+    cfg = _llm_cfg()
+    preset_id, preset_label, preset_model, preset_temperature, request_params = _request_preset(cfg, "")
+    if not preset_model:
+        raise ValueError(f"请求模式 {preset_label} 尚未配置模型名称")
+    request_cfg = dict(cfg)
+    request_cfg["model"] = preset_model
+    if preset_temperature is not None:
+        request_cfg["temperature"] = preset_temperature
+    request_cfg["_billing"] = {  # 无会话的调用归入虚拟会话（与阅读助手一致，仍计入用量）
+        "session_id": "__merge_auto__",
+        "session_title": "版本自动确认",
+        "preset_label": preset_label,
+        "source": "version_auto_merge",
+    }
+    params: dict[str, Any] = dict(request_params or {})
+    params["temperature"] = float(temperature)
+    if int(max_tokens or 0) > 0:
+        params["max_tokens"] = int(max_tokens)
+    messages: list[dict[str, Any]] = []
+    if str(system_prompt or "").strip():
+        messages.append({"role": "system", "content": str(system_prompt)})
+    messages.append({"role": "user", "content": str(user_text)})
+    message = _post_chat(request_cfg, messages, params)
+    text = _message_text(message)
+    return {"json": _extract_json_object(text), "text": text, "model": preset_model}

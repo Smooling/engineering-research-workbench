@@ -1,0 +1,5 @@
+interface:
+  display_name: "知识整理"
+  short_description: "查重、增补并建立可追溯的知识笔记"
+policy:
+  allow_implicit_invocation: true

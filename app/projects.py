@@ -55,7 +55,7 @@ def _new_id() -> str:
 
 def _safe_name(name: str) -> str:
     value = str(name or "").strip()
-    value = value.replace("\\", "-").replace("/", "-").replace("..", "-").strip(" .")[:100]
+    value = value.replace("\\", "-").replace("/", "-").replace("..", "-").strip(" .")[:128]
     if not value:
         raise ValueError("项目名称不能为空")
     return value
@@ -271,11 +271,6 @@ def ensure_registry() -> dict[str, Any]:
         return {"ok": True, "projects": len(items), "migrated_docs": migrated_docs, "migrated_todos": migrated_todos}
 
 
-def project_names() -> list[str]:
-    ensure_registry()
-    return sorted((str(x.get("name") or "") for x in _load_registry() if x.get("name")), key=str.lower)
-
-
 def list_projects() -> list[dict[str, Any]]:
     ensure_registry()
     items = _load_registry()
@@ -305,7 +300,10 @@ def list_projects() -> list[dict[str, Any]]:
     return sorted(items, key=lambda x: (str(x.get("last_updated") or ""), str(x.get("name") or "")), reverse=True)
 
 
-def create_project(name: str, description: str = "", status: str = "进行中") -> dict[str, Any]:
+def create_project(name: str, description: str = "", status: str = "进行中", display_name: str = "") -> dict[str, Any]:
+    display_name = str(display_name or "").strip()
+    if len(display_name) > 32:
+        raise ValueError("项目显示简称不能超过 32 个字符")
     with _LOCK:
         ensure_registry()
         safe = _safe_name(name)
@@ -317,13 +315,16 @@ def create_project(name: str, description: str = "", status: str = "进行中") 
         rec = {
             "id": _new_id(), "name": safe, "description": str(description or "").strip(),
             "status": status if status in PROJECT_STATUSES else "进行中",
-            "created": now, "updated": now,
+            "created": now, "updated": now, "display_name": display_name,
         }
         items.append(rec); _save_registry(items)
         return {"ok": True, **rec, "path": f"Projects/{safe}"}
 
 
 def update_project(project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    display_name = str(payload.get("display_name") or "").strip()
+    if "display_name" in payload and len(display_name) > 32:
+        raise ValueError("项目显示简称不能超过 32 个字符")
     with _LOCK:
         ensure_registry()
         items = _load_registry()
@@ -349,6 +350,8 @@ def update_project(project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
             rec["name"] = new_name
         if "description" in payload:
             rec["description"] = str(payload.get("description") or "").strip()
+        if "display_name" in payload:
+            rec["display_name"] = display_name
         if "status" in payload:
             value = str(payload.get("status") or "")
             if value not in PROJECT_STATUSES:
@@ -424,123 +427,3 @@ def _remove_associations(project_id: str, name: str) -> None:
         if item.get("project_id") == project_id or str(item.get("project") or "") == name:
             item["project_id"] = ""; item["project"] = ""; item["updated"] = _now(); changed = True
     if changed: _save_todos(todos)
-
-
-def normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    ensure_registry()
-    items = _load_registry()
-    out = dict(payload)
-    raw_ids = payload.get("project_ids") or ([payload.get("project_id")] if payload.get("project_id") else [])
-    ids = [str(x).strip() for x in raw_ids if str(x).strip()] if isinstance(raw_ids, list) else []
-    names = payload.get("projects") or ([payload.get("project")] if payload.get("project") else [])
-    names = [str(x).strip() for x in names if str(x).strip()] if isinstance(names, list) else []
-    for name in names:
-        rec = _record_for_name(items, name)
-        if rec and rec["id"] not in ids:
-            ids.append(rec["id"])
-    valid = [pid for pid in ids if _record_for_id(items, pid)]
-    resolved_names = [str(_record_for_id(items, pid).get("name")) for pid in valid if _record_for_id(items, pid)]
-    if not resolved_names:
-        resolved_names = names
-    out["project_ids"] = valid
-    out["project_id"] = valid[0] if valid else ""
-    out["projects"] = resolved_names
-    out["project"] = resolved_names[0] if resolved_names else ""
-    return out
-
-
-def sync_doc(doc: dict[str, Any], payload: dict[str, Any] | None = None) -> dict[str, Any]:
-    normalized = normalize_payload(payload or doc)
-    path_value = str(doc.get("path") or "")
-    if not path_value:
-        return augment_doc(doc)
-    path = ensure_workspace() / path_value
-    try:
-        parsed = _frontmatter(path.read_text(encoding="utf-8"))
-        if parsed:
-            lines, body = parsed
-            updates = {"project_id": normalized.get("project_id") or "", "project_ids": normalized.get("project_ids") or []}
-            new_lines = _replace_meta_lines(lines, updates)
-            tmp = path.with_suffix(path.suffix + ".tmp")
-            tmp.write_text("---\n" + "\n".join(new_lines) + "\n---\n\n" + body.lstrip("\n"), encoding="utf-8"); tmp.replace(path)
-    except Exception:
-        pass
-    return augment_doc(doc)
-
-
-def augment_doc(doc: dict[str, Any]) -> dict[str, Any]:
-    out = dict(doc)
-    path_value = str(out.get("path") or "")
-    ids: list[str] = []
-    if path_value:
-        try:
-            parsed = _frontmatter((ensure_workspace() / path_value).read_text(encoding="utf-8"))
-            if parsed:
-                ids = _doc_project_ids(_meta_from_lines(parsed[0]))
-        except Exception:
-            pass
-    out["project_ids"] = ids
-    out["project_id"] = ids[0] if ids else ""
-    return out
-
-
-def augment_docs(docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [augment_doc(x) for x in docs]
-
-
-def sync_todo(item: dict[str, Any], payload: dict[str, Any] | None = None) -> dict[str, Any]:
-    normalized = normalize_payload(payload or item)
-    pid = str(normalized.get("project_id") or "")
-    todos = _load_todos()
-    for row in todos:
-        if row.get("id") == item.get("id"):
-            row["project_id"] = pid
-            if normalized.get("project"):
-                row["project"] = normalized["project"]
-            _save_todos(todos)
-            break
-    return {**item, "project_id": pid}
-
-
-def graph_payload(graph: dict[str, Any]) -> dict[str, Any]:
-    ensure_registry()
-    items = _load_registry()
-    by_name = {str(x.get("name") or ""): x for x in items}
-    remap: dict[str, str] = {}
-    nodes = []
-    for node in graph.get("nodes") or []:
-        n = dict(node)
-        if n.get("kind") == "project":
-            name = str(n.get("label") or "")
-            rec = by_name.get(name)
-            if rec:
-                old = str(n.get("id") or "")
-                new = "project:" + str(rec["id"])
-                remap[old] = new
-                n["id"] = new; n["project_id"] = rec["id"]; n["status"] = rec.get("status") or ""
-        nodes.append(n)
-    edges = []
-    for edge in graph.get("edges") or []:
-        e = dict(edge); e["source"] = remap.get(str(e.get("source")), e.get("source")); e["target"] = remap.get(str(e.get("target")), e.get("target")); edges.append(e)
-    return {**graph, "nodes": nodes, "edges": edges}
-
-
-def dashboard_payload(base: dict[str, Any]) -> dict[str, Any]:
-    docs = augment_docs(base.get("recent", {}).get("milestones", [])) if False else []
-    # Dashboard needs all milestone states around the current day, not only unfinished future items.
-    from . import store
-    all_ms = store.list_docs("milestone")
-    center = date.today(); start = center - timedelta(days=183); end = center + timedelta(days=183)
-    nearby = []
-    for d in all_ms:
-        raw = str(d.get("due") or "")[:10]
-        try: due = date.fromisoformat(raw)
-        except Exception: continue
-        if start <= due <= end:
-            nearby.append(augment_doc(d))
-    nearby.sort(key=lambda x: str(x.get("due") or ""))
-    result = dict(base)
-    result["upcoming_milestones"] = nearby
-    result["project_records"] = list_projects()
-    result["projects"] = project_names()
-    return result

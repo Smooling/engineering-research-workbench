@@ -1,0 +1,26 @@
+/* __NAME__ 面板样式 · 插件模板
+ *
+ * **所有选择器都必须落在 `[data-plugin="__ID__"]` 里**（PLUGIN_SPEC §2）。
+ * 内核在插件自登记的挂载容器上写这个属性：导航页 `#main`、设置页 `#settings-panel`、槽位容器。
+ * 这样插件样式不会泄漏到内核页面，也不会和别的插件互踩——加插件不需要动内核 CSS。
+ */
+
+[data-plugin="__ID__"] .tp-card { display: grid; gap: 10px; }
+
+[data-plugin="__ID__"] .tp-row { display: grid; gap: 4px; }
+[data-plugin="__ID__"] .tp-row label { font-size: 12px; color: var(--muted); }
+[data-plugin="__ID__"] .tp-row input {
+  font: inherit; padding: 7px 9px; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--surface); color: inherit;
+}
+
+[data-plugin="__ID__"] .tp-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+[data-plugin="__ID__"] .tp-out {
+  margin: 0; padding: 9px 10px; font: 11px/1.6 Consolas, monospace;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: color-mix(in srgb, var(--line) 14%, transparent);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+
+[data-plugin="__ID__"] .tp-hint { font-size: 10px; color: var(--muted); line-height: 1.6; }

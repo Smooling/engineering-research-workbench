@@ -1,0 +1,92 @@
+{
+  "id": "version-manager",
+  "name": "版本管理",
+  "version": "1.2.0",
+  "description": "同一笔记的不同版本：查看版本族、批量清理快照、Agent 自动确认并按小节合并、归档与取回（含来源追踪）",
+  "api_version": 1,
+  "core_min": "v261009.44",
+  "kind": "inprocess",
+  "distribution": "bundled",
+  "default_enabled": true,
+  "entry": "backend.py",
+  "permissions": [
+    "ui:panel",
+    "config:own",
+    "llm:use"
+  ],
+  "nav": [
+    {
+      "id": "version-manager",
+      "label": "版本",
+      "icon": "⑂",
+      "mount": "web/panel.js",
+      "style": "web/panel.css"
+    }
+  ],
+  "routes": [
+    {
+      "method": "GET",
+      "path": "overview"
+    },
+    {
+      "method": "GET",
+      "path": "history"
+    },
+    {
+      "method": "POST",
+      "path": "adopt"
+    },
+    {
+      "method": "POST",
+      "path": "cleanup-archive"
+    },
+    {
+      "method": "GET",
+      "path": "cleanup"
+    },
+    {
+      "method": "GET",
+      "path": "family"
+    },
+    {
+      "method": "POST",
+      "path": "auto-merge"
+    },
+    {
+      "method": "POST",
+      "path": "merge"
+    },
+    {
+      "method": "POST",
+      "path": "archive"
+    },
+    {
+      "method": "POST",
+      "path": "restore"
+    }
+  ],
+  "mcp_tools": [
+    "versions",
+    "auto_merge_versions",
+    "merge_versions",
+    "archive_versions"
+  ],
+  "preview": {
+    "summary": "同一笔记的不同版本归成一条「版本族」：逐版对照、按小节合并、归档后仍可追溯",
+    "features": [
+      "**批量清理**：一次扫描所有版本族，把「与基条内容一致」和「有实际改动」分开；一键归档全部快照（移到 System/Versions 可随时取回），不必逐族确认",
+      "**Agent 自动确认**：点一下让模型逐节挑选来源（信息完整、结论可靠优先），给出理由后可一键应用；模型不可用时自动回退到「最近更新优先」规则",
+      "不管是在工作台里改的，还是外部工具（MCP）塞进来的同名不同版，都会自动归到同一族",
+      "每个版本都显示**来源**（含**分支创建时间**）：工作台界面 / 内核 Agent / 外部 MCP 客户端（含客户端名）/ 插件",
+      "**按 H2 小节挑内容**合并（选基准 + 逐节选来源），合并结果写回基条",
+      "归档的版本移到 System/Versions/<基条>/archived/ 永久保留，可一键取回",
+      "两个 Agent 工具（合并/归档）走内核草稿确认；MCP 侧同名工具受「外部接入」授权约束",
+      "**修改记录**：这条笔记（含各版本）谁在什么时候改了什么，一眼看到来源与合并细节",
+      "**逐节变更对照**：每个小节标出 +N/−M 行，点「看变更」看逐行差异，对照对象跟着你选的来源版本即时变化",
+      "**只确认改动**：一致的小节自动沿用基准并折叠，只有被改动的小节需要你点头，可一键「全部采用该版本的改动」",
+      "**直接选要保留的版本**：每版都有「以这版为准」（整篇采用，其余归档、改动前快照保留可回退）与「对照」；② 顶部可切换对照版本",
+      "**默认合并最新版本**：对照对象默认是最新版，一键「采用最新版本并归档其余」；同一族只保留一个自动快照，不再堆版本条目"
+    ],
+    "where": "侧栏 → 系统 → 版本"
+  }
+}

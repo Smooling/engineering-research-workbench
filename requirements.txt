@@ -1,2 +1,7 @@
-# Python backend uses the standard library only.
+# PDF reading and Agent Skills metadata parsing.
+pypdf>=5.0,<7
+PyYAML>=6.0.2,<7
 # Recommended: Python 3.11+
+#
+# Windows desktop runtime and packaging dependencies are pinned separately in
+# requirements-desktop.txt; build_client.bat installs them into build/.venv.

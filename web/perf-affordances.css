@@ -1,0 +1,24 @@
+/* Large-workspace performance affordances. Data behavior lives in perf-and-fetch-seam.js. */
+.perf-doc-pager {
+  display:flex; align-items:center; justify-content:center; flex-wrap:nowrap; gap:8px; /* v260924g · 窄栏单行布局 */
+  padding:10px 8px; border-top:1px solid var(--line); font-size:11px; /* v260924g · 12→11，窄栏容纳单行 */
+  color:var(--text-2, #667085); background:var(--panel, transparent);
+}
+.perf-doc-pager span { white-space:nowrap; } /* v260924g · 「N/M 页 · 共 X 条」一行显示 */
+.perf-doc-pager button { min-width:56px; white-space:nowrap; flex:0 0 auto; } /* v260924g · 按钮文字禁折行、禁 flex 收缩 */
+.perf-doc-pager button:disabled { opacity:.45; cursor:default; }
+.perf-graph-status {
+  margin-left:auto; display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  font-size:11px; color:var(--text-2, #667085);
+}
+.perf-graph-status small { max-width:240px; }
+.perf-tree-toggle {
+  width:14px; display:inline-flex; justify-content:center; align-items:center;
+  cursor:pointer; user-select:none; color:var(--text-2, #667085); flex:0 0 14px;
+}
+.tree-line .folder-name { cursor:pointer; }
+.perf-tree-empty { padding:5px 8px 5px 24px; }
+.perf-index-status { margin-top:18px; }
+@media (max-width: 900px) {
+  .perf-graph-status { width:100%; margin-left:0; }
+}

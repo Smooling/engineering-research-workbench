@@ -1,0 +1,95 @@
+/* plugin-manager.css · v261009.7 —— 设置 → 插件（内核模块 web/plugin-manager.js 的样式）
+ *
+ * 版式约定：**一切默认一行**。
+ *   · 卡片：标题 + 状态/开关，下面一行「版本」，其余信息进「详情」
+ *   · 配置：一行「配置 + 状态 + 摘要 + 动作」，点这一行展开/收起
+ * 两类行共用 `.pm-row`（同高、同边框、同样的动作位），视觉一致。
+ */
+
+.pm-card{margin-bottom:12px}
+.pm-actions{display:flex;align-items:center;gap:10px;flex:0 0 auto}
+.pm-switch{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);cursor:pointer;white-space:nowrap}
+
+/* v261009.15 · 长说明不得挤走状态与开关（第三方插件的 description 可能很长）：
+   卡片头左侧允许收缩（min-width:0），说明最多两行省略号，超长 token 也换行；
+   完整说明挂 title（鼠标悬停可看全文，信息不丢）。见 docs/PLUGIN_SPEC.md §3 的 description 字段。
+   注意：内核全局 `.row-meta` 是 `white-space:nowrap`（单行省略），这里必须显式改回 normal 才会折行。 */
+.pm-card .card-head{align-items:flex-start}
+.pm-card .card-head>:first-child{min-width:0;flex:1 1 auto}
+.pm-card .card-head h3{overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical}
+.pm-card .card-head .row-meta{margin-top:2px;line-height:1.5;white-space:normal;overflow:hidden;overflow-wrap:anywhere;
+  max-height:3em;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+
+/* ---- 通用「一行」 ---- */
+.pm-row{display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;text-align:left;
+  border:1px solid var(--line);border-radius:8px;background:var(--surface);color:inherit;
+  padding:5px 9px;margin-top:8px;font:inherit;min-height:30px}
+button.pm-row{cursor:pointer}
+button.pm-row:hover{border-color:var(--accent)}
+.pm-row-open{border-style:dashed}
+.pm-row-label{flex:0 0 auto;font:600 11px/1.4 inherit;color:var(--accent);letter-spacing:.06em}
+.pm-row-state{flex:0 0 auto;font-size:10px;color:var(--muted);border:1px solid var(--line);border-radius:5px;padding:0 5px}
+.pm-row-main{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font:10px/1.6 Consolas,monospace;color:var(--muted)}
+.pm-row-sub{flex:0 0 auto;font-size:10px;color:var(--muted)}
+.pm-row-note{flex:1 1 auto;min-width:0;font-size:10px;color:var(--muted);line-height:1.5;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pm-row-action{flex:0 0 auto;font-size:10px;color:var(--accent);white-space:nowrap}
+
+/* ---- 详情（默认隐藏） ---- */
+.pm-detail{display:grid;gap:5px;margin-top:8px;padding:0 2px}
+.pm-detail[hidden]{display:none}
+.pm-meta-row{display:grid;grid-template-columns:72px minmax(0,1fr);gap:8px;font-size:11px;align-items:start}
+.pm-meta-label{color:var(--muted)}
+.pm-meta-row code{font:10px/1.5 Consolas,monospace;background:color-mix(in srgb,var(--line) 35%,transparent);padding:1px 5px;border-radius:5px}
+.pm-path{overflow-wrap:anywhere}
+.pm-perm{display:inline-block;font:10px/1.6 Consolas,monospace;border:1px solid var(--line);border-radius:6px;padding:0 6px;margin:0 5px 3px 0}
+.pm-panel{display:inline-block;font-size:11px;border:1px solid var(--line);border-radius:6px;padding:1px 7px;margin:0 5px 3px 0}
+.pm-panel small{color:var(--muted)}
+
+/* ---- 配置：展开态 ---- */
+.pm-config{margin-top:0}
+.pm-json{width:100%;box-sizing:border-box;margin-top:6px;font:11px/1.6 Consolas,monospace;
+  border:1px solid var(--line);border-radius:8px;padding:9px 10px;background:var(--surface);color:inherit;resize:vertical}
+.pm-config-actions{display:flex;gap:7px;margin-top:8px}
+.pm-alert{border:1px solid color-mix(in srgb,var(--danger) 40%,var(--line));border-radius:10px;padding:10px 12px;margin:8px 0;display:grid;gap:3px;background:color-mix(in srgb,var(--danger) 6%,transparent)}
+.pm-alert strong{font-size:12px}
+.pm-alert span{font-size:10px;color:var(--muted);line-height:1.6}
+
+/* ---- 单文件包安装结果 / 发现期提示（中性底，靠左侧色条区分成败） ---- */
+.pm-notes{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0;background:color-mix(in srgb,var(--line) 14%,transparent)}
+.pm-notes strong{font-size:12px}
+.pm-notes ul{margin:6px 0 0;padding:0;list-style:none;display:grid;gap:4px}
+.pm-notes li{font-size:11px;line-height:1.6;padding-left:9px;border-left:3px solid var(--line)}
+.pm-notes li code{font:10px/1.5 Consolas,monospace;background:color-mix(in srgb,var(--line) 35%,transparent);padding:1px 5px;border-radius:5px}
+.pm-notes li>span{display:block;font-size:10px;color:var(--muted);line-height:1.6}
+.pm-notes li.good{border-left-color:var(--ok)}
+.pm-notes li.bad{border-left-color:var(--danger)}
+.pm-notes li.flat{border-left-color:var(--line)}
+
+/* ---- 演示预览（v261009.27）：内容由插件 manifest 的 preview 声明，这里只负责呈现 ---- */
+.pm-row-preview{margin-top:6px}
+.pm-row-preview:hover .pm-row-action{color:var(--accent)}
+.pm-preview{
+  position:fixed;z-index:60;max-height:min(78vh,720px);overflow:auto;
+  border:1px solid var(--line);border-radius:12px;padding:12px 14px;
+  background:var(--surface);box-shadow:var(--shadow);display:grid;gap:9px;
+}
+.pm-preview .pm-pv-head{display:flex;align-items:center;gap:8px;font-size:13px}
+.pm-preview .pm-pv-head code{font:10px/1.6 Consolas,monospace;color:var(--muted)}
+.pm-preview .pm-pv-close{margin-left:auto;cursor:pointer;color:var(--muted);font-size:15px;line-height:1;padding:0 3px}
+.pm-preview .pm-pv-close:hover{color:var(--danger)}
+.pm-preview .pm-pv-sum{font-size:12px;line-height:1.75}
+.pm-preview .pm-pv-where{font-size:11px;color:var(--accent)}
+.pm-preview .pm-pv-feats{margin:0;padding-left:18px;font-size:11.5px;line-height:1.85}
+.pm-preview .pm-pv-shots{display:grid;gap:8px}
+.pm-preview .pm-shot{display:block;border:1px solid var(--line);border-radius:8px;overflow:hidden;line-height:0}
+.pm-preview .pm-shot img{width:100%;height:auto;display:block}
+.pm-preview .pm-pv-noshot{font-size:10.5px;color:var(--muted)}
+.pm-preview .pm-pv-foot{font-size:10.5px;color:var(--muted);line-height:1.8;border-top:1px solid var(--line);padding-top:7px}
+.pm-preview .pm-pv-foot .ok{color:var(--ok)}
+.pm-preview .pm-pv-foot .warn{color:var(--warning)}
+.pm-preview .pm-pv-foot code{font:10px/1.5 Consolas,monospace;background:color-mix(in srgb,var(--line) 35%,transparent);padding:1px 5px;border-radius:5px;margin-right:3px}
+/* 状态徽章可点（快捷启停）：看起来像按钮，就让它真的能按 */
+.pm-state-btn{cursor:pointer;font:inherit;font-size:11px;padding:2px 8px}
+.pm-state-btn:hover{border-color:var(--accent);color:var(--accent)}

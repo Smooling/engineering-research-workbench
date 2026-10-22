@@ -1,0 +1,57 @@
+{
+  "id": "weather",
+  "name": "天气",
+  "version": "1.0.0",
+  "description": "顶栏实况天气卡片（Open-Meteo，无需 API Key）",
+  "api_version": 1,
+  "core_min": "v261009",
+  "kind": "inprocess",
+  "distribution": "bundled",
+  "default_enabled": true,
+  "entry": "backend.py",
+  "permissions": [
+    "net:http",
+    "storage:own",
+    "config:own"
+  ],
+  "nav": [
+    {
+      "id": "weather",
+      "label": "天气",
+      "mount": "web/panel.js",
+      "style": "web/panel.css",
+      "slot": "topbar"
+    }
+  ],
+  "routes": [
+    {
+      "method": "GET",
+      "path": "current"
+    },
+    {
+      "method": "GET",
+      "path": "geocode"
+    },
+    {
+      "method": "GET",
+      "path": "config"
+    },
+    {
+      "method": "POST",
+      "path": "config"
+    }
+  ],
+  "preview": {
+    "summary": "顶栏显示当前位置的实况天气与逐日预报（断网可看上次成功结果）",
+    "features": [
+      "顶栏槽位常驻：温度 + 天气现象",
+      "点开看逐日预报，可改地点（地名解析）",
+      "本地缓存 + 离线降级：断网时显示上次成功结果并说明原因",
+      "配置落在插件自己的 config 里，不碰内核设置"
+    ],
+    "where": "顶栏右侧的天气块",
+    "screens": [
+      "web/preview.png"
+    ]
+  }
+}

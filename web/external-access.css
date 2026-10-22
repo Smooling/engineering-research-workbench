@@ -1,0 +1,34 @@
+/* external-access.css · v261009.38 —— 「设置 → 外部接入」版式
+ *
+ * 沿用设置页既有观感：卡片头 + 一行行开关；开关行整行可点，右侧状态用 chip 表达。
+ */
+
+#settings-panel .ea-status{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:4px 0 14px}
+#settings-panel .ea-chip{
+  font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid var(--line);
+  background:var(--surface-2);color:var(--muted);
+}
+#settings-panel .ea-chip.on{border-color:color-mix(in srgb,var(--accent) 45%,var(--line));
+  background:var(--accent-soft);color:var(--accent-ink)}
+#settings-panel .ea-chip.off{border-color:color-mix(in srgb,var(--warning) 40%,var(--line))}
+#settings-panel .ea-note{font-size:11px;color:var(--warning)}
+
+#settings-panel .ea-row{
+  display:flex;gap:12px;align-items:flex-start;padding:12px;border:1px solid var(--line);
+  border-radius:10px;background:var(--surface-2);margin-bottom:10px;cursor:pointer;
+}
+#settings-panel .ea-row:hover{border-color:var(--line-strong)}
+#settings-panel .ea-row.on{border-color:color-mix(in srgb,var(--accent) 35%,var(--line));
+  background:color-mix(in srgb,var(--accent) 4%,var(--surface-2))}
+#settings-panel .ea-switch{flex:0 0 auto;padding-top:1px}
+#settings-panel .ea-switch input{width:16px;height:16px;accent-color:var(--accent)}
+#settings-panel .ea-text{display:grid;gap:4px;min-width:0}
+#settings-panel .ea-text b{font-size:13px}
+#settings-panel .ea-detail{font-size:11.5px;color:var(--muted);line-height:1.7}
+#settings-panel .ea-detail b{color:var(--text);font-weight:600}
+#settings-panel .ea-risk{font-size:11px;color:color-mix(in srgb,var(--warning) 85%,var(--text));line-height:1.6}
+#settings-panel .ea-foot{display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;margin-top:6px}
+#settings-panel .ea-foot code{font:10.5px/1.5 Consolas,monospace;background:color-mix(in srgb,var(--line) 35%,transparent);
+  padding:1px 5px;border-radius:5px}
+#settings-panel .ea-error{border:1px solid color-mix(in srgb,var(--danger) 40%,var(--line));border-radius:8px;
+  padding:10px 12px;font-size:12px;background:color-mix(in srgb,var(--danger) 6%,transparent)}

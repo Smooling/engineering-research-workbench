@@ -1,0 +1,183 @@
+/* 版本管理 · 插件样式 v1.0.0（v261009.44 从内核页搬成插件）
+ * 每条规则都带 [data-plugin="version-manager"] 作用域（插件规范 §2），避免污染其它页面。
+ */
+[data-plugin="version-manager"] .vm-layout{display:grid;grid-template-columns:300px minmax(0,1fr);grid-template-rows:minmax(0,1fr); gap:12px;height:calc(100vh - 121px)}
+
+html[data-density="compact"] [data-plugin="version-manager"] .vm-layout{gap:8px;height:calc(100vh - 133px)}
+
+@media (max-width:900px){[data-plugin="version-manager"] .vm-layout{grid-template-columns:1fr;height:auto}
+}
+
+[data-plugin="version-manager"] .vm-side{min-height:0;display:grid;grid-template-rows:auto auto auto auto minmax(0,1fr);gap:8px;padding:12px}
+
+[data-plugin="version-manager"] .vm-side h3{margin:0}
+
+[data-plugin="version-manager"] .vm-side .row-meta{white-space:normal;line-height:1.6}
+
+[data-plugin="version-manager"] .vm-stats{display:flex;flex-wrap:wrap;gap:6px}
+
+[data-plugin="version-manager"] .vm-chip{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--line); background:var(--surface-2);color:var(--muted)}
+
+[data-plugin="version-manager"] .vm-chip.on{border-color:color-mix(in srgb,var(--accent) 45%,var(--line));background:var(--accent-soft);color:var(--accent-ink)}
+
+[data-plugin="version-manager"] .vm-filter{display:flex;gap:6px;align-items:center}
+
+[data-plugin="version-manager"] .vm-seg{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden;flex:0 0 auto}
+
+[data-plugin="version-manager"] .vm-seg button{border:0;background:transparent;color:var(--muted);font:inherit;font-size:11px; padding:4px 9px;cursor:pointer}
+
+[data-plugin="version-manager"] .vm-seg button.active{background:var(--accent-soft);color:var(--accent-ink)}
+
+[data-plugin="version-manager"] .vm-filter .search-input{flex:1 1 auto;min-width:0}
+
+[data-plugin="version-manager"] .vm-list{min-height:0;overflow-y:auto;overflow-x:hidden;display:grid;grid-auto-rows:min-content;gap:2px; padding-right:2px}
+
+[data-plugin="version-manager"] .vm-item{display:flex;flex-direction:column;gap:2px;width:100%;min-width:0;padding:5px 8px;text-align:left; border:0;border-radius:7px;background:transparent;color:var(--muted);font:inherit;font-size:12px; line-height:1.45;cursor:pointer}
+
+[data-plugin="version-manager"] .vm-item:hover{background:color-mix(in srgb,var(--line) 22%,transparent);color:var(--text)}
+
+[data-plugin="version-manager"] .vm-item.active{background:var(--accent-soft);color:var(--accent-ink)}
+
+[data-plugin="version-manager"] .vm-item-main{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+
+[data-plugin="version-manager"] .vm-item-meta{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10.5px; color:var(--muted)}
+
+[data-plugin="version-manager"] .vm-item.active .vm-item-meta{color:var(--accent-ink)}
+
+[data-plugin="version-manager"] .vm-item-meta b{color:var(--accent)}
+
+[data-plugin="version-manager"] .vm-pane{min-height:0;overflow:auto;padding:16px 18px}
+
+[data-plugin="version-manager"] .vm-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+
+[data-plugin="version-manager"] .vm-head h3{margin:2px 0 4px}
+
+[data-plugin="version-manager"] .vm-block{border-top:1px solid var(--line);padding-top:10px;margin-top:14px}
+
+[data-plugin="version-manager"] .vm-block h4{margin:0 0 8px;font-size:13px}
+
+[data-plugin="version-manager"] .vm-base-row, [data-plugin="version-manager"] .vm-vrow, [data-plugin="version-manager"] .vm-arow{display:flex;gap:10px;align-items:flex-start;padding:8px 10px; border:1px solid var(--line);border-radius:8px;background:var(--surface-2);margin-bottom:6px}
+
+[data-plugin="version-manager"] .vm-base-row{border-color:color-mix(in srgb,var(--accent) 30%,var(--line))}
+
+[data-plugin="version-manager"] .vm-vrow{cursor:pointer}
+
+[data-plugin="version-manager"] .vm-vrow:hover{border-color:var(--line-strong)}
+
+[data-plugin="version-manager"] .vm-arow{align-items:center}
+
+[data-plugin="version-manager"] .vm-vtext{display:grid;gap:3px;min-width:0;flex:1 1 auto}
+
+[data-plugin="version-manager"] .vm-vtext b{font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+[data-plugin="version-manager"] .vm-vmeta{font-size:10.5px;color:var(--muted)}
+
+[data-plugin="version-manager"] .vm-vmeta code{font:10.5px/1.5 Consolas,monospace;background:color-mix(in srgb,var(--line) 35%,transparent); padding:0 4px;border-radius:4px}
+
+[data-plugin="version-manager"] .vm-origin{flex:0 0 auto;font-size:10px;padding:2px 7px;border-radius:999px;border:1px solid var(--line); color:var(--muted);background:var(--surface);max-width:280px;overflow:hidden;text-overflow:ellipsis; white-space:nowrap}
+
+[data-plugin="version-manager"] .vm-origin.mcp{border-color:color-mix(in srgb,#7a5af8 40%,var(--line));color:#5b45c9}
+
+[data-plugin="version-manager"] .vm-origin.plugin{border-color:color-mix(in srgb,var(--warning) 45%,var(--line));color:var(--warning)}
+
+[data-plugin="version-manager"] .vm-origin.agent{border-color:color-mix(in srgb,var(--accent-2) 45%,var(--line));color:var(--accent-ink)}
+
+[data-plugin="version-manager"] .vm-srow{display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:10px;align-items:center;margin-bottom:6px}
+
+[data-plugin="version-manager"] .vm-sname{font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+[data-plugin="version-manager"] .vm-check{display:flex;gap:8px;align-items:center;font-size:11.5px;color:var(--muted);margin:10px 0}
+
+[data-plugin="version-manager"] .vm-actions{display:flex;gap:8px}
+
+[data-plugin="version-manager"] .vm-hint{border:1px dashed var(--line);border-radius:8px;padding:10px 12px;font-size:11.5px; color:var(--muted);line-height:1.7;background:color-mix(in srgb,var(--line) 10%,transparent)}
+
+[data-plugin="version-manager"] .vm-error{border:1px solid color-mix(in srgb,var(--danger) 40%,var(--line));border-radius:8px;padding:10px 12px; font-size:12px;background:color-mix(in srgb,var(--danger) 6%,transparent)}
+[data-plugin="version-manager"] .vm-hrow{display:grid;grid-template-columns:120px 52px minmax(0,1fr);gap:8px;
+  align-items:baseline;padding:5px 2px;border-bottom:1px solid color-mix(in srgb,var(--line) 60%,transparent);
+  font-size:11.5px}
+[data-plugin="version-manager"] .vm-htime{color:var(--muted);font-variant-numeric:tabular-nums}
+[data-plugin="version-manager"] .vm-hkind{color:var(--accent-ink);background:var(--accent-soft);
+  border-radius:999px;padding:1px 6px;text-align:center;font-size:10.5px}
+[data-plugin="version-manager"] .vm-hsrc{color:var(--text);overflow:hidden;text-overflow:ellipsis}
+[data-plugin="version-manager"] .vm-nosrc{color:var(--muted);font-style:italic}
+/* 逐节变更对照（v261009.52） */
+[data-plugin="version-manager"] .vm-srow{grid-template-columns:minmax(0,1fr) 220px auto}
+[data-plugin="version-manager"] .vm-sbadge{font-size:10px;font-weight:400;padding:1px 6px;border-radius:999px;
+  border:1px solid var(--line);color:var(--muted);background:var(--surface-2);margin-left:6px}
+[data-plugin="version-manager"] .vm-sbadge.changed{border-color:color-mix(in srgb,var(--accent) 45%,var(--line));
+  background:var(--accent-soft);color:var(--accent-ink)}
+[data-plugin="version-manager"] .vm-sbadge.onlyNew{border-color:color-mix(in srgb,#2f9e6b 40%,var(--line));color:#2f7d57}
+[data-plugin="version-manager"] .vm-sbadge.onlyBase{border-color:color-mix(in srgb,var(--warning) 45%,var(--line));color:var(--warning)}
+[data-plugin="version-manager"] .vm-dbtn{font-size:11px;padding:3px 8px}
+[data-plugin="version-manager"] .vm-dwrap{grid-column:1 / -1}
+[data-plugin="version-manager"] .vm-diff{margin:4px 0 10px;border:1px solid var(--line);border-radius:8px;
+  background:var(--surface-2);max-height:320px;overflow:auto;padding:6px 0}
+[data-plugin="version-manager"] .vm-dline{display:grid;grid-template-columns:18px minmax(0,1fr);gap:4px;
+  padding:1px 8px;font:11.5px/1.6 Consolas,monospace;white-space:pre-wrap;word-break:break-word}
+[data-plugin="version-manager"] .vm-dline i{color:var(--muted);font-style:normal;text-align:center}
+[data-plugin="version-manager"] .vm-dline.add{background:color-mix(in srgb,#2f9e6b 12%,transparent);color:#1f6b4a}
+[data-plugin="version-manager"] .vm-dline.del{background:color-mix(in srgb,var(--danger) 10%,transparent);color:#9b2c2c}
+[data-plugin="version-manager"] .vm-dline.same{color:var(--muted)}
+/* 一致的小节折叠收起（v261009.53）：只有改动的小节需要确认 */
+[data-plugin="version-manager"] .vm-same{margin:10px 0;border-top:1px dashed var(--line);padding-top:8px}
+[data-plugin="version-manager"] .vm-same>summary{cursor:pointer;font-size:11.5px;color:var(--muted)}
+[data-plugin="version-manager"] .vm-same[open]>summary{margin-bottom:8px}
+[data-plugin="version-manager"] .vm-keep{font-size:11px;color:var(--muted);text-align:right;padding-right:4px}
+/* 内联变更对照（v261009.54）：只显示被改动的小节，差异直接展开 */
+[data-plugin="version-manager"] .vm-srow.vm-need{display:block;padding:10px 12px}
+[data-plugin="version-manager"] .vm-shead{display:flex;align-items:center;gap:10px;
+  justify-content:space-between;margin-bottom:6px}
+[data-plugin="version-manager"] .vm-shead .vm-sname{flex:1 1 auto;min-width:0}
+[data-plugin="version-manager"] .vm-choice{display:flex;gap:4px;flex:0 0 auto}
+[data-plugin="version-manager"] .vm-cbtn{border:1px solid var(--line);background:var(--surface-2);
+  color:var(--muted);font:inherit;font-size:11px;padding:3px 10px;cursor:pointer}
+[data-plugin="version-manager"] .vm-cbtn:first-child{border-radius:7px 0 0 7px}
+[data-plugin="version-manager"] .vm-cbtn:last-child{border-radius:0 7px 7px 0}
+[data-plugin="version-manager"] .vm-cbtn.on{background:var(--accent-soft);color:var(--accent-ink);
+  border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
+[data-plugin="version-manager"] .vm-sel{flex:0 0 220px}
+[data-plugin="version-manager"] .vm-need .vm-dwrap{grid-column:auto}
+[data-plugin="version-manager"] .vm-need .vm-diff{max-height:260px;margin:0}
+[data-plugin="version-manager"] .vm-same-row{display:flex;justify-content:space-between;gap:8px;
+  padding:4px 2px;border-bottom:1px solid color-mix(in srgb,var(--line) 45%,transparent)}
+[data-plugin="version-manager"] .vm-same-row .vm-sname{color:var(--muted)}
+/* 选版本（v261009.55）：对照 / 以这版为准 */
+[data-plugin="version-manager"] .vm-vrow.vm-compare{border-color:color-mix(in srgb,var(--accent) 45%,var(--line));
+  background:color-mix(in srgb,var(--accent-soft) 45%,var(--surface-2))}
+[data-plugin="version-manager"] .vm-vact{display:flex;gap:4px;flex:0 0 auto;align-self:center}
+[data-plugin="version-manager"] .vm-cmpick{display:inline-flex;align-items:center;gap:6px;margin-right:10px;
+  font-size:11.5px;color:var(--muted)}
+[data-plugin="version-manager"] .vm-cmpick .search-input{width:180px;height:26px}
+
+/* v261020 · Agent 自动确认（模型逐节选来源，失败回退规则） */
+[data-plugin="version-manager"] .vm-auto{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 8px}
+[data-plugin="version-manager"] .vm-auto-apply{margin:0;white-space:nowrap}
+[data-plugin="version-manager"] .vm-auto-state{font-size:11px;color:var(--muted)}
+[data-plugin="version-manager"] .vm-auto-result{border:1px solid color-mix(in srgb,var(--accent) 35%,var(--line));
+  background:var(--accent-soft);border-radius:8px;padding:8px 10px;margin:0 0 10px;font-size:11.5px;line-height:1.65}
+[data-plugin="version-manager"] .vm-auto-result.rule-fallback{border-color:color-mix(in srgb,var(--warning) 40%,var(--line));
+  background:color-mix(in srgb,var(--warning) 6%,transparent)}
+[data-plugin="version-manager"] .vm-auto-head{font-weight:600}
+[data-plugin="version-manager"] .vm-auto-note{color:var(--muted);margin-top:2px}
+[data-plugin="version-manager"] .vm-auto-reason{display:flex;gap:8px;margin-top:3px}
+[data-plugin="version-manager"] .vm-auto-reason span{flex:0 0 44%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+[data-plugin="version-manager"] .vm-auto-reason i{flex:1 1 auto;min-width:0;color:var(--muted);font-style:normal}
+[data-plugin="version-manager"] .vm-agent-tag{font-size:9px;font-weight:600;color:var(--accent-ink);
+  background:var(--accent-soft);border-radius:999px;padding:0 6px;margin-left:4px;vertical-align:1px}
+[data-plugin="version-manager"] .vm-auto-more{margin-top:6px}
+[data-plugin="version-manager"] .vm-auto-more>summary{cursor:pointer;font-size:11px;color:var(--muted)}
+[data-plugin="version-manager"] .vm-auto-more[open]>summary{margin-bottom:4px}
+
+/* v261020 · 批量清理快照 */
+[data-plugin="version-manager"] .vm-clean-card{border:1px solid color-mix(in srgb,var(--warning) 32%,var(--line));
+  background:color-mix(in srgb,var(--warning) 5%,transparent);border-radius:9px;padding:9px 10px;margin:0 0 10px}
+[data-plugin="version-manager"] .vm-clean-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px}
+[data-plugin="version-manager"] .vm-clean-total{font-size:10.5px;color:var(--warning);font-weight:600;white-space:nowrap}
+[data-plugin="version-manager"] .vm-clean-meta{font-size:10.5px;color:var(--muted);margin-top:3px}
+[data-plugin="version-manager"] .vm-clean-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}
+[data-plugin="version-manager"] .vm-clean-actions .secondary-btn{font-size:11px;padding:3px 8px;min-height:26px}
+[data-plugin="version-manager"] .vm-clean-hint{font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5}
+[data-plugin="version-manager"] .vm-clean-badge{font-size:9px;border-radius:999px;padding:0 5px;border:1px solid var(--line);color:var(--muted)}
+[data-plugin="version-manager"] .vm-clean-badge.changed{color:var(--warning);border-color:color-mix(in srgb,var(--warning) 40%,var(--line))}
+[data-plugin="version-manager"] .vm-clean-badge.same{color:var(--muted)}

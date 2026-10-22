@@ -1,0 +1,70 @@
+/* 日历与提醒 · 面板样式
+ * 作用域用**前缀匹配**：本插件登记了两个面板（页面 id = `milestone-calendar`、顶栏角标 id =
+ * `milestone-calendar-badge`），而内核写在挂载容器上的是**面板 id**——只按插件 id 精确匹配
+ * 只能覆盖页面那个，角标会掉样式。
+ */
+
+[data-plugin^="milestone-calendar"] .mc-card { display: grid; gap: 12px; }
+
+[data-plugin^="milestone-calendar"] .mc-summary { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+[data-plugin^="milestone-calendar"] .mc-chip {
+  font-size: 11px; padding: 2px 9px; border-radius: 999px;
+  border: 1px solid var(--line); color: var(--muted);
+}
+[data-plugin^="milestone-calendar"] .mc-chip.bad { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
+[data-plugin^="milestone-calendar"] .mc-chip.warn { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 40%, var(--line)); }
+[data-plugin^="milestone-calendar"] .mc-muted { font-size: 10px; color: var(--muted); }
+[data-plugin^="milestone-calendar"] .mc-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+[data-plugin^="milestone-calendar"] .mc-actions label { display: inline-flex; align-items: center; gap: 5px; }
+[data-plugin^="milestone-calendar"] .mc-actions input {
+  width: 62px; font: inherit; padding: 4px 7px; border: 1px solid var(--line);
+  border-radius: 7px; background: var(--surface); color: inherit;
+}
+
+[data-plugin^="milestone-calendar"] .mc-cal { border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
+[data-plugin^="milestone-calendar"] .mc-week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 6px; }
+[data-plugin^="milestone-calendar"] .mc-week span { font-size: 10px; color: var(--muted); text-align: center; }
+[data-plugin^="milestone-calendar"] .mc-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+[data-plugin^="milestone-calendar"] .mc-cell {
+  border: 1px solid var(--line); border-radius: 7px; min-height: 46px; padding: 4px 5px;
+  display: grid; align-content: space-between; cursor: pointer; background: transparent;
+}
+[data-plugin^="milestone-calendar"] .mc-cell.out { opacity: .38; }
+[data-plugin^="milestone-calendar"] .mc-cell.today { border-color: var(--accent); border-width: 2px; }
+[data-plugin^="milestone-calendar"] .mc-cell.has { background: color-mix(in srgb, var(--line) 16%, transparent); }
+[data-plugin^="milestone-calendar"] .mc-daynum { font-size: 11px; color: var(--muted); }
+[data-plugin^="milestone-calendar"] .mc-dots { display: flex; gap: 3px; align-items: center; flex-wrap: wrap; }
+[data-plugin^="milestone-calendar"] .mc-dots i { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+[data-plugin^="milestone-calendar"] .mc-dots em { font-size: 9px; color: var(--muted); font-style: normal; }
+[data-plugin^="milestone-calendar"] .dot-ms { background: var(--accent); }
+[data-plugin^="milestone-calendar"] .dot-todo { background: var(--warning); }
+[data-plugin^="milestone-calendar"] .mc-legend { display: flex; gap: 8px; align-items: center; font-size: 10px; color: var(--muted); margin-top: 8px; }
+[data-plugin^="milestone-calendar"] .mc-legend i { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+
+[data-plugin^="milestone-calendar"] .mc-block { margin-top: 10px; }
+[data-plugin^="milestone-calendar"] .mc-block-head {
+  font-size: 11px; color: var(--muted); border-left: 3px solid var(--line);
+  padding-left: 8px; margin-bottom: 5px;
+}
+[data-plugin^="milestone-calendar"] .mc-block-head.bad { color: var(--danger); border-left-color: var(--danger); }
+[data-plugin^="milestone-calendar"] .mc-block-head.warn { color: var(--warning); border-left-color: var(--warning); }
+[data-plugin^="milestone-calendar"] .mc-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 3px; }
+[data-plugin^="milestone-calendar"] .mc-list li { display: flex; gap: 8px; align-items: baseline; font-size: 11px; line-height: 1.7; }
+[data-plugin^="milestone-calendar"] .mc-kind {
+  flex: 0 0 auto; font-size: 10px; padding: 0 5px; border-radius: 5px;
+  border: 1px solid var(--line); color: var(--muted);
+}
+[data-plugin^="milestone-calendar"] .mc-title { flex: 1 1 auto; overflow-wrap: anywhere; }
+[data-plugin^="milestone-calendar"] .mc-due { flex: 0 0 auto; font-variant-numeric: tabular-nums; color: var(--muted); }
+[data-plugin^="milestone-calendar"] .mc-late { flex: 0 0 auto; color: var(--danger); }
+[data-plugin^="milestone-calendar"] .mc-today { flex: 0 0 auto; color: var(--warning); }
+
+/* 顶栏槽位角标（容器在顶栏，容器上带 data-plugin="milestone-calendar-badge"；前缀匹配同样命中） */
+[data-plugin^="milestone-calendar"].mc-badge-box { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+[data-plugin^="milestone-calendar"] .mc-badge {
+  font-size: 11px; padding: 1px 8px; border-radius: 999px;
+  border: 1px solid var(--line); color: var(--muted); white-space: nowrap;
+}
+[data-plugin^="milestone-calendar"] .mc-badge.bad { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); }
+[data-plugin^="milestone-calendar"] .mc-badge.warn { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 45%, var(--line)); }
+[data-plugin^="milestone-calendar"] .mc-badge.calm { color: var(--muted); }

@@ -1,0 +1,5 @@
+interface:
+  display_name: "技能编写"
+  short_description: "把可复用科研流程整理成技能包"
+policy:
+  allow_implicit_invocation: true

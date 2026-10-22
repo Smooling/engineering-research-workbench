@@ -1,6 +1,36 @@
 # Large Workspace Performance Architecture
 
-This branch implements the large-workspace optimization described in the performance manual while preserving the project's Markdown-first design.
+The application keeps Markdown as the source of truth and uses a disposable SQLite read index. The 2026-10-15 optimization replaces the remaining request-time scans and duplicate write paths.
+
+## Runtime behavior after the architecture review
+
+- Workspace paths are normalized and the directory layout is initialized once per Workspace. Explicit Reload/repair resets this cache.
+- Configuration is loaded on first use, rather than during module import. Importing the indexer no longer migrates personal configuration or depends on import order.
+- Startup synchronizes the index once. A daemon worker then checks external file changes every 30 seconds. Document reads, lists, graphs and searches use the current SQLite snapshot and never start a periodic filesystem scan. External edits may take one interval to appear; in-app writes are indexed before returning success.
+- `indexer.create_doc/update_doc/delete_doc/delete_docs` form the common document service used by HTTP, Agent tools and literature. Markdown codecs and atomic file writes stay in `store.py`.
+- Schema 3 maps FTS rowids to document rowids, indexes normalized titles/link tokens and adds indexes matching the list sort expression. Schema migration sets a persistent rebuild marker, so an interrupted migration retries on restart.
+- Ordinary writes update only affected graph sources, including incoming title/ID references, unresolved links and duplicate-title fallback. Full graph rebuild remains an explicit repair operation. Batch deletion shares a transaction and refreshes affected sources once.
+- SQLite connection contexts close connections, and schema setup is cached per database. Read requests do not acquire the Python writer lock. Manual rebuild uses a transaction so concurrent readers keep their previous committed snapshot.
+- Literature metadata joins query SQLite in batches instead of loading all Markdown bodies. Related-knowledge title/tag dictionaries are cached against `documents_version`; todo/activity-only updates do not invalidate them.
+- The graph route mounts the optimized renderer directly with its already fetched data. The canvas replacement observer, old graph renderer, unused research-overview renderer and unused milestone fishbone/3D implementation are removed. Existing old bookmarks redirect to the current overview.
+- MathJax and Mermaid load only when needed, with shared load promises, local assets and the previous CDN fallbacks. Math typesetting is serialized. This removes about 4.68 MB of raw scripts from the initial load list.
+
+## Measured comparison
+
+Windows / Python 3.10, 10,000 generated documents, about 600 body characters each, two tags and one project per document (30,000 graph edges). Three-sample medians; separate runs on the same host, not a strict performance guarantee.
+
+| Operation | Review baseline | Optimized |
+| --- | ---: | ---: |
+| List 50 documents | 75.31 ms | 11.34 ms |
+| Dashboard | 356.89 ms | 198.06 ms |
+| Graph, 300 document nodes | 78.10 ms | 39.26 ms |
+| Global search, no match | 105.21 ms | 17.37 ms |
+| Unchanged filesystem reconciliation | 80,659.90 ms | 423.17 ms |
+| Index one document | 833.05 ms | 106.66 ms |
+
+The baseline index initialization expanded an existing 1,000-document index, while the new synthetic benchmark initialized a fresh 10,000-document index in about 13 seconds; these initialization workloads are not identical and are not included in the comparison table. Browser regression tests verify one graph request per visit, deferred/deduplicated library loads, real MathJax/Mermaid rendering, and existing document/todo/navigation behavior.
+
+Remaining work for larger deployments includes indexing long Agent transcripts, SQL pagination of the literature registry itself, separate total graph-node/edge budgets, and consolidating remaining CSS/DOM decoration patches. Worker-based graph layout should be driven by browser profiling.
 
 ## Invariants
 
@@ -45,7 +75,7 @@ Markdown / projects.json / todos.json / activity.jsonl
 - `todos_index`: lightweight todo query table.
 - `activity_daily`: incremental daily activity aggregation.
 
-The index records file `mtime_ns` and size. A normal sync stats Markdown files and reparses only new or changed files; in-app document saves update the affected document immediately.
+The index records file `mtime_ns` and size. Background synchronization uses `os.scandir` metadata and reparses only new or changed files; in-app document saves update the affected document immediately. The periodic scan holds the writer lock but does not block snapshot readers.
 
 ## API behavior
 
@@ -71,7 +101,7 @@ Paged response:
 
 ### Search
 
-Markdown document search is served from FTS5 rather than rereading every file. The browser performance layer aborts superseded global-search requests. TODO metadata is indexed; Agent chat keeps its previous transcript-search behavior.
+Markdown document search is served from FTS5 rather than rereading every file. Short queries use one FTS-content substring scan, avoiding an N-by-N correlated lookup; list and global search consult the actual database tokenizer. Literal `%` and `_` are escaped. The browser performance layer aborts superseded global-search requests. TODO metadata is indexed; Agent chat keeps its previous transcript-search behavior.
 
 ### Dashboard
 
@@ -130,6 +160,18 @@ For a cold-index measurement:
 ```bash
 python tools/performance_benchmark.py --rebuild --repeat 3
 ```
+
+For reproducible checks without personal configuration or research data:
+
+```bash
+python tools/test_index_architecture.py
+python tools/test_bulk_delete.py
+python tools/self_check.py
+python tools/performance_benchmark.py --synthetic 10000 --query zzzznomatch --repeat 3
+node tools/ui_usability_check.js
+```
+
+The browser check requires Playwright and a local Edge installation. The synthetic benchmark keeps its generated Workspace and JSON results under `.scratch/performance-*` for inspection. Self-check now uses isolated temporary configuration, rather than saving and restoring the user's config files.
 
 The benchmark does not create or modify research documents. `--rebuild` only deletes/recreates the disposable SQLite cache.
 

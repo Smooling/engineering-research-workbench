@@ -1,0 +1,399 @@
+/* Shared readable type scale and interaction refinements. Loaded after the theme. */
+/* Refresh opens a choice instead of running a system action immediately. */
+#reload-btn{display:grid;place-items:center;width:32px;height:32px;min-width:32px;min-height:0;padding:0;border:1px solid var(--sc-line);border-radius:7px!important;background:var(--sc-card);color:var(--sc-muted)}
+#reload-btn svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+#reload-btn:hover,#reload-btn[aria-expanded="true"]{background:var(--sc-subtle);color:var(--sc-text)}
+#reload-btn:focus-visible{outline:2px solid var(--sc-task);outline-offset:2px}
+html[data-desktop="true"] #reload-btn{width:calc(32px * var(--desktop-chrome-scale));height:calc(30px * var(--desktop-chrome-scale));min-width:0;padding:0;border:0;background:transparent}
+/* Keep both graph bundle steps at the same size; only their contents scroll. */
+#modal:has(#opt-bundle-list,#opt-bundle-content){width:min(960px,calc(var(--vw-px,100vw) - 48px));height:min(640px,calc(var(--vh-px,100vh) - 48px));max-height:calc(var(--vh-px,100vh) - 32px);display:grid;grid-template-rows:auto minmax(0,1fr) auto;resize:none}
+#modal:has(#opt-bundle-content) .modal-body{display:flex;min-height:0;overflow:hidden}
+#modal #opt-bundle-content{display:block;flex:1;min-width:0;min-height:0;width:100%;height:100%!important;max-height:none;padding:14px;border:1px solid var(--sc-line-strong);border-radius:8px;background:var(--sc-card);color:var(--sc-text);resize:none;overflow:auto;font-size:13px;line-height:1.65;white-space:pre-wrap;outline:none}
+#modal #opt-bundle-content:focus{border-color:var(--sc-task);box-shadow:0 0 0 2px color-mix(in srgb,var(--sc-task) 20%,transparent)}
+:root{--type-caption:11px;--type-meta:12px;--type-body:13px;--type-title:15px;--sc-muted:#59677D;--sc-subtle-text:#637187}
+html[data-theme="dark"]{--sc-muted:#A8B4C9;--sc-subtle-text:#A8B4C9}
+#app :is(small,kbd,[class$="-meta"],[class$="-hint"],[class$="-caption"]){font-size:var(--type-caption)!important;line-height:1.5!important}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.brand-mark{background:transparent!important;box-shadow:none!important;border:0!important;overflow:visible!important}
+.brand-mark::before,.brand-mark::after{display:none!important}
+.brand-mark img{display:block;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 3px 5px rgba(75,79,188,.16))}
+.nav-group-head{background:transparent!important;border:0!important;box-shadow:none!important;border-radius:0!important;margin:12px 4px 5px!important;padding:3px 6px!important;min-height:26px!important}
+#sidebar-nav .nav-group-head .group-toggle{color:var(--sc-muted)!important;font-size:11px!important;font-weight:750!important;letter-spacing:.025em;gap:6px!important}
+.nav-group-head .pin{color:var(--sc-muted)!important;font-size:11px!important;opacity:.65}
+.nav-group-head .pin:hover,.nav-group.pinned .pin{color:var(--sc-task)!important;opacity:1}
+.nav-item{font-size:13px!important;min-height:36px!important}
+#sidebar-nav .nav-group-head .chev{font-size:12px!important}
+.card-kicker,.eyebrow,.page-date,.brand-copy p,.sidebar-footer,.version,
+.today-metrics span,.quick-action small,.stat-label,.project-pulse-name span,.project-pulse-metrics span,
+.degree-progress-dates,.degree-progress-foot,.heatmap-card .card-head p,.heatmap-foot,.heatmap-months,
+.heatmap-weekdays,.heatmap-legend,.heatmap-summary,.heatmap-summary span,.condition-score span,
+.row-meta,.field-help,.field label,.field-label-row label,.preview-pane-meta,.graph-canvas-help,
+.perf-doc-pager,.perf-doc-pager span,.perf-graph-status,.project-card-meta,.project-id,
+.recent-activity-row .row-meta,.overview-task-due,.mini-ms-date strong,
+.doc-compact-meta,.doc-mini-flag,.doc-editor-footer,.editor-status,
+.fab-sub,.fab-context,.fab-foot-top,.fab-msg-meta,.fab-rel-excerpt,.fab-timeline-meta,
+.fab-rel-gcap,.fab-rel-count,.fab-rel-empty,.fab-meta{font-size:var(--type-caption)!important;line-height:1.5!important;color:var(--sc-muted)!important}
+.row-meta,.page-date,.field-help{font-size:var(--type-meta)!important}
+.badge{font-size:11px!important;line-height:1.45!important}
+.quick-action b{font-size:12px!important}
+.quick-action small{font-size:11px!important;letter-spacing:0!important}
+#app :is(.heatmap-axis-cap,.heatmap-weekdays span,.heatmap-footer>span,.heatmap-threshold-summary,.academic-empty span,.overview-today p,.quick-capture-copy p,.overview-recent-head p,.top-search-btn kbd){font-size:11px!important;line-height:1.5!important;color:var(--sc-muted)!important}
+.quick-action{min-height:54px!important}
+#app .quick-action{min-width:94px!important;max-width:none!important;flex:1 1 94px!important}
+#app .quick-capture-actions{flex-wrap:wrap!important}
+#app .quick-action :is(b,small){text-overflow:clip!important;overflow:visible!important;white-space:nowrap!important}
+.overview-dashboard .card-head h3,.overview-module-heading h3{font-size:15px!important}
+.overview-dashboard .card-head p{font-size:12px!important;color:var(--sc-muted)!important}
+.overview-task-card .card-head,.overview-milestone-card .card-head{gap:8px!important;flex-wrap:wrap}
+.overview-todo-add{display:flex;gap:8px;margin:0 0 10px}
+.overview-todo-add input{min-width:0;flex:1;font-size:13px!important}
+.overview-todo-add button{flex-shrink:0;font-size:12px}
+.overview-task-row{display:grid!important;grid-template-columns:18px minmax(0,1fr) auto auto!important;gap:10px!important;align-items:center!important;padding:10px 8px!important;min-height:56px}
+.overview-task-row .row-main{display:block!important;min-width:0}
+.overview-task-row .row-title{font-size:13px!important;line-height:1.5!important}
+.overview-task-row .row-meta{margin:3px 0 0!important;max-width:100%!important;text-align:left!important;font-size:11px!important}
+.todo-check{width:16px!important;height:16px!important;accent-color:var(--sc-task);cursor:pointer}
+.overview-task-due{white-space:nowrap;font-variant-numeric:tabular-nums}
+.overview-task-due.is-overdue{color:#B34B58!important}
+.overview-milestone-row{grid-template-columns:78px minmax(0,1fr) auto!important;gap:10px!important;padding:10px 8px!important;min-height:56px}
+.mini-ms-date{width:auto!important;min-width:0!important}
+.mini-ms-date strong{white-space:nowrap!important;word-break:normal!important;color:#966320!important;font-variant-numeric:tabular-nums}
+.overview-milestone-row .row-main{display:block!important;min-width:0}
+.overview-milestone-row .row-title{font-size:13px!important}
+.overview-milestone-row .row-meta{margin:3px 0 0!important;text-align:left!important;max-width:100%!important;font-size:11px!important}
+.rhythm-summary{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:12px}
+.rhythm-summary strong{font-size:28px;line-height:1.1;color:var(--sc-research);font-variant-numeric:tabular-nums}
+.rhythm-summary span{font-size:12px;color:var(--sc-muted)}
+.rhythm-summary>div{display:flex;align-items:baseline;gap:6px}
+.rhythm-trend{font-size:11px!important;text-align:right}
+.rhythm-week{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px;min-height:112px;margin-bottom:16px}
+.rhythm-day{display:flex;flex-direction:column;align-items:center;gap:5px;min-width:0}
+.rhythm-day-count,.rhythm-day time{font-size:11px;line-height:1.4;color:var(--sc-muted);font-variant-numeric:tabular-nums}
+.rhythm-bar-track{height:65px;width:100%;max-width:32px;display:flex;align-items:flex-end;background:var(--sc-research-soft);border-radius:5px;overflow:hidden}
+.rhythm-bar-track i{display:block;width:100%;background:linear-gradient(0deg,#168C78,#68C7B0);border-radius:5px;min-height:3px}
+.rhythm-bar-track i.is-empty{background:color-mix(in srgb,var(--sc-research) 20%,var(--sc-card))}
+.rhythm-goal{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--sc-muted);margin-bottom:8px}
+.rhythm-goal b{color:var(--sc-text)}
+.rhythm-next{display:block;width:100%;margin-top:12px;border:0;border-radius:7px;background:var(--sc-research-soft);color:var(--sc-research);font-size:12px;line-height:1.5;text-align:left;padding:9px 10px;cursor:pointer}
+.rhythm-next:hover{background:color-mix(in srgb,var(--sc-research) 14%,var(--sc-card))}
+.doc-item{height:auto!important;min-height:76px!important;padding-top:12px!important;padding-bottom:12px!important}
+.doc-item .title{font-size:13px!important;padding-right:12px;line-height:1.5!important}
+.doc-compact-meta{display:flex;flex-wrap:wrap;align-items:center;gap:4px 7px;white-space:normal!important;overflow:visible!important;line-height:1.5!important;min-width:0}
+.doc-compact-meta .doc-project{flex:1 1 100%;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* v261020 · 项目名独占一行（长名按整行宽度省略），标签/状态/日期另起一行紧跟 */
+.doc-compact-meta :is(.mark-badge,.doc-status,time){flex:0 0 auto}
+.doc-compact-meta .mark-badge{display:inline-flex;border-radius:5px!important;padding:1px 6px!important;border-width:1px!important;font-size:11px!important;font-weight:650;white-space:nowrap}
+.mark-badge{color:var(--mark-color)!important;border-color:color-mix(in srgb,var(--mark-color) 65%,transparent)!important;background:color-mix(in srgb,var(--mark-color) 10%,var(--sc-card))!important}
+#app .workspace-mini{font-size:11px!important;color:var(--sc-muted)!important}
+#app :is(.editor-zoom-field>span,.graph-smart-search kbd,.graph-result-kind,.graph-result-row time){font-size:11px!important;color:var(--sc-muted)!important}
+.doc-compact-meta time{white-space:nowrap;font-variant-numeric:tabular-nums}
+.doc-status{color:var(--sc-muted)}
+.graph-view-label{font-size:12px;font-weight:600;color:var(--sc-muted)}
+#erw-fab-ball{transition:transform .22s ease,box-shadow .22s ease!important}
+#erw-fab-ball[data-dock="right"]{transform:translateX(50%)!important}
+#erw-fab-ball[data-dock="left"]{transform:translateX(-50%)!important}
+#erw-fab-ball:is(.is-revealed,:hover,:focus-visible,.dragging){transform:none!important}
+#erw-fab-panel{max-width:calc(var(--vw-px,100vw) - 16px);max-height:calc(var(--vh-px,100vh) - 16px)}
+#erw-fab-panel .fab-messages{min-height:0}
+#erw-fab-panel .fab-sub{font-size:11px!important}
+#erw-fab-panel{container-type:inline-size}
+#erw-fab-panel .fab-head{display:grid!important;grid-template-columns:26px minmax(0,1fr) auto;align-items:center;gap:8px;padding:8px 10px;min-height:46px;flex-wrap:nowrap}
+#erw-fab-panel .fab-title{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#erw-fab-panel .fab-head-actions{display:flex!important;flex-wrap:nowrap!important;align-items:center;gap:5px;min-width:0;width:auto;margin-left:0}
+#erw-fab-panel .fab-head-actions select{font-size:12px!important;width:clamp(84px,22cqw,140px)!important;max-width:140px!important;min-width:0;flex:0 1 auto;height:28px}
+#erw-fab-panel .fab-head-actions button{flex:0 0 28px;width:28px;min-width:28px;height:28px;padding:0;display:grid;place-items:center}
+#erw-fab-panel :is(.fab-tools,.fab-tl,.fab-tl-legend,.fab-draft-note,.fab-drafts-note,.fab-drow-id,.fab-hist-cur,.dt-badge,.fab-quick button){font-size:11px!important;line-height:1.5!important}
+.fab-resize-edge{position:absolute;z-index:12;touch-action:none}
+.fab-resize-n,.fab-resize-s{height:7px;left:16px;right:16px;cursor:ns-resize}
+.fab-resize-n{top:0}.fab-resize-s{bottom:0}
+.fab-resize-e,.fab-resize-w{width:7px;top:16px;bottom:16px;cursor:ew-resize}
+.fab-resize-e{right:0}.fab-resize-w{left:0}
+.fab-resize-ne,.fab-resize-nw,.fab-resize-se,.fab-resize-sw{width:16px;height:16px}
+.fab-resize-ne{right:0;top:0;cursor:nesw-resize}.fab-resize-nw{left:0;top:0;cursor:nwse-resize}
+.fab-resize-se{right:0;bottom:0;cursor:nwse-resize}.fab-resize-sw{left:0;bottom:0;cursor:nesw-resize}
+.fab-resize-se::after{content:"";position:absolute;right:4px;bottom:4px;width:7px;height:7px;border-right:2px solid var(--sc-muted);border-bottom:2px solid var(--sc-muted);border-radius:1px;opacity:.65}
+#erw-fab-panel.is-resizing{user-select:none;animation:none!important}
+:is(button,a,input,select,textarea,[role="button"]):focus-visible{outline:2px solid var(--sc-task)!important;outline-offset:3px}
+@media(hover:hover){
+  .overview-ops-grid>.card:hover,.project-manager-card:hover,.stat-card:hover{transform:translateY(-2px);box-shadow:var(--sc-shadow-hover)!important;border-color:var(--sc-line-strong)!important}
+  .project-pulse-item:hover,.recent-activity-row:hover{transform:translateY(-1px)}
+}
+html[data-animations="off"] *,html[data-animations="off"] *::before,html[data-animations="off"] *::after{animation:none!important;transition:none!important}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+@media(max-width:1250px){.overview-task-row{grid-template-columns:18px minmax(0,1fr) auto!important}.overview-task-due{grid-column:2;grid-row:2}.overview-task-row .badge{grid-column:3;grid-row:1}.overview-milestone-row{grid-template-columns:78px minmax(0,1fr)!important}.overview-milestone-row>.badge{grid-column:2;justify-self:start}}
+@media(max-width:820px){
+  .overview-task-row{grid-template-columns:18px minmax(0,1fr) auto!important}.rhythm-week{gap:8px}.overview-todo-add{flex-wrap:wrap}.overview-todo-add input{flex-basis:180px}
+  .app-shell{grid-template-columns:minmax(0,1fr)!important}
+  .sidebar{height:auto!important;min-height:0!important;max-height:none!important;min-width:0!important;width:100%!important;overflow:hidden!important}
+  .sidebar .brand{min-height:44px!important;height:auto!important;padding:8px 12px!important}
+  #sidebar-nav{display:flex!important;gap:8px;overflow-x:auto!important;padding:5px 10px 9px!important;flex:none!important;min-width:0!important;max-width:100%!important}
+  #sidebar-nav .nav-group{flex:0 0 auto;margin:0!important}
+  #sidebar-nav .nav-group-head{display:none!important}
+  #sidebar-nav .nav-items{display:flex!important;flex-wrap:nowrap;gap:4px}
+  #sidebar-nav .nav-item{width:auto!important;min-width:max-content;padding:8px 10px!important}
+  .sidebar-footer{display:none!important}
+  #app .overview-recent-group{grid-template-columns:minmax(0,1fr)!important}
+  #app .overview-recent-group>.recent-card{min-height:130px!important;border-left:0!important}
+}
+
+/* Content-sized layout: remove inherited viewport filling and decorative copy. */
+#app .card-kicker{display:none!important}
+#app .topbar{height:58px!important;min-height:58px!important;padding:6px 14px!important;align-items:center!important}
+#app .topbar .page-heading{height:auto!important;min-height:0!important;display:flex!important;flex-direction:column!important;justify-content:center!important;gap:0!important;overflow:visible!important}
+#app .page-heading h2{line-height:1.25!important;margin:0!important}
+#app .page-date{line-height:1.4!important;margin-top:2px!important}
+#main{padding:10px 12px 16px!important}
+#main .overview-dashboard{height:auto!important;min-height:0!important;grid-template-rows:auto!important;align-content:start!important;gap:8px!important}
+#main :is(.overview-top-row,.overview-mid-row,.overview-ops-grid,.overview-lower-band){height:auto!important;min-height:0!important;align-items:stretch!important;gap:8px!important}
+#main .overview-top-row>.heatmap-card{height:100%!important;min-height:0!important;max-height:none!important;align-self:stretch!important;padding:10px 12px!important}
+#main .heatmap-card .card-head{min-height:30px!important;margin-bottom:4px!important}
+#main .heatmap-card .heatmap-scroll{flex:none!important;height:auto!important;max-height:none!important;padding:0!important;overflow-y:hidden!important;overflow-x:auto!important}
+#main .heatmap-card .heatmap-plot{min-height:0!important}
+#main .heatmap-weekdays span{height:var(--heat-cell-height);line-height:var(--heat-cell-height)!important}
+#main .overview-top-row>.overview-academic-grid{height:100%!important;min-height:0!important;grid-template-rows:auto minmax(0,1fr)!important;align-content:start!important}
+#main .overview-academic-grid>.card{height:auto!important;min-height:0!important;padding:10px 12px!important}
+#main .overview-academic-grid .card-head{margin-bottom:5px!important}
+#main .overview-academic-grid .condition-list{flex:none!important;align-content:start!important;margin-top:4px!important;gap:6px!important}
+#main .overview-academic-grid :is(.degree-progress-dates,.degree-progress-foot){margin-top:5px!important}
+#main .academic-empty{min-height:48px!important;padding:8px!important}
+#main .overview-mid-row>.card{min-height:0!important;height:auto!important;padding:10px 12px!important}
+#main .overview-today{gap:14px!important}
+#main .overview-today h3{font-size:15px!important;margin:0!important;white-space:nowrap}
+#main .today-metrics>div{padding:3px 8px!important}
+#main .quick-capture-card{grid-template-columns:auto minmax(0,1fr)!important;gap:10px!important;align-items:center!important}
+#main .quick-capture-copy h3{font-size:14px!important;margin:0!important;white-space:nowrap}
+#main .quick-action{display:flex!important;align-items:center;justify-content:center!important;gap:5px;min-height:32px!important;padding:5px 7px!important;min-width:76px!important;flex:1 1 76px!important}
+#main .quick-action>span{width:20px!important;height:20px!important;flex:0 0 20px}
+#main .overview-ops-grid>.card{height:100%!important;min-height:0!important;padding:10px!important;align-self:stretch!important;justify-content:flex-start!important}
+#main .overview-ops-grid>.card>.card-head{min-height:36px!important;margin:-10px -10px 8px!important;padding:7px 10px!important;align-items:center!important}
+#main .overview-module-heading{padding-left:32px!important}
+#main .overview-module-icon{width:24px!important;height:24px!important;border-radius:7px!important}
+#main .overview-module-icon svg{width:16px!important;height:16px!important}
+#main .overview-module-heading h3{margin:0!important;font-size:14px!important}
+#main :is(.overview-task-list,.overview-milestone-list){height:auto!important;min-height:0!important;flex:0 0 auto!important;grid-auto-rows:max-content!important;align-content:start!important;gap:2px!important;padding:0!important}
+#main :is(.overview-task-row,.overview-milestone-row){min-height:44px!important;padding:5px 6px!important;margin:0!important}
+#main :is(.overview-task-row,.overview-milestone-row) .row-meta{margin-top:1px!important}
+#main .overview-todo-add{margin-bottom:6px;gap:6px}
+#main .rhythm-summary{margin-bottom:7px}
+#main .rhythm-summary strong{font-size:24px}
+#main .rhythm-week{min-height:84px;margin-bottom:9px;gap:8px}
+#main .rhythm-bar-track{height:44px}
+#main .rhythm-day{gap:3px}
+#main .rhythm-goal{margin-bottom:6px;font-size:11px}
+#main .rhythm-next{margin-top:8px;padding:6px 8px;font-size:11px}
+#main .overview-lower-left{gap:8px!important}
+#main .project-pulse-card{padding:10px!important;min-height:0!important}
+#main .project-pulse-card>.card-head{min-height:36px;margin:-10px -10px 8px!important;padding:7px 10px!important}
+#main .project-pulse-grid{gap:6px!important}
+#main .project-pulse-item{padding:9px!important}
+#main .project-pulse-metrics{margin-top:6px!important;padding:5px!important}
+#main .overview-stats{gap:6px!important}
+#main .stat-card{min-height:52px!important;padding:8px 12px!important}
+#main .stat-value{font-size:22px!important;line-height:1.2!important}
+#main .overview-recent-section{height:100%!important;min-height:0!important;align-self:stretch!important}
+#main .overview-recent-head{min-height:36px!important;padding:7px 10px!important}
+#main .overview-recent-group>.recent-card{height:100%!important;min-height:0!important}
+#main .recent-card-head{min-height:36px!important;padding:6px 9px!important}
+#main .recent-card .list-row{min-height:38px!important;padding:5px 8px!important}
+#main .recent-card .empty{min-height:52px!important;padding:8px!important}
+#main .project-manager{gap:8px}
+#main .project-manager-head{padding:10px 12px!important;gap:12px;min-height:0;flex-direction:row!important;align-items:center!important}
+#main .project-manager-head h3{margin:0;font-size:15px}
+#main .project-manager-grid{grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:8px;align-items:start}
+#main .project-manager-card{padding:12px!important;gap:8px!important;align-content:start}
+#main .project-card-top{gap:8px;align-items:center}
+#main .project-card-top h3{margin:0;font-size:15px;line-height:1.4}
+#main .project-desc{min-height:0;font-size:13px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+#main .project-card-metrics{gap:5px}
+#main .project-card-metrics span{padding:5px 7px;font-size:11px;border-radius:7px}
+#main .project-card-metrics b{font-size:16px;line-height:1.3;margin:0}
+#main .project-card-actions button{min-height:28px!important;padding:3px 10px!important}
+@media(max-width:1099px){#main .overview-today h3{white-space:normal}}
+@media(max-width:820px){
+  #app .topbar{height:auto!important;min-height:52px!important;padding:6px 10px!important}
+  #main .overview-top-row>.overview-academic-grid{grid-template-rows:auto!important}
+  #main .quick-capture-card{grid-template-columns:minmax(0,1fr)!important}
+  #main .project-manager-grid{grid-template-columns:minmax(0,1fr)}
+  #main .project-card-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+
+/* Aligned dashboard bands with five-row scrolling windows. */
+#main .overview-dashboard{--overview-row-height:48px}
+#main .overview-ops-grid>.card>.card-head{height:44px!important;min-height:44px!important;flex:0 0 44px!important;flex-wrap:nowrap!important}
+#main .overview-ops-grid .overview-module-heading{flex:1;min-width:0}
+#main .overview-ops-grid .card-head .secondary-btn{min-height:28px!important;height:28px!important;padding:3px 8px!important;white-space:nowrap}
+#main :is(.overview-task-list,.overview-milestone-list){position:relative;display:block!important;height:calc(5 * var(--overview-row-height))!important;min-height:calc(5 * var(--overview-row-height))!important;max-height:calc(5 * var(--overview-row-height))!important;overflow-y:auto!important;overflow-x:hidden!important;overscroll-behavior:contain;scrollbar-gutter:stable;flex:0 0 auto!important;scroll-padding-block:0}
+#main :is(.overview-task-row,.overview-milestone-row){height:var(--overview-row-height)!important;min-height:var(--overview-row-height)!important;max-height:var(--overview-row-height)!important;box-sizing:border-box;overflow:hidden;gap:6px!important;padding:4px 6px!important}
+#main .overview-task-row{grid-template-columns:18px minmax(0,1fr) auto auto!important}
+#main :is(.overview-task-row,.overview-milestone-row) .row-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4!important}
+#main :is(.overview-task-row,.overview-milestone-row) .row-meta{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px!important;line-height:1.35!important;margin-top:1px!important}
+#main .overview-task-due,#main .overview-task-row .badge{grid-column:auto!important;grid-row:auto!important}
+#main .overview-milestone-row{grid-template-columns:78px minmax(0,1fr) auto!important}
+#main .overview-milestone-row>.badge{grid-column:auto!important;justify-self:end!important}
+#main .overview-milestone-row.is-nearest{background:var(--sc-milestone-soft)!important;box-shadow:inset 2px 0 var(--sc-milestone)}
+#main .overview-list-spacer{height:calc(2 * var(--overview-row-height));pointer-events:none}
+#main .overview-ms-toolbar,#main .overview-todo-add{height:32px;min-height:32px;flex:0 0 32px;margin:0 0 8px}
+#main .overview-ms-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;color:var(--sc-muted)}
+#main .overview-ms-toolbar button{height:28px;min-height:28px;padding:3px 8px;font-size:11px}
+#main .overview-todo-add :is(input,button){height:32px;min-height:32px;padding-top:4px!important;padding-bottom:4px!important}
+#main .rhythm-card .rhythm-week{flex:1;min-height:110px;margin-top:5px}
+#main .rhythm-card .rhythm-bar-track{flex:1;height:auto;min-height:60px;max-height:112px}
+#main .rhythm-card .rhythm-next{margin-top:10px}
+#main .overview-lower-left{height:100%;grid-template-rows:minmax(0,1fr) auto!important;align-content:stretch!important}
+#main .overview-lower-left>.project-pulse-card{height:100%;display:flex;flex-direction:column}
+#main .project-pulse-grid{flex:1;align-content:stretch;grid-auto-rows:1fr}
+#main .overview-recent-section{display:flex;flex-direction:column}
+#main .overview-recent-group{flex:1;min-height:0;align-items:stretch!important}
+#main .recent-card-head{min-height:30px!important;height:30px!important;flex:0 0 30px;padding:3px 8px!important}
+#main .recent-card-head :is(button,.recent-card-icon){height:22px!important;min-height:22px!important;padding:1px 4px!important}
+#main .recent-card-icon{width:20px;flex-basis:20px;border-radius:5px}
+#main .recent-card :is(.list-row,.recent-activity-row){flex:0 0 auto;min-height:44px!important;padding:5px 8px!important}
+#main .recent-card .row-main{display:block!important;min-width:0}
+#main .recent-card .row-title{display:-webkit-box!important;-webkit-box-orient:vertical!important;-webkit-line-clamp:2!important;white-space:normal!important;overflow:hidden!important;text-overflow:ellipsis!important;max-width:100%!important;max-height:2.8em;line-height:1.4!important}
+#main .recent-card .row-meta{display:block!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;text-align:left!important;max-width:100%!important;margin:2px 0 0!important;font-size:11px!important}
+
+/* Today and capture are matching cards with the same content baseline. */
+#main .overview-mid-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;border:0!important;background:transparent!important;overflow:visible!important}
+#main .overview-mid-row>.card{height:100%!important;min-height:0!important;display:flex!important;flex-direction:column!important;align-items:stretch!important;gap:8px!important;border:1px solid var(--sc-line)!important;border-radius:10px!important;background:var(--sc-card)!important;padding:10px 12px!important}
+#main .overview-today::after{display:none!important}
+#main :is(.overview-today h3,.quick-capture-copy h3){font-size:14px!important;line-height:22px!important;margin:0!important}
+#main .today-metrics{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;width:100%;gap:6px}
+#main .today-metrics>div{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:2px;min-width:0;height:48px;padding:5px 8px!important;border:0!important;border-radius:7px;background:var(--sc-subtle)!important}
+#main .today-metrics strong{font-size:20px!important;line-height:1.1}
+#main .today-metrics span{font-size:11px!important;white-space:nowrap}
+#main .quick-capture-copy{max-width:none!important}
+#main .quick-capture-actions{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr));align-items:stretch!important;gap:6px!important;overflow:visible!important}
+#main .quick-action{height:48px!important;min-height:48px!important;min-width:0!important;max-width:none!important;width:auto!important;padding:5px!important;gap:5px!important}
+
+/* Section labels remain smaller than links while gaining a distinct hierarchy. */
+#sidebar-nav .nav-group{--group-accent:#65748F}
+#sidebar-nav .nav-group[data-group="core"]{--group-accent:var(--sc-task)}
+#sidebar-nav .nav-group[data-group="research"]{--group-accent:var(--sc-research)}
+#sidebar-nav .nav-group-head{height:36px!important;min-height:36px!important;margin:10px 2px 5px!important;padding:4px 7px!important;border:1px solid color-mix(in srgb,var(--group-accent) 22%,var(--sc-line))!important;border-radius:7px!important;background:color-mix(in srgb,var(--group-accent) 8%,var(--sc-card))!important;box-shadow:inset 3px 0 var(--group-accent)!important}
+#sidebar-nav .nav-group-head .group-toggle{font-size:11px!important;font-weight:800!important;color:color-mix(in srgb,var(--group-accent) 60%,var(--sc-text))!important}
+#sidebar-nav .nav-items{padding-left:3px}
+#sidebar-nav .nav-item{height:30px!important;min-height:30px!important;padding-top:0!important;padding-bottom:0!important}
+#sidebar-nav .group-toggle{height:100%}
+#sidebar-nav .group-disclosure{display:block;flex:0 0 7px;width:7px;height:7px;margin:0 3px;background:var(--group-accent,currentColor);border-radius:1px;transform:rotate(0deg);transition:transform 180ms ease}
+#sidebar-nav .nav-group.collapsed .group-disclosure{transform:rotate(-45deg)}
+@media(prefers-reduced-motion:reduce){#sidebar-nav .group-disclosure{transition:none}}
+html[data-animations="off"] #sidebar-nav .group-disclosure{transition:none}
+
+.selection-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:7px 8px;border-block:1px solid var(--sc-line);background:var(--sc-subtle);font-size:11px;color:var(--sc-muted)}
+.selection-toolbar label{display:flex;align-items:center;gap:5px;white-space:nowrap;cursor:pointer}
+.selection-toolbar button{font-size:11px!important;min-height:24px!important;padding:2px 5px!important}
+.selection-toolbar button:disabled{opacity:.4;cursor:default;pointer-events:none}
+.selection-toolbar input,.row-select{width:15px;height:15px;accent-color:var(--sc-task);cursor:pointer;flex-shrink:0}
+.doc-list-panel>.selection-toolbar{flex:0 0 auto}
+.doc-item .doc-select{position:absolute;left:10px;top:15px;z-index:2}
+.doc-item .doc-compact-main{margin-left:24px;min-width:0}
+.doc-item.is-selected,.todo-row.is-selected{background:var(--sc-task-soft)!important;box-shadow:inset 2px 0 var(--sc-task)!important}
+.todo-page .selection-toolbar{margin-top:12px;border:1px solid var(--sc-line);border-radius:8px 8px 0 0}
+.todo-page .todo-list{border:1px solid var(--sc-line);border-top:0;border-radius:0 0 8px 8px;overflow:hidden}
+#main .todo-page .todo-row{display:grid!important;grid-template-columns:16px 20px minmax(0,1fr) auto auto auto;gap:10px;align-items:center;padding:10px 12px}
+.todo-row .todo-copy{min-width:0}.todo-row .todo-title{overflow-wrap:anywhere}.todo-row time{font-size:12px;color:var(--sc-muted);white-space:nowrap}
+.todo-row .todo-complete{width:19px;height:19px;min-height:19px!important;min-width:19px!important;border:1.5px solid var(--sc-line-strong);border-radius:50%;padding:0;display:grid;place-items:center;background:var(--sc-card);color:var(--sc-task);cursor:pointer;font-size:12px}
+.todo-row .todo-complete:hover{border-color:var(--sc-task);background:var(--sc-task-soft)}
+.todo-row .todo-complete[aria-checked="true"]{border-color:var(--sc-research);background:var(--sc-research);color:#fff}
+.todo-page .badge[data-priority="紧急"]{color:#B74459!important;background:#FFF0F3!important;border-color:#F5CDDA!important}
+.todo-page .badge[data-priority="高"]{color:#A96B1D!important;background:#FFF4DF!important;border-color:#F3DFBC!important}
+@media(min-width:1100px) and (max-width:1250px){#main .quick-action{flex-direction:column;gap:2px!important}}
+@media(max-width:1099px){
+  #main .overview-mid-row{grid-template-columns:minmax(0,1fr)!important}
+  #main .overview-top-row>.overview-academic-grid{height:100%!important;grid-template-rows:auto!important}
+}
+@media(max-width:820px){
+  #main .overview-lower-left,#main .overview-recent-section,#main .overview-recent-group>.recent-card{height:auto!important}
+  #main .quick-capture-actions{grid-template-columns:repeat(auto-fit,minmax(92px,1fr))}
+  #main .overview-todo-add{flex-wrap:nowrap}
+  #main .todo-page .todo-row{grid-template-columns:16px 20px minmax(0,1fr) auto;gap:7px}
+  #main .todo-page .todo-row time{grid-column:3;grid-row:2}
+  #main .todo-page .todo-row>.badge{grid-column:4;grid-row:2}
+}
+
+/* Batch controls appear only after the adjacent trash button is pressed. */
+.selection-toolbar[hidden],.row-select[hidden]{display:none!important}
+.batch-mode-toggle{display:inline-grid;place-items:center;flex:0 0 32px;width:32px!important;min-width:32px!important;height:32px!important;padding:0!important;color:var(--sc-muted)}
+.batch-mode-toggle svg{width:16px;height:16px}
+.batch-mode-toggle:hover,.batch-mode-toggle[aria-pressed="true"]{color:#BE5263!important;background:#FFF1F3!important;border-color:#ECC5CE!important}
+.doc-filter>div:first-child{align-items:center}
+.doc-filter #doc-search{flex:1;min-width:0}
+.doc-list-panel:not(.is-selecting) .doc-item .doc-compact-main{margin-left:0}
+.todo-add-actions{display:flex;align-items:center;gap:6px}
+#main .todo-page:not(.is-selecting) .todo-row{grid-template-columns:20px minmax(0,1fr) auto auto auto}
+.todo-page:not(.is-selecting) .todo-list{margin-top:12px;border-top:1px solid var(--sc-line);border-radius:8px}
+
+/* Refine the existing three activity columns without moving their cards. */
+#main .recent-card-ideas{--recent-accent:#B98027;--recent-soft:#FFF7E9}
+#main .recent-card-notes{--recent-accent:#5C71D5;--recent-soft:#F1F4FF}
+#main .recent-card-summaries{--recent-accent:#8A66C6;--recent-soft:#F6F1FC}
+#main .recent-card-head{background:linear-gradient(100deg,var(--recent-soft),var(--sc-card))!important;border-bottom:1px solid color-mix(in srgb,var(--recent-accent) 12%,var(--sc-line))}
+#main .recent-card-title{gap:6px}
+#main .recent-card-title h3{font-size:13px!important;font-weight:650!important;letter-spacing:0}
+#main .recent-card-icon{color:var(--recent-accent)!important;background:color-mix(in srgb,var(--recent-accent) 9%,var(--sc-card))!important;border:1px solid color-mix(in srgb,var(--recent-accent) 15%,transparent)}
+#main .recent-card-head button{font-size:11px!important;color:var(--sc-muted);border-radius:5px}
+#main .recent-card-head button:hover{color:var(--recent-accent);background:var(--recent-soft)}
+#main .recent-card-list{padding:4px 6px 6px!important;display:flex;flex-direction:column;gap:0}
+#main .recent-card .recent-activity-row{position:relative;display:flex!important;flex-direction:column;align-items:stretch;justify-content:center;width:100%;min-width:0;min-height:44px!important;gap:3px;padding:5px 7px!important;margin:0;text-align:left;font:inherit;border:1px solid transparent;border-bottom-color:var(--sc-line);border-radius:6px;background:transparent;cursor:pointer;box-shadow:none;transition:background-color .16s ease,border-color .16s ease;transform:none!important}
+#main .recent-card .recent-activity-row:last-child{border-bottom-color:transparent}
+#main .recent-card .recent-activity-row:hover{background:var(--recent-soft)!important;border-color:color-mix(in srgb,var(--recent-accent) 16%,var(--sc-line))!important;box-shadow:inset 2px 0 color-mix(in srgb,var(--recent-accent) 60%,transparent)}
+#main .recent-card .recent-activity-row .row-title{font-size:12px!important;font-weight:600!important;color:var(--sc-text)!important;line-height:1.4!important;max-height:2.8em}
+#main .recent-card .recent-activity-meta{display:flex!important;align-items:center;gap:6px;min-width:0;margin:0!important;line-height:1.4!important}
+.recent-project{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--sc-muted)}
+.recent-status{--status-color:#66768E;display:inline-flex;align-items:center;flex:0 0 auto;gap:4px;max-width:90px;padding:0 5px;border-radius:4px;font-size:11px;font-weight:500;line-height:17px;white-space:nowrap;color:var(--status-color);background:color-mix(in srgb,var(--status-color) 7%,var(--sc-card))}
+.recent-status::before{content:"";width:4px;height:4px;flex-shrink:0;border-radius:50%;background:currentColor;opacity:.8}
+.recent-status[data-tone="success"]{--status-color:#258973}
+.recent-status[data-tone="active"]{--status-color:#5874C8}
+.recent-status[data-tone="draft"]{--status-color:#A57B2E}
+@media(max-width:820px){
+  #main .todo-page:not(.is-selecting) .todo-row{grid-template-columns:20px minmax(0,1fr) auto!important}
+  #main .todo-page:not(.is-selecting) .todo-row time{grid-column:2;grid-row:2}
+  #main .todo-page:not(.is-selecting) .todo-row>.badge{grid-column:3;grid-row:2}
+}
+
+/* A stationary shared rail; rings travel with the scrolling milestone rows. */
+#main .overview-milestone-track{position:relative;isolation:isolate;flex:0 0 auto;min-width:0;--milestone-axis-x:15px}
+#main .overview-milestone-rail{position:absolute;z-index:1;left:var(--milestone-axis-x);top:6px;bottom:6px;width:2px;transform:translateX(-50%);border-radius:2px;background:color-mix(in srgb,var(--sc-milestone) 48%,var(--sc-line));pointer-events:none}
+#main .overview-milestone-list{padding:2px!important}
+#main .overview-milestone-row{margin-top:0!important}
+#main .mini-ms-date{position:relative;padding-left:20px;min-height:28px}
+#main .mini-ms-date::before{content:none!important}
+#main .mini-ms-date .milestone-ring{position:absolute;z-index:2;display:block!important;left:0;top:50%;bottom:auto;width:12px;height:12px;margin:0;transform:translateY(-50%);box-sizing:border-box;border:2px solid var(--sc-milestone);border-radius:50%;background:var(--sc-card);color:var(--sc-milestone);box-shadow:0 0 0 3px var(--sc-card);pointer-events:none}
+#main .milestone-ring::after{content:"";position:absolute;inset:-6px;border:1px solid currentColor;border-inline-color:transparent;border-radius:50%;opacity:0}
+#main .overview-milestone-row.is-nearest .milestone-ring{background:var(--sc-milestone);box-shadow:0 0 0 3px var(--sc-milestone-soft)}
+#main .overview-milestone-row:is(.is-nearest,:hover) .milestone-ring::after{opacity:.8;animation:milestone-orbit 3s linear infinite}
+@keyframes milestone-orbit{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){#main .milestone-ring::after{animation:none!important}}
+html[data-animations="off"] #main .milestone-ring::after{animation:none!important}
+
+/* v261020 · 分类标记模板库与分组图案面板（设置 → 知识条目） */
+.mark-template-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
+.mark-template{display:flex;align-items:center;gap:10px;text-align:left;border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:10px 12px;cursor:pointer;font:inherit;transition:border-color .15s,background .15s}
+.mark-template:hover:not(:disabled){border-color:var(--mark-color);background:color-mix(in srgb,var(--mark-color) 6%,var(--surface))}
+.mark-template:disabled{opacity:.5;cursor:not-allowed}
+.mark-template .mt-icon{flex:0 0 auto;width:30px;height:30px;display:grid;place-items:center;border-radius:8px;background:color-mix(in srgb,var(--mark-color) 12%,var(--surface));color:var(--mark-color);font-size:15px}
+.mark-template .mt-text{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1 1 auto}
+.mark-template .mt-text b{font-size:12px;font-weight:600}
+.mark-template .mt-text small{font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mark-template .mt-add{flex:0 0 auto;color:var(--mark-color);font-weight:700;font-size:14px}
+.mark-custom-row{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap}
+.mark-icon-groups{display:flex;flex-direction:column;gap:6px;border:1px solid var(--line);border-radius:9px;padding:8px;max-height:236px;overflow:auto;background:var(--surface-2)}
+.mark-icon-groups .mig{display:flex;align-items:flex-start;gap:10px}
+.mark-icon-groups .mig-name{flex:0 0 34px;font-size:10px;color:var(--muted);padding-top:6px}
+.mark-icon-groups .mig-grid{display:flex;flex-wrap:wrap;gap:4px}
+.mark-icon-groups .mig-grid button{width:30px;height:28px;padding:0;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--text);font-size:14px;line-height:1;cursor:pointer}
+.mark-icon-groups .mig-grid button:hover{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.mark-icon-groups .mig-grid button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent);font-weight:700}
+.mark-icon-custom{display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap}
+.mark-icon-custom input{max-width:180px}
+.mark-form .field{align-content:start}
+.mark-color-pick{position:relative;display:flex;align-items:center;gap:8px;height:34px;box-sizing:border-box;border:1px solid var(--line-strong);border-radius:8px;background:var(--surface-2);padding:0 8px;cursor:pointer}
+.mark-color-pick input[type=color]{position:absolute;inset:0;width:100%;height:100%;opacity:0;border:0;padding:0;cursor:pointer}
+.mark-color-pick .mcp-dot{width:18px;height:18px;flex:0 0 auto;border-radius:5px;border:1px solid rgba(0,0,0,.08)}
+.mark-color-pick .mcp-hex{font-size:11px;color:var(--muted);font-family:ui-monospace,Consolas,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mark-preview-box{height:34px;box-sizing:border-box;display:flex;align-items:center;padding:0 8px;border:1px dashed var(--line-strong);border-radius:8px;background:var(--surface-2);overflow:hidden}
+.mark-preview-box .mark-chip{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;pointer-events:none}
+
+/* v261020 · 条目信息折叠按钮：离卡片右上圆角与覆盖式滚动条再远一点（此前贴边，悬停底纹压到圆角） */
+#main .meta-head{padding-right:12px}
+#main .meta-toggle:hover{transform:none}

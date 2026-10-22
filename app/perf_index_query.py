@@ -1,31 +1,35 @@
 from __future__ import annotations
 
 import sqlite3
+import re
 from datetime import date, timedelta
 from typing import Any
 
-from . import agent, config, store
+from . import config, store
 from . import perf_index_core as core
+from . import perf_index_db as db
 from .perf_index_core import (
     DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, _connect, _init_db, _registry, _root,
-    _row_doc, remove_doc, sync, status,
+    _row_doc, remove_doc, ensure_ready, status,
 )
 
 def _fts_clause(query: str) -> tuple[str, list[Any]]:
     q = str(query or "").strip()
     if not q:
         return "", []
-    like = f"%{q.casefold()}%"
-    if len(q) >= 3 or core._FTS_TOKENIZER != "trigram":
+    like = "%" + q.casefold().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    tokenizer = db._SCHEMA_READY.get(str(db._db_path()), db._FTS_TOKENIZER)
+    if len(q) >= 3 and tokenizer == "trigram":
         phrase = '"' + q.replace('"', '""') + '"'
         return (
             " AND (d.id IN (SELECT doc_id FROM documents_fts WHERE documents_fts MATCH ?) "
-            "OR lower(d.title) LIKE ? OR lower(d.excerpt) LIKE ?)",
+            "OR lower(d.title) LIKE ? ESCAPE '\\' OR lower(d.excerpt) LIKE ? ESCAPE '\\')",
             [phrase, like, like],
         )
     return (
-        " AND EXISTS (SELECT 1 FROM documents_fts f WHERE f.doc_id=d.id AND "
-        "(lower(f.title) LIKE ? OR lower(f.body) LIKE ? OR lower(f.tags) LIKE ? OR lower(f.projects) LIKE ?))",
+        " AND d.id IN (SELECT doc_id FROM documents_fts f WHERE "
+        "lower(f.title) LIKE ? ESCAPE '\\' OR lower(f.body) LIKE ? ESCAPE '\\' "
+        "OR lower(f.tags) LIKE ? ESCAPE '\\' OR lower(f.projects) LIKE ? ESCAPE '\\')",
         [like, like, like, like],
     )
 
@@ -36,12 +40,14 @@ def list_docs(
     status: str = "",
     project: str = "",
     mark: str = "",
+    tag: str = "",
+    unowned: bool = False,
     *,
     page: int = 1,
     page_size: int = DEFAULT_PAGE_SIZE,
     paged: bool = False,
 ) -> list[dict[str, Any]] | dict[str, Any]:
-    sync()
+    ensure_ready()
     page = max(1, int(page or 1))
     page_size = max(1, min(MAX_PAGE_SIZE, int(page_size or DEFAULT_PAGE_SIZE)))
     where = ["1=1"]
@@ -57,6 +63,15 @@ def list_docs(
     if mark:
         where.append("EXISTS (SELECT 1 FROM document_marks dm WHERE dm.doc_id=d.id AND dm.mark=?)")
         params.append(mark)
+    # v261008.2 · 标签筛选（此前只能靠全文搜索命中）与「未归属项目（通用基础）」筛选
+    if tag:
+        where.append("EXISTS (SELECT 1 FROM document_tags dt WHERE dt.doc_id=d.id AND dt.tag=?)")
+        params.append(tag)
+    if unowned:
+        where.append(
+            "NOT EXISTS (SELECT 1 FROM document_projects dp WHERE dp.doc_id=d.id "
+            "AND (dp.project_name<>'' OR dp.project_id<>''))"
+        )
     extra, extra_params = _fts_clause(query)
     sql_where = " AND ".join(where) + extra
     params.extend(extra_params)
@@ -65,7 +80,7 @@ def list_docs(
         total = int(conn.execute(f"SELECT COUNT(*) FROM documents d WHERE {sql_where}", params).fetchone()[0])
         rows = conn.execute(
             f"SELECT d.* FROM documents d WHERE {sql_where} "
-            "ORDER BY COALESCE(NULLIF(d.updated,''),d.created) DESC, d.id DESC LIMIT ? OFFSET ?",
+            "ORDER BY d.pinned DESC, COALESCE(NULLIF(d.updated,''),d.created) DESC, d.id DESC LIMIT ? OFFSET ?",  # v260924i · 置顶条目排头显示
             [*params, page_size, (page - 1) * page_size],
         ).fetchall()
     items = [_row_doc(r) for r in rows]
@@ -84,35 +99,107 @@ def list_docs(
 
 
 def get_doc(doc_id: str) -> dict[str, Any]:
-    sync()
+    ensure_ready()
     with _connect() as conn:
         _init_db(conn)
         row = conn.execute("SELECT path,kind FROM documents WHERE id=?", (doc_id,)).fetchone()
-    if not row:
-        sync(force=True)
-        with _connect() as conn:
-            _init_db(conn)
-            row = conn.execute("SELECT path,kind FROM documents WHERE id=?", (doc_id,)).fetchone()
     if not row:
         raise FileNotFoundError(doc_id)
     path = _root() / str(row["path"])
     if not path.exists():
         remove_doc(doc_id)
         raise FileNotFoundError(doc_id)
-    return store._doc_from_path(str(row["kind"]), path, include_body=True)
+    doc = store.doc_from_path(str(row["kind"]), path, include_body=True)
+    from .evidence import describe
+    doc["evidence"] = describe(doc)
+    return doc
+
+
+def resolve_doc(target: str) -> dict[str, Any]:
+    """Resolve a citation by ID or exact title, independently of list pagination."""
+    target = str(target or "").strip().removeprefix("[[").removesuffix("]]")
+    target = target.split("|", 1)[0].split("#", 1)[0].strip()
+    if not target or len(target) > 1000:
+        raise ValueError("引用须为有效的条目 ID 或标题")
+    ensure_ready()
+    with _connect() as conn:
+        rows = conn.execute("SELECT id FROM documents WHERE id=? OR title=? COLLATE NOCASE", (target, target)).fetchall()
+        if not rows:
+            rows = conn.execute("SELECT id FROM documents WHERE title=? COLLATE NOCASE", ("文献-" + target,)).fetchall()
+    if not rows:
+        raise FileNotFoundError("未找到对应条目：" + target)
+    if len(rows) > 1:
+        raise ValueError("存在同名条目，请使用条目 ID 引用")
+    return get_doc(rows[0]["id"])
+
+
+def retrieval_terms(query: str) -> list[str]:
+    # Spaces separate concepts, rather than making one impossible FTS phrase.
+    raw = re.findall(r"[a-zA-Z0-9_]+(?:[-.][a-zA-Z0-9_]+)*|[\u3400-\u9fff]+", query)
+    terms = []
+    for token in raw:
+        parts = re.split(r"(?:如何|为什么|是什么|怎样|以及|是否|和|与|的)", token) if re.search(r"[\u3400-\u9fff]", token) else [token]
+        terms.extend(part for part in parts if len(part) >= 2 and part not in {"什么", "哪些", "一个", "这个"})
+    return list(dict.fromkeys(t.casefold() for t in terms))[:24]
+
+
+def retrieve_docs(query: str, kind: str | None = None, limit: int = 8) -> dict[str, Any]:
+    """Rank research evidence; ordinary document lists retain their sort order."""
+    ensure_ready()
+    query = str(query or "").strip()
+    limit = max(1, min(int(limit), 200))
+    terms = retrieval_terms(query)
+    if not query:
+        return {"items": [], "total": 0, "terms": terms}
+    with _connect() as conn:
+        direct = conn.execute("SELECT * FROM documents WHERE id=?" + (" AND kind=?" if kind else ""), [query, kind] if kind else [query]).fetchone()
+        if direct:
+            return {"items": [_row_doc(direct)], "total": 1, "terms": terms}
+        tokenizer = db._SCHEMA_READY.get(str(db._db_path()), db._FTS_TOKENIZER)
+        phrase = lambda text: '"' + text.replace('"', '""') + '"'
+        parts = list(dict.fromkeys([query.casefold(), *terms]))
+        params = []
+        kind_clause = " AND d.kind=?" if kind else ""
+        rank_params = []
+        if tokenizer == "trigram" and all(len(p) >= 3 for p in parts):
+            match = " OR ".join(phrase(p) for p in parts)
+            source = "documents_fts f JOIN documents d ON d.id=f.doc_id"
+            where = "documents_fts MATCH ?" + kind_clause
+            params = [match] + ([kind] if kind else [])
+            rank = "bm25(documents_fts,0,12,1,3,0.02)"
+        else:
+            source = "documents_fts f JOIN documents d ON d.id=f.doc_id"
+            clauses = []
+            for part in parts:
+                like = "%" + part.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+                clauses.append("(lower(f.title) LIKE ? ESCAPE '\\' OR lower(f.body) LIKE ? ESCAPE '\\' OR lower(f.tags) LIKE ? ESCAPE '\\' OR lower(f.projects) LIKE ? ESCAPE '\\')")
+                params.extend([like] * 4)
+            where = "(" + " OR ".join(clauses) + ")" + kind_clause
+            params += [kind] if kind else []
+            weights = []
+            for part in parts:
+                weights.append("CASE WHEN instr(lower(f.title),?)>0 THEN 12 ELSE 0 END + CASE WHEN instr(lower(f.body),?)>0 THEN 1 ELSE 0 END + CASE WHEN instr(lower(f.tags),?)>0 THEN 3 ELSE 0 END")
+                rank_params.extend([part] * 3)
+            rank = "-(" + " + ".join(weights) + ")"
+        # Exact title wins even if hundreds of papers carry that project name.
+        exact = "CASE WHEN lower(d.title)=? OR lower(d.title)=? OR d.id=? THEN 0 ELSE 1 END"
+        exact_params = [query.casefold(), "文献-" + query.casefold(), query]
+        total = conn.execute(f"SELECT COUNT(*) FROM {source} WHERE {where}", params).fetchone()[0]
+        rows = conn.execute(f"SELECT d.*, {rank} AS retrieval_score FROM {source} WHERE {where} ORDER BY {exact}, retrieval_score, d.id LIMIT ?", [*rank_params, *params, *exact_params, limit]).fetchall()
+    return {"items": [_row_doc(r) for r in rows], "total": total, "terms": terms}
 
 
 def search_docs(query: str, limit: int = 60) -> list[dict[str, Any]]:
-    sync()
+    ensure_ready()
     q = str(query or "").strip()
     if not q:
         return []
     limit = max(1, min(200, int(limit or 60)))
-    like = f"%{q.casefold()}%"
     with _connect() as conn:
         _init_db(conn)
         rows: list[sqlite3.Row] = []
-        if len(q) >= 3 or core._FTS_TOKENIZER != "trigram":
+        tokenizer = db._SCHEMA_READY.get(str(db._db_path()), db._FTS_TOKENIZER)
+        if len(q) >= 3 and tokenizer == "trigram":
             phrase = '"' + q.replace('"', '""') + '"'
             try:
                 rows = conn.execute(
@@ -120,30 +207,50 @@ def search_docs(query: str, limit: int = 60) -> list[dict[str, Any]]:
                     SELECT d.* FROM documents_fts f
                     JOIN documents d ON d.id=f.doc_id
                     WHERE documents_fts MATCH ?
-                    ORDER BY bm25(documents_fts), COALESCE(NULLIF(d.updated,''),d.created) DESC
+                    ORDER BY d.pinned DESC, bm25(documents_fts), COALESCE(NULLIF(d.updated,''),d.created) DESC
                     LIMIT ?
                     """,
                     (phrase, limit),
                 ).fetchall()
             except sqlite3.OperationalError:
                 rows = []
-        if not rows:
+        else:
+            clause, params = _fts_clause(q)
             rows = conn.execute(
-                """
-                SELECT d.* FROM documents d
-                JOIN documents_fts f ON f.doc_id=d.id
-                WHERE lower(f.title) LIKE ? OR lower(f.body) LIKE ?
-                   OR lower(f.tags) LIKE ? OR lower(f.projects) LIKE ?
-                ORDER BY COALESCE(NULLIF(d.updated,''),d.created) DESC
-                LIMIT ?
-                """,
-                (like, like, like, like, limit),
+                "SELECT d.* FROM documents d WHERE 1=1" + clause +
+                " ORDER BY d.pinned DESC, COALESCE(NULLIF(d.updated,''),d.created) DESC,d.id DESC LIMIT ?",
+                [*params, limit],
             ).fetchall()
     return [_row_doc(r) for r in rows]
 
 
+def get_docs_by_ids(doc_ids, include_body: bool = False) -> dict[str, dict[str, Any]]:
+    ensure_ready()
+    ids = list(dict.fromkeys(str(x) for x in doc_ids if str(x)))
+    out = {}
+    with _connect() as conn:
+        _init_db(conn)
+        for start in range(0, len(ids), 400):
+            batch = ids[start:start + 400]
+            marks = ",".join("?" for _ in batch)
+            for row in conn.execute(f"SELECT * FROM documents WHERE id IN ({marks})", batch):
+                if include_body:
+                    doc = store._doc_from_path(str(row["kind"]), _root() / str(row["path"]))
+                else:
+                    doc = _row_doc(row, check_attachment=False)
+                out[str(row["id"])] = doc
+    return out
+
+
+def document_metadata() -> list[dict[str, Any]]:
+    ensure_ready()
+    with _connect() as conn:
+        _init_db(conn)
+        return [_row_doc(row, check_attachment=False) for row in conn.execute("SELECT * FROM documents")]
+
+
 def project_names() -> list[str]:
-    sync()
+    ensure_ready()
     names = {str(x.get("name") or "").strip() for x in _registry() if str(x.get("name") or "").strip()}
     with _connect() as conn:
         _init_db(conn)
@@ -157,7 +264,7 @@ def project_names() -> list[str]:
 
 
 def project_records() -> list[dict[str, Any]]:
-    sync()
+    ensure_ready()
     records = _registry()
     with _connect() as conn:
         _init_db(conn)
@@ -221,20 +328,24 @@ def project_records() -> list[dict[str, Any]]:
 
 
 def list_todos() -> list[dict[str, Any]]:
-    sync()
+    ensure_ready()
     with _connect() as conn:
         _init_db(conn)
         rows = conn.execute(
             "SELECT * FROM todos_index ORDER BY done ASC, CASE WHEN due='' THEN 1 ELSE 0 END, due ASC, updated DESC"
         ).fetchall()
-    return [
-        {
+    from .todos import is_overdue  # 逾期口径与 /api/todos 同源，避免两处各算一份
+    out = []
+    for r in rows:
+        item = {
             "id": r["id"], "title": r["title"], "done": bool(r["done"]), "project": r["project"],
             "project_id": r["project_id"], "priority": r["priority"], "due": r["due"],
+            "completed_at": (r["completed_at"] if "completed_at" in r.keys() else ""),
             "created": r["created"], "updated": r["updated"],
         }
-        for r in rows
-    ]
+        item["overdue"] = is_overdue(item)
+        out.append(item)
+    return out
 
 
 def _activity_payload(today_obj: date, days: int = 400) -> dict[str, Any]:
@@ -300,10 +411,11 @@ def _activity_payload(today_obj: date, days: int = 400) -> dict[str, Any]:
 
 
 def dashboard() -> dict[str, Any]:
-    sync()
+    ensure_ready()
     today_obj = date.today(); today = today_obj.isoformat()
     with _connect() as conn:
         _init_db(conn)
+        conn.create_function("milestone_state", 1, store.milestone_status_class)
         counts = {str(r["kind"]): int(r["n"]) for r in conn.execute("SELECT kind,COUNT(*) AS n FROM documents GROUP BY kind")}
         recent: dict[str, list[dict[str, Any]]] = {}
         for kind, key in (("idea","ideas"),("journal","journals"),("note","notes"),("summary","summaries"),("literature","literature")):
@@ -321,7 +433,7 @@ def dashboard() -> dict[str, Any]:
         stat_rows = conn.execute(
             """
             SELECT dp.project_name,COUNT(DISTINCT d.id) AS docs,
-                   SUM(CASE WHEN d.kind='milestone' AND d.status<>'完成' THEN 1 ELSE 0 END) AS open_milestones,
+                   SUM(CASE WHEN d.kind='milestone' AND milestone_state(d.status)<>'done' THEN 1 ELSE 0 END) AS open_milestones,
                    SUM(CASE WHEN d.kind='literature' THEN 1 ELSE 0 END) AS literature,
                    SUM(CASE WHEN d.kind IN ('note','journal','idea') THEN 1 ELSE 0 END) AS notes,
                    MAX(COALESCE(NULLIF(d.updated,''),d.created)) AS last_updated
@@ -360,7 +472,7 @@ def dashboard() -> dict[str, Any]:
         "projects": project_names(),
         "project_records": project_records(),
         "project_stats": project_stats,
-        "academic": store._academic_progress(profile, today_obj),
+        "academic": store.academic_progress(profile, today_obj),
         "activity": _activity_payload(today_obj),
         "index": status(sync_first=False),
     }
@@ -400,6 +512,8 @@ def search_all(query: str, limit: int = 60) -> list[dict[str, Any]]:
         if len(results) >= limit:
             return results
     q_lower = q.casefold()
+    # v261009 · 惰性导入：索引查询层不在导入期就拖进 LLM/会话层（P12 层级倒置）。
+    from . import agent
     for s in agent.list_sessions():
         if len(results) >= limit:
             break

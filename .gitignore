@@ -1,6 +1,6 @@
 # ==========================================================
-# 白名单模式
-# 默认忽略全部文件，只发布明确允许的项目文件
+# 白名单模式：默认忽略全部文件，只发布明确允许的项目文件
+# 修改放行规则时，请同步更新下方的放行清单
 # ==========================================================
 
 *
@@ -18,30 +18,82 @@
 !/LICENSE.txt
 !/VERSION
 !/requirements.txt
+!/requirements-desktop.txt
+!/run_client.bat
 !/server.py
+!/client.py
+!/build_client.bat
 !/run.bat
 !/run.sh
 
 # ==========================================================
-# 后端源码
+# 源代码
 # ==========================================================
 
 !app/**/*.py
+!core/**/*.py
+!/core_api.py
+!app/skills/**/*.md
+!app/skills/**/agents/openai.yaml
 !tools/**/*.py
+# 常驻测试（v261009.36 起：原 .scratch/tmp 里的深度夹具，7 天会被清掉，必须入库）
+!tests/**/*.py
 
-# ==========================================================
-# 前端源码
-# ==========================================================
+# CI（GitHub Actions）与 Git 元文件
+!.gitattributes
+!.github/workflows/*.yml
+
+# 清理入口的一键包装（双击即用），其余 .bat 仍不发布
+!tools/scratch_clean.bat
 
 !web/**/*.js
 !web/**/*.html
 !web/**/*.css
+!web/**/*.json
+!web/vendor/pdfjs-LICENSE.txt
+!web/favicon.png
+!web/workbench-mark.svg
+!tools/ui_usability_check.js
+!tools/agent_system_ui_check.js
+!tools/functional_regression_ui_check.js
+!tools/planning_regression_ui_check.js
+
+
+# ==========================================================
+# MCP 工具层（v261009 教训：不在白名单 → 回滚时整目录不受保护）
+# ==========================================================
+
+!mcp/**/*.py
+!mcp/README.md
+!mcp/*.bat
+
+# ==========================================================
+# 插件目录（可增删；插件运行期数据不放这里，见 docs/REFACTOR_PLAN.md §6.3）
+# ==========================================================
+
+!plugins/**/*.py
+!plugins/**/*.js
+!plugins/**/*.css
+!plugins/**/*.html
+!plugins/**/*.json
+!plugins/**/*.md
+# 插件设置页的「演示预览」截图（manifest 的 preview.screens 引用），随插件一起进版本库
+!plugins/**/web/preview*.png
+plugins/**/data/
+plugins/**/.cache/
 
 # ==========================================================
 # 文档
 # ==========================================================
 
 !docs/**/*.md
+# 文档里的图：由 tools/doc_check.py 从 mermaid 源码导出（见 docs/OVERVIEW.md 的说明）；
+# 使用手册的截图（docs/manual/img/*.png）也随文档入库
+!docs/**/*.svg
+!docs/**/*.png
+
+# 暂不发布：知识库文本格式规范（内部口径文档，转正式后再放行）
+docs/知识库文本格式规范.md
 
 # ==========================================================
 # 以下均为用户数据 / 本地运行数据，永不发布
@@ -50,3 +102,30 @@
 config/
 Workspace/
 .update_backups/
+build/
+
+# 操作临时数据空间（本地专用：永不提交、不入同步、7 天保留自动清理）
+# 细则见 .scratch/README.md；清理入口 tools/scratch_clean.py
+/.scratch/
+
+# 临时产物基名约定（无前导斜杠 → 任意目录生效，堵住 web/**/*.html 之类放行规则）
+_verify_*
+_preview_*
+_timing_*
+
+# 字节码与运行缓存永不入库（放最后，覆盖上面的放行规则）
+__pycache__/
+*.pyc
+
+# 本地 vendor 的 PDF.js（核心阅读器不该依赖 CDN；A1「按需且不依赖网络」）
+# 注意 ① `build/` 那条忽略规则是给构建产物的，会误伤这里的 build 目录，必须整目录重新放行；
+#      ② 目录被忽略时，里层的 `!` 规则无效，所以要逐级放行；
+#      ③ 这些规则必须放在**文件末尾**——gitignore 是"后面的规则优先"。
+!web/vendor/pdfjs/
+!web/vendor/pdfjs/build/
+!web/vendor/pdfjs/build/pdf.min.js
+!web/vendor/pdfjs/build/pdf.worker.min.js
+!web/vendor/pdfjs/cmaps/
+!web/vendor/pdfjs/cmaps/**
+!web/vendor/pdfjs/standard_fonts/
+!web/vendor/pdfjs/standard_fonts/**

@@ -1,0 +1,45 @@
+/* v261019 · 待办：行内编辑 + 完成时间限制（截止到分、逾期高亮）
+   只作用于待办页与概览任务卡，不改动其他列表。 */
+
+/* 行内多一个「编辑」按钮：非选择态 6 列、选择态 7 列。 */
+#main .todo-page:not(.is-selecting) .todo-row{grid-template-columns:20px minmax(0,1fr) auto auto auto auto!important}
+#main .todo-page.is-selecting .todo-row{grid-template-columns:16px 20px minmax(0,1fr) auto auto auto auto!important}
+/* 新增表单多一个「时间」输入：标题 / 项目 / 日期 / 时间 / 优先级 / 操作。 */
+#main .todo-page .todo-add{grid-template-columns:minmax(0,1.8fr) minmax(0,1fr) 140px 108px 108px auto!important}
+
+/* 截止时间：只有日期时显示 MM-DD，有时分时显示 MM-DD HH:mm；逾期转红。 */
+.todo-row time{font-variant-numeric:tabular-nums}
+.todo-row time.is-overdue,.overview-task-row.is-overdue .overview-task-due{color:var(--sc-risk,#bd354b)!important;font-weight:600}
+.todo-row.is-overdue .todo-title{color:var(--sc-risk,#bd354b)}
+.todo-row .todo-edit-btn{white-space:nowrap}
+
+/* 行内编辑态：整行独占，表单按「标题 / 日期 / 时间 / 项目 / 优先级 / 操作」排布。 */
+#main .todo-page .todo-row.todo-row-editing{display:block!important;padding:12px}
+.todo-edit-form{display:grid;grid-template-columns:minmax(0,2fr) 150px 120px minmax(0,1fr) 110px auto;gap:8px;align-items:end}
+.todo-edit-form>label{display:flex;flex-direction:column;gap:4px;min-width:0;font-size:11px;color:var(--sc-muted)}
+.todo-edit-form>label>span{font-weight:600;letter-spacing:.02em}
+.todo-edit-form .search-input{min-width:0;width:100%}
+.todo-edit-form .todo-edit-title-field{grid-column:1}
+.todo-edit-actions{display:flex;align-items:center;gap:6px;justify-content:flex-end}
+.todo-edit-actions button{white-space:nowrap}
+html[data-theme="dark"] .todo-edit-form>label>span{color:var(--sc-muted)}
+
+@media(max-width:1099px){
+  .todo-edit-form{grid-template-columns:minmax(0,1fr) 140px 108px;grid-auto-rows:auto}
+  .todo-edit-form .todo-edit-title-field{grid-column:1/-1}
+  #main .todo-page .todo-add{grid-template-columns:minmax(0,1.6fr) minmax(0,1fr) 132px 100px auto!important}
+}
+@media(max-width:820px){
+  #main .todo-page:not(.is-selecting) .todo-row{grid-template-columns:20px minmax(0,1fr) auto auto!important}
+  #main .todo-page:not(.is-selecting) .todo-row time{grid-column:2;grid-row:2}
+  #main .todo-page:not(.is-selecting) .todo-row>.badge{grid-column:3;grid-row:2}
+  #main .todo-page:not(.is-selecting) .todo-row>[data-todo-edit]{grid-column:4;grid-row:1}
+  #main .todo-page:not(.is-selecting) .todo-row>[data-todo-del]{grid-column:4;grid-row:2}
+  #main .todo-page.is-selecting .todo-row{grid-template-columns:16px 20px minmax(0,1fr) auto auto!important}
+  #main .todo-page.is-selecting .todo-row time{grid-column:3;grid-row:2}
+  #main .todo-page.is-selecting .todo-row>.badge{grid-column:4;grid-row:2}
+  #main .todo-page.is-selecting .todo-row>[data-todo-edit]{grid-column:5;grid-row:1}
+  #main .todo-page.is-selecting .todo-row>[data-todo-del]{grid-column:5;grid-row:2}
+  .todo-edit-form{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .todo-edit-actions{grid-column:1/-1}
+}

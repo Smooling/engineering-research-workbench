@@ -7,8 +7,12 @@ from pathlib import Path
 from typing import Any
 
 from . import activity, store, workspace
+from . import versions
 from .perf_index_db import _connect, _init_db, _root, _LOCK
-from .perf_index_core import _registry, _todos_path, index_doc_path, remove_doc, sync
+from .perf_index_core import (
+    _registry, _todos_path, index_doc_path, ensure_ready, sync,
+    _remove_doc_conn, _affected_sources, _refresh_graph_edges, _sync_activity_conn, _refresh_status,
+)
 
 def normalize_project_payload(payload: dict[str, Any]) -> dict[str, Any]:
     out = dict(payload or {})
@@ -97,6 +101,24 @@ def apply_todo_project_id(item: dict[str, Any], payload: dict[str, Any]) -> dict
     return {**item, "project": normalized.get("project") or "", "project_id": normalized.get("project_id") or ""}
 
 
+def normalize_project_update(existing: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    """Explicit edits replace old associations; untouched associations persist."""
+    merged = {**existing, **payload}
+    names_changed = "project" in payload or "projects" in payload
+    ids_changed = "project_id" in payload or "project_ids" in payload
+    if names_changed and not ids_changed:
+        merged.pop("project_id", None)
+        merged.pop("project_ids", None)
+    if ids_changed and not names_changed:
+        merged.pop("project", None)
+        merged.pop("projects", None)
+    if "project" in payload and "projects" not in payload:
+        merged["projects"] = [payload["project"]] if payload["project"] else []
+    if "project_id" in payload and "project_ids" not in payload:
+        merged["project_ids"] = [payload["project_id"]] if payload["project_id"] else []
+    return normalize_project_payload(merged)
+
+
 def _safe_workspace_path(rel: str) -> Path:
     root = _root().resolve()
     target = (root / str(rel or "")).resolve()
@@ -149,7 +171,23 @@ def workspace_children(rel: str = "") -> dict[str, Any]:
     return _tree_node(path, include_children=True)
 
 
-def update_doc(doc_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+def create_doc(kind: str, payload: dict[str, Any], origin: dict[str, str] | None = None) -> dict[str, Any]:
+    ensure_ready()
+    with _LOCK:
+        doc = store.create_doc(kind, normalize_project_payload(payload), origin=origin)
+        index_doc_path(str(doc["path"]))
+        return doc
+
+
+def update_doc(doc_id: str, payload: dict[str, Any], origin: dict[str, str] | None = None) -> dict[str, Any]:
+    """更新条目（**索引层入口**）。
+
+    v261009.47 · 这里**改为委派给 `store.update_doc`**：此前它自己解析 frontmatter、自己 `_atomic_write`，
+    于是**绕过了写入收口点**——来源记录与"分叉/冲突时先留一版"都不会发生。
+    界面保存（`server.py` 走 `indexer.update_doc`）与 MCP 的 `kb_update_entry` 都在这条路上，
+    所以"外部 Agent 改了既有笔记却没有修改记录和分支"就是这么来的（用户反馈）。
+    现在：写入一律走 store（单一写入路径），本函数只负责同步索引。
+    """
     sync()
     with _connect() as conn:
         _init_db(conn)
@@ -163,49 +201,71 @@ def update_doc(doc_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         raise FileNotFoundError(doc_id)
     path = _root() / str(row["path"])
     kind = str(row["kind"])
+    # v261022.9 · 修订保护（上游 de31add）：写入前比对 expected_revision，
+    # 过期写入抛 RevisionConflict（HTTP 409 / Agent 转冲突结果），文件与活动日志零副作用。
     text = path.read_text(encoding="utf-8")
-    meta, body = store._frontmatter_parse(text)
-    allowed = {
-        "title", "status", "project", "projects", "project_id", "project_ids", "tags", "kind_marks", "pinned",
-        "record_date", "due", "added_date", "summary_type", "authors", "year", "venue", "doi", "url", "cite_key",
-    }
-    for key in allowed:
-        if key in payload:
-            meta[key] = payload[key]
-    meta["updated"] = datetime.now().isoformat(timespec="seconds")
-    if "body" in payload:
-        body = str(payload.get("body") or "")
-    if kind == "literature" and "bibtex" in payload:
-        bib = str(payload.get("bibtex") or "").strip()
-        block = f"```bibtex\n{bib}\n```" if bib else "```bibtex\n\n```"
-        if store.BIBTEX_BLOCK_RE.search(body):
-            body = store.BIBTEX_BLOCK_RE.sub(lambda _m: block, body, count=1)
-        else:
-            body = f"## BibTeX\n\n{block}\n\n" + body
-    if hasattr(store, "_normalize_projects"):
-        store._normalize_projects(meta)
-    for project_name in meta.get("projects", []) or []:
-        workspace.ensure_project(str(project_name))
-    with _LOCK:
-        store._atomic_write(path, store._frontmatter_dump(meta) + body.rstrip() + "\n")
-    activity.record("doc_update", ref=doc_id, kind=kind, title=str(meta.get("title") or doc_id), project=str(meta.get("project") or ""))
+    if "expected_revision" in payload:
+        expected = payload["expected_revision"]
+        if not isinstance(expected, str) or not expected:
+            raise ValueError("expected_revision 必须是读取条目时返回的修订号")
+        if expected != store.document_revision(text):
+            raise store.RevisionConflict(store._doc_from_path(kind, path, include_body=True, root=_root()))
+
+    # 走唯一写入路径：契约校验、来源记录、分叉/冲突留版、活动日志都在 store 里
+    if any(key in payload for key in ("project", "projects", "project_id", "project_ids")):
+        existing = store._doc_from_path(kind, path, include_body=False, root=_root())
+        normalized = normalize_project_update(existing, payload)
+        payload = {**payload, **{key: normalized[key] for key in
+                                ("project", "projects", "project_id", "project_ids")}}
+    # 排期字段归一（上游）：起止日期格式、先后顺序与 0–100 进度在写入前校验
+    if kind == "milestone" and {"start_date", "due", "progress"} & payload.keys():
+        existing = store._doc_from_path(kind, path, include_body=False, root=_root())
+        schedule = store.normalize_milestone_schedule({**existing, **payload})
+        payload = {**payload, **{key: schedule[key] for key in ("start_date", "due", "progress")}}
+    doc = store.update_doc(doc_id, payload, origin=origin,
+                           now=datetime.now().isoformat(timespec="seconds"))
     index_doc_path(path)
-    return store._doc_from_path(kind, path, include_body=True)
+    return store._doc_from_path(kind, path, include_body=True, root=_root())
 
 
 def delete_doc(doc_id: str) -> dict[str, Any]:
-    sync()
-    with _connect() as conn:
-        _init_db(conn)
-        row = conn.execute("SELECT path,kind,title,project FROM documents WHERE id=?", (doc_id,)).fetchone()
-    if not row:
-        raise FileNotFoundError(doc_id)
-    path = _root() / str(row["path"])
-    trash = _root() / "System" / "Trash" / str(row["kind"])
-    trash.mkdir(parents=True, exist_ok=True)
-    target = trash / f"{datetime.now().strftime('%Y%m%d%H%M%S')}-{path.name}"
-    with _LOCK:
-        shutil.move(str(path), str(target))
-    activity.record("doc_delete", ref=doc_id, kind=str(row["kind"]), title=str(row["title"] or doc_id), project=str(row["project"] or ""))
-    remove_doc(doc_id)
+    result = delete_docs([doc_id])
+    if result["failed"]:
+        failure = result["failed"][0]
+        if failure.get("error") == "FileNotFoundError":
+            raise FileNotFoundError(doc_id)
+        raise OSError(failure["message"])
     return {"ok": True}
+
+
+def delete_docs(doc_ids: list[str]) -> dict[str, Any]:
+    """Move an explicit selection to Trash, updating graph dependencies once."""
+    ensure_ready()
+    root = _root()
+    deleted, failed, keys = [], [], set()
+    with _LOCK:
+        with _connect(root) as conn:
+            _init_db(conn)
+            for doc_id in dict.fromkeys(doc_ids):
+                row = conn.execute("SELECT * FROM documents WHERE id=?", (doc_id,)).fetchone()
+                try:
+                    if not row:
+                        raise FileNotFoundError(doc_id)
+                    path = root / str(row["path"])
+                    trash = root / "System" / "Trash" / str(row["kind"])
+                    trash.mkdir(parents=True, exist_ok=True)
+                    target = trash / f"{datetime.now().strftime('%Y%m%d%H%M%S%f')}-{path.name}"
+                    shutil.move(str(path), str(target))
+                except (OSError, ValueError) as exc:
+                    failed.append({"id": doc_id, "message": str(exc), "error": type(exc).__name__})
+                    continue
+                keys.update((doc_id.casefold(), str(row["title_key"])))
+                _remove_doc_conn(conn, doc_id, update_graph=False)
+                deleted.append(doc_id)
+                activity.record("doc_delete", ref=doc_id, kind=str(row["kind"]), title=str(row["title"] or doc_id), project=str(row["project"] or ""))
+            if deleted:
+                _refresh_graph_edges(conn, _affected_sources(conn, keys) - set(deleted))
+                _sync_activity_conn(conn, root=root)
+                conn.commit()
+                _refresh_status(conn, root)
+    return {"deleted": deleted, "failed": failed}

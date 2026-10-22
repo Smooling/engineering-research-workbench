@@ -1,0 +1,69 @@
+{
+  "id": "metrics-table",
+  "name": "指标表",
+  "version": "1.0.0",
+  "description": "把条目正文里的 ```metrics 块聚合成跨实验对照表：列统计、缺项提示、CSV/Markdown 导出",
+  "api_version": 1,
+  "core_min": "v261009.25",
+  "kind": "inprocess",
+  "distribution": "optional",
+  "default_enabled": false,
+  "entry": "backend.py",
+  "permissions": [
+    "ui:panel",
+    "storage:own",
+    "config:own"
+  ],
+  "nav": [
+    {
+      "id": "metrics-table",
+      "label": "指标表",
+      "icon": "▩",
+      "mount": "web/panel.js"
+    }
+  ],
+  "panel": {
+    "mount": "web/panel.js",
+    "style": "web/panel.css"
+  },
+  "routes": [
+    {
+      "method": "GET",
+      "path": "table"
+    },
+    {
+      "method": "GET",
+      "path": "entry"
+    },
+    {
+      "method": "GET",
+      "path": "export"
+    },
+    {
+      "method": "GET",
+      "path": "config"
+    },
+    {
+      "method": "POST",
+      "path": "config"
+    }
+  ],
+  "mcp_tools": [
+    "metrics_table",
+    "record_metrics"
+  ],
+  "preview": {
+    "summary": "把条目正文里的指标汇成对照表：正文表格与 ```metrics 块都会被自动读到",
+    "features": [
+      "**直接读现有正文表格**（按行展开，自动识别「模型/方法」这类对象列）——不需要改写任何条目",
+      "按来源表分组呈现；「按对象透视」把同一模型在不同实验的数字并成一行（如 mIoU_mean@2.2）",
+      "列统计（min/max/mean）、缺项显式标出、每行可追溯到来源条目与小节",
+      "导出 CSV（带 BOM，Excel 中文不乱码）与 Markdown",
+      "写入走写工具 + 内核草稿闸门（面板不直接改条目；表格本来就能被读到）"
+    ],
+    "where": "侧栏 → 指标表",
+    "screens": [
+      "web/preview.png"
+    ]
+  }
+}

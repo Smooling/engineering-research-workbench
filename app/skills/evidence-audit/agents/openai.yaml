@@ -1,0 +1,5 @@
+interface:
+  display_name: "证据核查"
+  short_description: "对照原文核查结论、数值与方法边界"
+policy:
+  allow_implicit_invocation: true

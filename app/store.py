@@ -1,73 +1,293 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
-import mimetypes
+import math
 import os
 import re
 import shutil
 import uuid
 import threading
-from collections import deque
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
 from .workspace import ensure_workspace, ensure_project
 from . import activity, config
+from . import versions as _versions
+from core.contracts import kinds as contracts
+from core.contracts import naming as contract_naming
+from core.contracts import validate as contract_validate
 
-BUILTIN_KIND_DIR = {
-    "idea": "Knowledge/Ideas",
-    "journal": "Knowledge/Journals",
-    "note": "Knowledge/Notes",
-    "milestone": "Knowledge/Milestones",
-    "summary": "Knowledge/Summaries",
-    "literature": "Knowledge/Literature",
-}
+# v261009 · 契约单源：kind→目录/标签/状态机/日期字段一律取 core/contracts/kinds.py。
+# 历史上 store、mcp/constraints、kb_naming 三处各留一份副本且已漂移，本模块不再自留。
 
-BUILTIN_KIND_LABEL = {
-    "idea": "灵感",
-    "journal": "研究日志",
-    "note": "笔记",
-    "milestone": "里程碑",
-    "summary": "工作总结",
-    "literature": "文献",
-}
+# v3 · 自定义知识类型：内置类型一律取 core/contracts/kinds.py，仅自定义类型叠加在 config 上。
+_CUSTOM_KIND_RE = re.compile(r"^[a-z][a-z0-9_-]{0,47}$")
 
-BUILTIN_STATUSES = {
-    "idea": ["待整理", "探索中", "已采纳", "已归档"],
-    "journal": ["记录", "复盘", "已归档"],
-    "note": ["草稿", "整理中", "稳定", "已归档"],
-    "milestone": ["计划", "进行中", "受阻", "完成"],
-    "summary": ["草稿", "已定稿", "已归档"],
-    "literature": ["待阅读", "阅读中", "已精读", "已归档"],
-}
+def _knowledge_cfg() -> dict[str, Any]:
+    raw = config.get_app().get("knowledge_types") or {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def allowed_marks() -> set[str]:
+    """当前合法的分类标记 id：契约内置的 10 个 + 设置页自定义的（config/app.json）。
+
+    自定义标记由用户在「设置 → 知识条目 → 分类标记」添加，id 形如 `mark_xxx`；
+    core 不读配置，所以这里把配置里的 id 作为额外放行集合交给写入校验。
+    """
+    ids = {str(m["id"]) for m in contracts.MARK_IDS}
+    rows = config.get_app().get("classification_marks")
+    if isinstance(rows, list):
+        for row in rows:
+            if isinstance(row, dict):
+                mark_id = str(row.get("id") or "").strip()
+                if mark_id:
+                    ids.add(mark_id)
+    return ids
+
+
+def mark_catalog() -> dict[str, Any]:
+    """设置页「内置模板」数据：内置标记的 id/图案/颜色/用途 + 上限与默认集合。"""
+    return {
+        "limit": contracts.MARK_LIMIT,
+        "defaults": list(contracts.MARK_DEFAULT_IDS),
+        "templates": [
+            {
+                "id": str(m["id"]),
+                "icon": str(m["icon"]),
+                "label": str(m["label"]),
+                "color": str(m.get("color") or "#4a6fa5"),
+                "hint": contracts.MARK_TEMPLATE_HINTS.get(str(m["id"]), ""),
+            }
+            for m in contracts.MARK_IDS
+        ],
+    }
+
+def custom_kind_records() -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set(contracts.kind_dir_map())
+    for raw in (_knowledge_cfg().get("custom") or []):
+        if not isinstance(raw, dict):
+            continue
+        kind = str(raw.get("id") or "").strip().lower()
+        if not _CUSTOM_KIND_RE.fullmatch(kind) or kind in seen:
+            continue
+        label = str(raw.get("label") or kind).strip()[:32] or kind
+        icon = str(raw.get("icon") or "◆").strip()[:4] or "◆"
+        statuses = [str(x).strip()[:24] for x in (raw.get("statuses") or []) if str(x).strip()]
+        if not statuses:
+            statuses = ["草稿", "进行中", "完成", "已归档"]
+        template = str(raw.get("template") or "").replace("\r\n", "\n")
+        out.append({
+            "id": kind,
+            "label": label,
+            "icon": icon,
+            "statuses": list(dict.fromkeys(statuses))[:12],
+            "template": template,
+            "hidden": bool(raw.get("hidden", False)),
+        })
+        seen.add(kind)
+    return out
+
+def knowledge_type_registry() -> list[dict[str, Any]]:
+    cfg = _knowledge_cfg()
+    hidden = {str(x) for x in (cfg.get("hidden") or [])}
+    custom = {x["id"]: x for x in custom_kind_records()}
+    # 内置七类的默认顺序与侧栏一致：实验在里程碑之前（侧栏 NAV_GROUPS 也是这个次序）。
+    # 此前这里漏了 experiment，导致「设置 → 知识条目」看不到实验、无法与其它类型一并管理。
+    default_order = ["idea", "journal", "note", "experiment", "milestone", "summary", "literature", *custom.keys()]
+    order = [str(x) for x in (cfg.get("order") or []) if str(x)]
+    if not order:
+        order = list(default_order)
+    else:
+        # 旧配置的 order 可能缺后来新增的内置类型（如 experiment）。按 default_order 的
+        # 相对位置补齐，而不是一律追加到末尾——否则实验会排到「文献」之后。
+        for i, kind in enumerate(default_order):
+            if kind in order:
+                continue
+            prev = next((k for k in reversed(default_order[:i]) if k in order), None)
+            order.insert(order.index(prev) + 1 if prev else 0, kind)
+        order = list(dict.fromkeys([*order, *custom.keys()]))
+    rows: list[dict[str, Any]] = []
+    builtin_icons = {"idea":"✦","journal":"▤","note":"▧","experiment":"⚗","milestone":"⚑","summary":"▣","literature":"◫"}
+    for kind in order:
+        if kind in contracts.kind_dir_map():
+            rows.append({
+                "id": kind, "label": contracts.kind_label_map()[kind], "icon": builtin_icons[kind],
+                "statuses": list(contracts.kind_statuses(kind)), "builtin": True,
+                "hidden": kind in hidden, "template": kind_template(kind),
+                "default_template": kind_default_template(kind),
+            })
+        elif kind in custom:
+            rows.append({**custom[kind], "builtin": False, "hidden": bool(custom[kind].get("hidden")) or kind in hidden,
+                         "template": kind_template(kind), "default_template": kind_default_template(kind)})
+    return rows
 
 def kind_dir_map() -> dict[str, str]:
-    return dict(BUILTIN_KIND_DIR)
-
+    out = dict(contracts.kind_dir_map())
+    for row in custom_kind_records():
+        out[row["id"]] = f"Knowledge/Custom/{row['id']}"
+    return out
 
 def kind_label_map() -> dict[str, str]:
-    return dict(BUILTIN_KIND_LABEL)
-
+    out = dict(contracts.kind_label_map())
+    for row in custom_kind_records():
+        out[row["id"]] = row["label"]
+    return out
 
 def kind_statuses(kind: str) -> list[str]:
-    return list(BUILTIN_STATUSES.get(kind, []))
-
+    base = contracts.kind_statuses(kind)
+    if base:
+        return list(base)
+    for row in custom_kind_records():
+        if row["id"] == kind:
+            return list(row["statuses"])
+    return []
 
 def all_statuses() -> dict[str, list[str]]:
-    return dict(BUILTIN_STATUSES)
+    return {kind: kind_statuses(kind) for kind in kind_dir_map()}
 
-DATE_FIELDS = {
-    "journal": "record_date",
-    "milestone": "due",
-    "summary": "record_date",
-    "literature": "added_date",
-}
+def builtin_kind_default_template(kind: str) -> str:
+    if kind == "idea":
+        return "# {{title}}\n\n## 想法\n\n\n## 为什么值得记录\n\n\n## 下一步\n\n- [ ] \n"
+    if kind == "journal":
+        return "# {{title}}\n\n## 实验目的\n\n\n## 实验配置\n\n\n## 实验结果\n\n\n## 结论\n\n"
+    if kind == "note":
+        return "# {{title}}\n\n## 摘要\n\n\n## 正文\n\n\n## 关联\n\n"
+    if kind == "milestone":
+        return "# {{title}}\n\n## 目标\n\n\n## 验收条件\n\n- [ ] \n\n## 进展记录\n\n"
+    if kind == "summary":
+        return "# {{title}}\n\n## 本阶段完成\n\n\n## 结果与产出\n\n\n## 问题与经验\n\n\n## 下一阶段\n\n- [ ] \n"
+    if kind == "literature":
+        return "# {{title}}\n\n## BibTeX\n\n```bibtex\n{{bibtex}}\n```\n\n## 核心结论\n\n\n## 方法与数据\n\n\n## 与当前研究的关系\n\n\n## 摘录与批注\n\n"
+    return "# {{title}}\n\n## 要点\n\n\n## 正文\n\n\n## 关联\n\n"
+
+
+def kind_default_template(kind: str) -> str:
+    if kind in contracts.kind_dir_map():
+        return builtin_kind_default_template(kind)
+    for row in custom_kind_records():
+        if row["id"] == kind:
+            return str(row.get("template") or "") or builtin_kind_default_template("note")
+    return builtin_kind_default_template("note")
+
+
+def kind_template(kind: str) -> str:
+    cfg = _knowledge_cfg()
+    overrides = cfg.get("templates") if isinstance(cfg.get("templates"), dict) else {}
+    if kind in overrides:
+        return str(overrides.get(kind) or "")
+    return kind_default_template(kind)
+
+
+def cleanup_deleted_mark(mark_id: str) -> dict[str, Any]:
+    mark_id = str(mark_id or "").strip()
+    if not mark_id:
+        return {"ok": True, "updated": 0}
+    updated = 0
+    for kind, path in _iter_docs():
+        text = path.read_text(encoding="utf-8")
+        meta, body = _frontmatter_parse(text)
+        marks = meta.get("kind_marks") or []
+        if isinstance(marks, str):
+            marks = [x.strip() for x in re.split(r"[,，]", marks) if x.strip()]
+        if mark_id not in marks:
+            continue
+        meta["kind_marks"] = []
+        meta["updated"] = _now()
+        with _LOCK:
+            _atomic_write(path, _frontmatter_dump(meta) + body.rstrip() + "\n")
+        updated += 1
+    return {"ok": True, "updated": updated, "mark_id": mark_id}
+
+
+DATE_FIELDS = contracts.DATE_FIELDS
 
 WIKILINK_RE = re.compile(r"\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]")
+
+# ---------------------------------------------------------------- 关联段 → 关系类型
+# 「关联」段的小标题（H3）与行内标签（`- 标签：`）共同决定 WikiLink 的关系类型；
+# 未命中任何映射的链接退化为通用 `wikilink`，历史条目无需改动即可获得类型化边。
+# 映射表唯一声明处：core/contracts/kinds.py（store 只做转发）。
+RELATION_GENERIC = contracts.RELATION_GENERIC
+RELATION_SECTIONS = contracts.RELATION_SECTIONS
+RELATION_LABELS = contracts.RELATION_LABELS
+RELATION_LABELS_DISPLAY = contracts.RELATION_LABELS_DISPLAY
+
+_HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*#*\s*$")
+
+
+def _inline_label_role(line: str) -> str:
+    """行内 `- 标签：内容` 的标签映射（历史条目多用这种写法）。"""
+    text = line.lstrip("-*•· \t").strip()
+    if not text:
+        return ""
+    for sep in ("：", ":"):
+        if sep in text:
+            label = text.split(sep, 1)[0].strip().strip("*").strip()
+            role = RELATION_LABELS.get(label)
+            if role:
+                return role
+            break
+    return ""
+
+
+def iter_body_links(body: str) -> list[tuple[str, str]]:
+    """解析正文，返回 ``[(token, role)]``；role 由所属小标题或行内标签决定。
+
+    - 小标题命中 ``RELATION_SECTIONS`` → 该小节内所有链接用该关系类型；
+    - 行内标签命中 ``RELATION_LABELS`` → 覆盖所属小节的关系类型；
+    - 都不命中 → ``wikilink``（通用显式引用）。
+    """
+    out: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    section_role = RELATION_GENERIC
+    for raw in (body or "").splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        heading = _HEADING_RE.match(line)
+        if heading:
+            section_role = RELATION_SECTIONS.get(heading.group(1).strip(), RELATION_GENERIC)
+            continue
+        if "[[" not in line:
+            continue
+        role = _inline_label_role(line) or section_role
+        for token in WIKILINK_RE.findall(line):
+            token = str(token).strip()
+            if not token:
+                continue
+            item = (token, role)
+            if item not in seen:
+                seen.add(item)
+                out.append(item)
+    return out
+
 BIBTEX_BLOCK_RE = re.compile(r"```bibtex\s*\n(.*?)```", re.S | re.I)
 _LOCK = threading.RLock()
+
+
+def document_revision(text: str) -> str:
+    """Include metadata and body, independent of timestamp precision."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+class RevisionConflict(ValueError):
+    def __init__(self, current: dict[str, Any]):
+        super().__init__("条目已被其他客户端修改，请比较当前值后重新合并保存")
+        self.current = current
+
+
+def milestone_status_class(raw: Any) -> str:
+    # Unknown/custom labels remain visible and count as pending/planned.
+    value = str(raw or "").strip()
+    if value in ("完成", "已完成"):
+        return "done"
+    if value in ("受阻", "阻塞"):
+        return "blocked"
+    return "active" if value == "进行中" else "planned"
 
 
 def _now() -> str:
@@ -90,11 +310,7 @@ def _quote_yaml(value: str) -> str:
 
 def _frontmatter_dump(meta: dict[str, Any]) -> str:
     lines = ["---"]
-    ordered = [
-        "id", "kind", "title", "created", "updated", "status", "project", "projects", "tags",
-        "kind_marks", "record_date", "due", "added_date", "summary_type", "pinned", "authors", "year",
-        "venue", "doi", "url", "cite_key"
-    ]
+    ordered = contracts.FRONTMATTER_ORDER
     seen = set()
     for key in ordered + sorted(meta.keys()):
         if key in seen or key not in meta:
@@ -168,6 +384,11 @@ def _normalize_projects(meta: dict[str, Any]) -> dict[str, Any]:
             seen.add(value); dedup.append(value)
     meta["projects"] = dedup
     meta["project"] = dedup[0] if dedup else ""
+    # v261008.2 · 归属清空时同步清掉镜像的 id 字段，否则索引仍会按项目归属计入
+    # （`document_projects` 同时看 project_name 与 project_id，只清名字会留下幽灵归属）
+    if not dedup:
+        meta["project_id"] = ""
+        meta["project_ids"] = []
     return meta
 
 
@@ -187,7 +408,7 @@ def _iter_docs(kinds: list[str] | None = None):
             yield kind, path
 
 
-def _doc_from_path(kind: str, path: Path, include_body: bool = True) -> dict[str, Any]:
+def _doc_from_path(kind: str, path: Path, include_body: bool = True, root: Path | None = None) -> dict[str, Any]:
     text = path.read_text(encoding="utf-8")
     meta, body = _frontmatter_parse(text)
     meta.setdefault("id", path.stem)
@@ -197,6 +418,16 @@ def _doc_from_path(kind: str, path: Path, include_body: bool = True) -> dict[str
     meta.setdefault("project", "")
     meta.setdefault("projects", [])
     meta.setdefault("tags", [])
+    if kind == "milestone":
+        meta.setdefault("start_date", "")
+        meta.setdefault("due", "")
+        meta.setdefault("progress", None)
+        if meta["progress"] is not None:
+            try:
+                progress = float(meta["progress"])
+                meta["progress"] = progress if math.isfinite(progress) and 0 <= progress <= 100 else None
+            except (TypeError, ValueError):
+                meta["progress"] = None
     if isinstance(meta.get("kind_marks"), str):
         meta["kind_marks"] = [x.strip() for x in re.split(r"[,，]", meta["kind_marks"]) if x.strip()]
     if not isinstance(meta.get("kind_marks"), list):
@@ -206,14 +437,19 @@ def _doc_from_path(kind: str, path: Path, include_body: bool = True) -> dict[str
     if isinstance(meta.get("tags"), str):
         meta["tags"] = [t.strip() for t in meta["tags"].split(",") if t.strip()]
     doc = dict(meta)
+    doc["revision"] = document_revision(text)
+    if kind == "milestone":
+        doc["status_class"] = milestone_status_class(doc.get("status"))
     doc["filename"] = path.name
-    doc["path"] = str(path.relative_to(ensure_workspace())).replace("\\", "/")
+    # v261009.36 · 热路径优化：调用方可传入 root，避免**每条文档**都走一次 ensure_workspace()。
+    # 实测 200 条文档时它占 /api/docs 的 0.77s（ensure_workspace 每次会做 ~24 次 mkdir + stat）。
+    doc["path"] = str(path.relative_to(root if root is not None else ensure_workspace())).replace("\\", "/")
     doc["excerpt"] = _excerpt(body)
     if include_body:
         doc["body"] = body
     if kind == "literature":
         bib = BIBTEX_BLOCK_RE.search(body)
-        doc["bibtex"] = bib.group(1).strip() if bib else ""
+        doc["bibtex"] = str(meta["bibtex"] or "") if "bibtex" in meta else (bib.group(1).strip() if bib else "")
     return doc
 
 
@@ -225,13 +461,129 @@ def _excerpt(body: str, limit: int = 180) -> str:
     return cleaned[:limit]
 
 
+_EN_STOPWORDS = {
+    "the", "a", "an", "in", "on", "of", "for", "and", "or", "to", "with", "by", "from", "as", "at",
+    "is", "are", "be", "been", "was", "were", "that", "this", "it", "its", "into", "than", "then",
+    "there", "here", "we", "our", "not", "can", "will", "would", "which", "when", "where", "how",
+    "what", "who", "their", "them", "these", "those", "over", "under", "between", "within",
+    "without", "through", "during", "before", "after", "based", "using", "via", "etc", "novel",
+}  # v260930d · M5 英文虚词停用表：文献标题拆词后大量介词/冠词会误命中页面文本
+
+
+def _title_terms(title: str, kind: str) -> list[str]:
+    """v260930d · M5 从条目标题提取匹配候选词：知识类取名称段（去掉 知识-<类别>- 前缀），
+    其他类去掉单段前缀。文献类论文原题只整题参与、不拆词——论文名单词（detection 等）
+    与页面文本撞词太常见，噪声远大于信号；整题命中仅发生在"页面正来自这篇文献"时，才是真相关。"""
+    t = str(title or "").strip()
+    if not t:
+        return []
+    name = t
+    if kind == "note" and t.startswith("知识-"):
+        parts = t.split("-")
+        if len(parts) >= 3:
+            name = "-".join(parts[2:])
+    else:
+        for prefix in ("总结-", "灵感-", "日志-", "里程碑-", "文献-", "知识-"):
+            if t.startswith(prefix):
+                name = t[len(prefix):]
+                break
+    name = name.strip()
+    if not name:
+        return []
+    terms = [name]
+    if kind != "literature":  # 非文献类才拆词补充短词候选
+        for w in re.split(r"[\s/、,，;；()（）]+", name):
+            w = w.strip()
+            lw = w.lower()
+            if lw in _EN_STOPWORDS:
+                continue
+            if re.fullmatch(r"[A-Za-z]+", w) and len(w) < 4 and not w.isupper():
+                continue  # 短英文介词/冠词排除；全大写缩写（SCR/CW）保留
+            if len(w) >= 2 and w not in terms:
+                terms.append(w)
+    return terms
+
+
+def _term_in_text(term: str, low_text: str) -> bool:
+    """v260930i · 英文纯字母词按整词匹配（SCR 不得命中 description），容忍简单词形变化
+    （filters/filtering/estimated 这类 s/es/ed/ing 后缀），中文/混合词保留子串。"""
+    tl = term.lower()
+    if tl.isascii() and tl.isalpha():
+        stem = tl[:-1] if tl.endswith("e") else tl  # estimate → estimated/estimates/estimating
+        return re.search(rf"(?<![a-z0-9]){re.escape(stem)}e?(?:s|es|ed|ing)?(?![a-z0-9])", low_text) is not None
+    return tl in low_text
+
+
+_RELATED_CACHE: tuple[tuple[str, int], list] | None = None
+
+
+def match_related(page_text: str, limit: int = 8) -> list[dict[str, Any]]:
+    """v260930d · M5 阅读中知识关联：把页面正文与全库条目的标题名称段/标签做文本匹配，
+    返回本页出现过的知识条目（纯字符串匹配，不依赖 LLM）。命中按权重降序：
+    整名称段命中 > 长 token > 多 token；返回 hits 供前端高亮。
+    v260930i · 抗噪：英文整词匹配 + 最低相关门槛（整段命中必进；否则需 score≥4 或 ≥2 个独立命中）。"""
+    text = str(page_text or "")
+    if len(text.strip()) < 4:
+        return []
+    low = text.lower()
+    from . import indexer
+    global _RELATED_CACHE
+    state = indexer.status()
+    key = (state["path"], state["documents_version"])
+    if _RELATED_CACHE is None or _RELATED_CACHE[0] != key:
+        entries = []
+        for doc in indexer.document_metadata():
+            candidates = _title_terms(doc.get("title"), doc["kind"])
+            n_title = len(candidates)
+            for tag in doc.get("tags") or []:
+                term = str(tag).strip()
+                if len(term) >= 2 and term not in candidates:
+                    candidates.append(term)
+            entries.append((doc, candidates, n_title))
+        _RELATED_CACHE = (key, entries)
+    scored: dict[str, dict[str, Any]] = {}
+    for doc, candidates, n_title in _RELATED_CACHE[1]:
+        kind = doc["kind"]
+        hits: list[str] = []
+        score = 0
+        full = False
+        for i, term in enumerate(candidates):
+            tl = term.lower()
+            if tl and _term_in_text(term, low):
+                hits.append(term)
+                # v260930d · 权重：整名称段命中强加权；标题 token 按词长；tags 命中为弱信号（半权）
+                if i == 0:
+                    full = True
+                    score += 50 + len(term) // 2
+                elif i < n_title:
+                    score += len(term)
+                else:
+                    score += max(1, len(term) // 2)
+        if not hits:
+            continue
+        if len(hits) >= 2:
+            score += 2
+        if not full and score < 4 and len(hits) < 2:  # v260930i · 单个弱命中不足以构成关联
+            continue
+        scored[doc["id"]] = {
+            "id": doc["id"], "title": doc.get("title"), "kind": kind,
+            "kind_marks": doc.get("kind_marks") or [], "excerpt": doc.get("excerpt", ""),
+            "hits": hits[:4], "score": score,
+        }
+    out = sorted(scored.values(), key=lambda x: (-x["score"], x["kind"] != "note", str(x["title"])))  # v260930d · 同分时知识条目优先（M5 场景主体是术语解释）
+    for x in out:
+        x.pop("score", None)
+    return out[:max(1, min(int(limit or 8), 20))]
+
+
 def list_docs(kind: str | None = None, query: str = "", status: str = "", project: str = "", mark: str = "") -> list[dict[str, Any]]:
     kinds = [kind] if kind else None
     q = query.strip().lower()
     labels = kind_label_map()
+    root = ensure_workspace()          # v261009.36 · 循环外取一次（原来每条文档各取一次）
     out = []
     for k, path in _iter_docs(kinds):
-        doc = _doc_from_path(k, path, include_body=False)
+        doc = _doc_from_path(k, path, include_body=False, root=root)
         if status and doc.get("status") != status:
             continue
         if project and project not in (doc.get("projects") or ([doc.get("project")] if doc.get("project") else [])):
@@ -268,35 +620,93 @@ def get_doc(doc_id: str) -> dict[str, Any]:
     raise FileNotFoundError(doc_id)
 
 
+def get_docs_by_ids(doc_ids) -> dict[str, dict[str, Any]]:
+    """v260929 · 批量按 id 取 doc：一次目录遍历按 stem 预筛、仅命中文件读盘（O(N) 次读取），
+    替代逐条 get_doc 的 O(N×M) 全库扫描；stem 未命中再按 get_doc 兜底（几乎不触发）。"""
+    id_set = {str(x) for x in (doc_ids or []) if str(x)}
+    out: dict[str, dict[str, Any]] = {}
+    if not id_set:
+        return out
+    hit: dict[str, tuple[str, Path]] = {}
+    for kind, path in _iter_docs():
+        if path.stem in id_set and path.stem not in hit:
+            hit[path.stem] = (kind, path)
+    for doc_id, (kind, path) in hit.items():
+        try:
+            out[doc_id] = _doc_from_path(kind, path, include_body=True)
+        except Exception:
+            pass
+    for doc_id in id_set - set(out):
+        try:
+            out[doc_id] = get_doc(doc_id)
+        except Exception:
+            pass
+    return out
+
+
+def resolve_attachment(meta: dict[str, Any]) -> Path | None:
+    """v260923 · 解析文献 PDF 附件路径：绝对路径直接用，相对路径相对 Workspace。
+    仅接受 .pdf 且文件真实存在，其余一律视为无附件。"""
+    raw = str(meta.get("attachment") or "").strip().strip('"').strip("'")
+    if not raw:
+        return None
+    path = Path(raw)
+    if not path.is_absolute():
+        path = ensure_workspace() / raw
+    try:
+        path = path.resolve()
+    except OSError:
+        return None
+    if path.suffix.lower() != ".pdf" or not path.is_file():
+        return None
+    return path
+
+
+def attachment_file(doc_id: str) -> Path | None:
+    """v260923 · 取指定文献的 PDF 附件文件（不存在或配置无效时返回 None）。"""
+    from . import indexer
+    return resolve_attachment(indexer.get_doc(doc_id))
+
+
 def _make_default_body(kind: str, title: str, payload: dict[str, Any]) -> str:
-    if kind == "idea":
-        return f"# {title}\n\n## 想法\n\n\n## 为什么值得记录\n\n\n## 下一步\n\n- [ ] \n"
-    if kind == "journal":
-        return f"# {title}\n\n## 今日进展\n\n\n## 关键发现\n\n\n## 问题与阻塞\n\n\n## 下一步\n\n- [ ] \n"
-    if kind == "note":
-        return f"# {title}\n\n## 摘要\n\n\n## 正文\n\n\n## 关联\n\n"
-    if kind == "milestone":
-        return f"# {title}\n\n## 目标\n\n\n## 验收条件\n\n- [ ] \n\n## 进展记录\n\n"
-    if kind == "summary":
-        return f"# {title}\n\n## 本阶段完成\n\n\n## 结果与产出\n\n\n## 问题与经验\n\n\n## 下一阶段\n\n- [ ] \n"
-    if kind == "literature":
-        bibtex = payload.get("bibtex") or "@article{cite_key,\n  title = {},\n  author = {},\n  year = {}\n}"
+    """正文骨架：内置类型走契约单源 core/contracts/kinds.py；自定义类型 / 配置模板覆盖走 kind_template（v3 自定义知识类型）。"""
+    overrides = _knowledge_cfg().get("templates")
+    overridden = isinstance(overrides, dict) and str(kind) in overrides
+    if overridden or kind not in contracts.kind_dir_map():
+        template = kind_template(kind)
+        bibtex = payload.get("bibtex") or contracts.DEFAULT_BIBTEX
         return (
-            f"# {title}\n\n"
-            "## BibTeX\n\n"
-            f"```bibtex\n{bibtex.strip()}\n```\n\n"
-            "## 核心结论\n\n\n"
-            "## 方法与数据\n\n\n"
-            "## 与当前研究的关系\n\n\n"
-            "## 摘录与批注\n\n"
+            template
+            .replace("{{title}}", title)
+            .replace("{{date}}", _today())
+            .replace("{{bibtex}}", str(bibtex).strip())
+            .rstrip() + "\n"
         )
-    return f"# {title}\n\n## 要点\n\n\n## 正文\n\n\n## 关联\n\n"
+    return contracts.default_body(kind, title, payload)
 
 
-def create_doc(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
+def _enforce_write(kind: str, payload: dict[str, Any], *, partial: bool = False, title: str = "") -> None:
+    """写入前的字段硬校验（v261009 · P16 根因修复）。
+
+    这些规则原先只写在文档里、写入期零校验，于是库里真的出现了越界 status 与越界标记。
+    现在两条写入路径（HTTP 的 store 与 MCP 工具层）都过这里。
+    `level=error` 直接拒写；warn 级只提示，不阻断。
+    """
+    issues = contract_validate.validate_write(
+        kind, payload, partial=partial, title=title, allowed_marks=allowed_marks(),
+    )
+    if contract_validate.errors(issues):
+        raise ValueError("字段校验未通过：" + contract_validate.summarize(issues))
+
+
+def prepare_doc(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Build an editor draft without files, events or index entries."""
     if kind not in kind_dir_map():
         raise ValueError("Invalid kind")
     title = str(payload.get("title") or f"未命名{kind_label_map().get(kind, kind)}").strip()
+    # 契约强制的标记在此补齐（两条写入路径一致；此前只有 MCP 侧补，HTTP 侧不补）
+    payload = {**payload, "kind_marks": contract_naming.derive_marks(kind, title, payload.get("kind_marks"))}
+    _enforce_write(kind, payload, title=title)
     doc_id = f"{kind}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
     now = _now()
     meta: dict[str, Any] = {
@@ -308,6 +718,8 @@ def create_doc(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
         "status": payload.get("status") or (kind_statuses(kind) or ["草稿"])[0],
         "project": payload.get("project") or "",
         "projects": payload.get("projects") or [],
+        "project_id": payload.get("project_id") or "",
+        "project_ids": payload.get("project_ids") or [],
         "tags": payload.get("tags") or [],
         "kind_marks": payload.get("kind_marks") or [],
         "pinned": bool(payload.get("pinned", False)),
@@ -315,38 +727,130 @@ def create_doc(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
     date_field = DATE_FIELDS.get(kind)
     if date_field:
         meta[date_field] = payload.get(date_field) or _today()
+    if kind == "milestone":
+        meta.update(normalize_milestone_schedule({"due": _today(), **payload}))
     if kind == "summary":
         meta["summary_type"] = payload.get("summary_type") or "阶段总结"
     if kind == "literature":
-        for key in ("authors", "year", "venue", "doi", "url", "cite_key"):
+        for key in ("authors", "year", "venue", "doi", "url", "cite_key", "attachment"):
             meta[key] = payload.get(key) or ""
         if not meta["cite_key"]:
             meta["cite_key"] = _slug(title).replace("-", "_")[:48]
     _normalize_projects(meta)
-    body = payload.get("body") or _make_default_body(kind, title, payload)
+    body = str(payload["body"]) if payload.get("body") is not None else _make_default_body(kind, title, payload)
+    bibtex = BIBTEX_BLOCK_RE.search(body) if kind == "literature" else None
+    citation = str(payload["bibtex"] or "") if "bibtex" in payload else (bibtex.group(1).strip() if bibtex else "")
+    return {**meta, "body": body, "path": "", "draft": True,
+            "bibtex": citation}
+
+
+def normalize_milestone_schedule(payload: dict[str, Any]) -> dict[str, Any]:
+    """An optional start makes a milestone a planned phase; never infer dates/progress."""
+    result: dict[str, Any] = {}
+    for key, label in (("start_date", "开始日期"), ("due", "截止日期")):
+        raw = str(payload.get(key) or "").strip()
+        try:
+            if raw and (not re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw) or date.fromisoformat(raw).isoformat() != raw):
+                raise ValueError
+        except ValueError:
+            raise ValueError(f"{label}须为有效的 YYYY-MM-DD 日期") from None
+        result[key] = raw
+    if result["start_date"] and result["due"] and result["start_date"] > result["due"]:
+        raise ValueError("截止日期不能早于开始日期")
+    progress = payload.get("progress")
+    if progress is None or progress == "":
+        result["progress"] = None
+    else:
+        try:
+            number = float(progress)
+            if isinstance(progress, bool) or not math.isfinite(number) or not 0 <= number <= 100:
+                raise ValueError
+        except (TypeError, ValueError):
+            raise ValueError("完成进度须为 0–100 的数字，或留空") from None
+        result["progress"] = round(number, 1)
+    return result
+
+
+def create_doc(kind: str, payload: dict[str, Any], origin: dict[str, str] | None = None,
+               _skip_versioning: bool = False) -> dict[str, Any]:
+    """新建条目。`origin` 记录来源（ui/agent/mcp/plugin/cli + 工具名 + 外部客户端名）。"""
+    meta = prepare_doc(kind, payload)
+    body = meta.pop("body")
+    for key in ("path", "draft"):
+        meta.pop(key)
+    if kind != "literature":
+        meta.pop("bibtex", None)
+    doc_id, title, now = meta["id"], meta["title"], meta["created"]
+    # v261009.41 · 来源追踪 + 版本归族（写入收口点：界面 / Agent / MCP / 插件四条路径一视同仁）
+    _origin = dict(origin or _versions.origin("cli"))
+    meta.update({k: v for k, v in _origin.items() if v})
+    # 显式 variant_of **永远生效**（数据本身）；`_skip_versioning` 只跳过"按标题自动归族"
+    variant_of = str(payload.get("variant_of") or "").strip()
+    if variant_of:
+        meta["variant_of"] = variant_of
+        meta["variant_label"] = str(payload.get("variant_label") or "").strip() or "副本"
+    elif not _skip_versioning:
+        base = _versions.find_same_signature(kind, title, exclude_id=doc_id)
+        if base:
+            meta["variant_of"] = base
+            meta["variant_label"] = _versions.label_from_title(title, kind=kind) or "副本"
+    if meta.get("variant_of"):
+        # v261009.45 · 这条**分支的创建时间**（开分支工具会给；自动归族时取此刻）。
+        # 必须在这里（写文件之前）—— 放到文件写完后再 setdefault 是无效的（实测踩到）。
+        meta["variant_at"] = str(payload.get("variant_at") or "").strip() or now
     for project_name in meta.get("projects", []):
         ensure_project(project_name)
     path = _kind_path(kind) / f"{doc_id}.md"
     with _LOCK:
         _atomic_write(path, _frontmatter_dump(meta) + body.rstrip() + "\n")
-    activity.record("doc_create", ref=doc_id, kind=kind, title=title, project=str(meta.get("project") or ""))
+    activity.record("doc_create", ref=doc_id, kind=kind, title=title,
+                    project=str(meta.get("project") or ""),
+                    source=_versions.describe_origin(meta))
+    if meta.get("variant_of"):
+        # v261009.45 · 这条分支的**创建时间**（开分支工具会给；自动归族时取此刻）
+        meta.setdefault("variant_at", str(payload.get("variant_at") or "") or now)
+    if meta.get("variant_of"):        # 变体一落地就给基条打标记（mark 自身走 _skip_versioning，无递归）
+        _versions.mark_base_forked(str(meta["variant_of"]), True)
     return _doc_from_path(kind, path, include_body=True)
 
 
-def update_doc(doc_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+def update_doc(doc_id: str, payload: dict[str, Any], origin: dict[str, str] | None = None,
+               _skip_versioning: bool = False, now: str = "") -> dict[str, Any]:
+    """更新条目。`origin` 同 create_doc；**分叉/冲突时先留一版**（见 app/versions.py）。
+
+    `now` 由调用方给出写入时间（缺省取本机当前秒）：索引层在写入锁内已算过一次时间，
+    再传进来可让同一次写入在文件与返回值里保持同一时刻，也便于测试冻结时钟。
+    """
     doc = get_doc(doc_id)
     kind = doc["kind"]
+    # 可写字段的唯一声明处在 core/contracts/kinds.py（UPDATE_FIELDS）；body 走正文分支
+    allowed = set(contracts.UPDATE_FIELDS) - {"body"}
+    incoming = {k: v for k, v in payload.items() if k in allowed}
+    _enforce_write(kind, incoming, partial=True, title=str(incoming.get("title") or doc.get("title") or ""))
+    # v261009.41 · 分叉/冲突时先留一版（用户选定：只在分叉/冲突/归档时留版本，日常编辑仍覆盖式）
+    _origin = dict(origin or _versions.origin("cli"))
+    _prev_surface = str(doc.get("origin_surface") or "").strip()
+    _new_surface = str(_origin.get("origin_surface") or "").strip()
+    _forked = bool(doc.get("has_variants"))          # O(1)：基条上的标记，由内核在分叉/归档时维护
+    # 冲突 = 写入来源变了。两种情况都算：
+    #   ① 上一次写入者已知且与本次不同；
+    #   ② 上一次写入者**未知**（历史条目从没记过 origin_*）而本次是**外部/代理写入**
+    #      （agent / mcp / plugin / cli）——"外部 Agent 改了既有笔记"必须留下可追溯的版本。
+    #      界面自己保存（ui）不算冲突，否则每改一条历史笔记都会凭空多一版。
+    _conflict = bool(_new_surface) and (
+        (_prev_surface != _new_surface and bool(_prev_surface))
+        or (not _prev_surface and _new_surface != "ui"))
+    if (not _skip_versioning) and (not _versions.is_variant(doc)) and (_forked or _conflict):
+        _versions.snapshot_before_write(
+            doc, reason="分叉期间保留写入前内容" if _forked else f"来源变化 {_prev_surface}->{_new_surface}")
     path = ensure_workspace() / doc["path"]
     text = path.read_text(encoding="utf-8")
     meta, body = _frontmatter_parse(text)
-    allowed = {
-        "title", "status", "project", "projects", "tags", "kind_marks", "pinned", "record_date", "due", "added_date",
-        "summary_type", "authors", "year", "venue", "doi", "url", "cite_key"
-    }
     for key in allowed:
         if key in payload:
             meta[key] = payload[key]
-    meta["updated"] = _now()
+    meta["updated"] = now or _now()
+    meta.update({k: v for k, v in _origin.items() if v})   # v261009.41 · 记录本次写入者
     if "body" in payload:
         body = str(payload.get("body") or "")
     if kind == "literature" and "bibtex" in payload:
@@ -361,8 +865,69 @@ def update_doc(doc_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         ensure_project(project_name)
     with _LOCK:
         _atomic_write(path, _frontmatter_dump(meta) + body.rstrip() + "\n")
-    activity.record("doc_update", ref=doc_id, kind=kind, title=str(meta.get("title") or doc_id), project=str(meta.get("project") or ""))
+    activity.record("doc_update", ref=doc_id, kind=kind, title=str(meta.get("title") or doc_id),
+                    project=str(meta.get("project") or ""),
+                    source=_versions.describe_origin(meta))   # v261009.41 · 谁写的（界面/Agent/MCP/插件）
     return _doc_from_path(kind, path, include_body=True)
+
+
+def _sync_h1(body: str, title: str) -> str:
+    """把正文首个 H1 改为给定标题（``title``/H1 必须一致）。"""
+    lines = (body or "").splitlines()
+    for i, line in enumerate(lines):
+        if line.startswith("# "):
+            lines[i] = f"# {title}"
+            return "\n".join(lines)
+    return f"# {title}\n\n" + (body or "").lstrip("\n")
+
+
+def change_kind(
+    doc_id: str,
+    new_kind: str,
+    new_title: str = "",
+    *,
+    status: str = "",
+    kind_marks: list[str] | None = None,
+) -> dict[str, Any]:
+    """v261008.2 · 把条目改挂到另一类 kind（目录随动、H1 同步）。
+
+    结构性迁移专用：`id` 与 `created` 保持不变，仅 `kind`/`title`/`status`/`updated` 等变化；
+    跨条目引用由调用方（工具层/迁移脚本）用 `naming.rewrite_references` 同步。
+    """
+    if new_kind not in kind_dir_map():
+        raise ValueError(f"Invalid kind: {new_kind}")
+    doc = get_doc(doc_id)
+    old_kind = str(doc.get("kind") or "")
+    if old_kind == new_kind:
+        raise ValueError(f"条目已是 {new_kind} 类型")
+    src = ensure_workspace() / doc["path"]
+    meta, body = _frontmatter_parse(src.read_text(encoding="utf-8"))
+    title = str(new_title or meta.get("title") or doc_id).strip()
+    meta["kind"] = new_kind
+    meta["title"] = title
+    meta["updated"] = _now()
+    allowed = kind_statuses(new_kind)
+    if status and (not allowed or status in allowed):
+        meta["status"] = status
+    elif allowed and str(meta.get("status") or "") not in allowed:
+        meta["status"] = allowed[0]
+    if kind_marks is not None:
+        merged = [str(m).strip() for m in kind_marks if str(m).strip()]
+        if merged:
+            meta["kind_marks"] = merged
+    date_field = DATE_FIELDS.get(new_kind)
+    if date_field and not meta.get(date_field):
+        meta[date_field] = _today()
+    body = _sync_h1(body, title)
+    dst = _kind_path(new_kind) / src.name
+    with _LOCK:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        _atomic_write(dst, _frontmatter_dump(meta) + body.rstrip() + "\n")
+        if dst.resolve() != src.resolve():
+            src.unlink()
+    activity.record("doc_update", ref=doc_id, kind=new_kind, title=title,
+                    project=str(meta.get("project") or ""))
+    return _doc_from_path(new_kind, dst, include_body=True)
 
 
 def delete_doc(doc_id: str) -> dict:
@@ -423,183 +988,6 @@ def save_asset(data_url: str, original_name: str = "image.png") -> dict[str, Any
     }
 
 
-def projects() -> list[str]:
-    vals = set()
-    for doc in list_docs():
-        for project_name in doc.get("projects") or ([doc.get("project")] if doc.get("project") else []):
-            if str(project_name).strip():
-                vals.add(str(project_name).strip())
-    project_root = ensure_workspace() / "Projects"
-    for p in project_root.iterdir():
-        if p.is_dir():
-            vals.add(p.name)
-    return sorted(vals, key=str.lower)
-
-
-def graph() -> dict[str, Any]:
-    docs = list_docs()
-    by_id = {d["id"]: d for d in docs}
-    by_title: dict[str, str] = {}
-    for d in docs:
-        by_title.setdefault(str(d.get("title", "")).strip().lower(), d["id"])
-    nodes: list[dict[str, Any]] = []
-    edges: list[dict[str, Any]] = []
-    edge_seen: set[tuple[str, str, str]] = set()
-    virtual_seen: set[str] = set()
-
-    def add_virtual(node_id: str, label: str, kind: str) -> None:
-        if node_id in virtual_seen:
-            return
-        virtual_seen.add(node_id)
-        nodes.append({"id": node_id, "label": label, "kind": kind, "virtual": True})
-
-    def add_edge(source: str, target: str, relation: str) -> None:
-        key = tuple(sorted((source, target))) + (relation,)
-        if key in edge_seen:
-            return
-        edge_seen.add(key)
-        edges.append({"source": source, "target": target, "relation": relation})
-
-    for d in docs:
-        projects_list = d.get("projects") or ([d.get("project")] if d.get("project") else [])
-        tags = [str(t).strip() for t in (d.get("tags") or []) if str(t).strip()]
-        nodes.append({
-            "id": d["id"], "label": d.get("title") or d["id"], "kind": d["kind"],
-            "project": d.get("project") or "", "projects": projects_list, "tags": tags,
-            "status": d.get("status") or "", "updated": d.get("updated") or "", "virtual": False,
-        })
-        for project_name in projects_list:
-            project_name = str(project_name).strip()
-            if not project_name:
-                continue
-            pid = "project:" + project_name
-            add_virtual(pid, project_name, "project")
-            add_edge(d["id"], pid, "project")
-        for tag in tags:
-            tid = "tag:" + tag
-            add_virtual(tid, tag, "tag")
-            add_edge(d["id"], tid, "tag")
-
-    for d in docs:
-        try:
-            full = get_doc(d["id"])
-        except FileNotFoundError:
-            continue
-        for ref in WIKILINK_RE.findall(full.get("body", "")):
-            token = ref.strip()
-            target = by_id.get(token, {}).get("id") if token in by_id else by_title.get(token.lower())
-            if not target or target == d["id"]:
-                continue
-            add_edge(d["id"], target, "wikilink")
-    return {"nodes": nodes, "edges": edges}
-
-
-def graph_neighborhood(root_id: str, depth: int = 1) -> dict[str, Any]:
-    depth = 2 if int(depth) >= 2 else 1
-    g = graph()
-    adjacency: dict[str, set[str]] = {}
-    for e in g["edges"]:
-        adjacency.setdefault(e["source"], set()).add(e["target"])
-        adjacency.setdefault(e["target"], set()).add(e["source"])
-    dist = {root_id: 0}
-    q = deque([root_id])
-    while q:
-        cur = q.popleft()
-        if dist[cur] >= depth:
-            continue
-        for nxt in adjacency.get(cur, set()):
-            if nxt not in dist:
-                dist[nxt] = dist[cur] + 1
-                q.append(nxt)
-    node_map = {n["id"]: n for n in g["nodes"]}
-    items = []
-    for node_id, d in sorted(dist.items(), key=lambda x: (x[1], node_map.get(x[0], {}).get("label", ""))):
-        node = node_map.get(node_id)
-        if not node:
-            continue
-        if node.get("virtual"):
-            items.append({**node, "distance": d, "selectable": False})
-        else:
-            doc = get_doc(node_id)
-            items.append({**node, "distance": d, "selectable": True, "excerpt": doc.get("excerpt", "")})
-    return {"root": root_id, "depth": depth, "items": items}
-
-
-def build_bundle(root_id: str, selected_ids: list[str], title: str = "", active_node_ids: list[str] | None = None, relations: list[dict[str, Any]] | None = None) -> str:
-    g = graph()
-    node_map = {n["id"]: n for n in g["nodes"]}
-    root_node = node_map.get(root_id)
-    if not root_node:
-        raise ValueError("图谱核心节点不存在")
-
-    docs_to_include: list[str] = []
-    seen: set[str] = set()
-    # A concrete Markdown root is always included. Virtual tag/project roots are relation anchors only.
-    if not root_node.get("virtual"):
-        docs_to_include.append(root_id); seen.add(root_id)
-    for item in selected_ids or []:
-        if item in seen or item not in node_map or node_map[item].get("virtual"):
-            continue
-        try:
-            get_doc(item)
-        except FileNotFoundError:
-            continue
-        seen.add(item); docs_to_include.append(item)
-
-    active_ids = set(active_node_ids or [])
-    if not active_ids:
-        active_ids = set(docs_to_include) | {root_id}
-    active_ids.add(root_id)
-    for doc_id in docs_to_include:
-        active_ids.add(doc_id)
-
-    valid_edges = {(e["source"], e["target"], e["relation"]) for e in g["edges"]}
-    relation_rows: list[dict[str, str]] = []
-    if relations is not None:
-        for e in relations:
-            key = (str(e.get("source") or ""), str(e.get("target") or ""), str(e.get("relation") or ""))
-            reverse = (key[1], key[0], key[2])
-            if (key in valid_edges or reverse in valid_edges) and key[0] in active_ids and key[1] in active_ids:
-                relation_rows.append({"source": key[0], "target": key[1], "relation": key[2]})
-    else:
-        relation_rows = [e for e in g["edges"] if e["source"] in active_ids and e["target"] in active_ids]
-
-    root_label = root_node.get("label") or root_id
-    root_kind = root_node.get("kind") or ""
-    bundle_title = title.strip() or f"{root_label} · 关联资料汇总"
-    root_desc = f"{kind_label_map().get(root_kind, root_kind)}：{root_label}" if root_node.get("virtual") else f"[[{root_label}]]"
-    lines = [
-        f"# {bundle_title}", "",
-        f"> 生成时间：{_now()}",
-        f"> 核心节点：{root_desc}",
-        "> 关系索引仅包含生成时知识图谱当前可见的节点类别与关系类型。", "",
-        "## 关系索引", "",
-    ]
-    relation_label = {"wikilink": "引用", "tag": "标签", "project": "项目"}
-    if relation_rows:
-        for e in relation_rows:
-            a = node_map.get(e["source"], {"label": e["source"]})
-            b = node_map.get(e["target"], {"label": e["target"]})
-            lines.append(f"- {a.get('label')} → {b.get('label')} `{relation_label.get(e['relation'], e['relation'])}`")
-    else:
-        lines.append("- 当前所选内容在当前图谱筛选条件下没有可见关系边。")
-    lines.extend(["", "---", ""])
-
-    for idx, doc_id in enumerate(docs_to_include, 1):
-        doc = get_doc(doc_id)
-        projects_list = doc.get("projects") or ([doc.get("project")] if doc.get("project") else [])
-        lines.extend([
-            f"## {idx}. {doc.get('title')}", "",
-            f"- 类型：{kind_label_map().get(doc.get('kind'), doc.get('kind'))}",
-            f"- 项目：{', '.join(projects_list) or '—'}",
-            f"- 状态：{doc.get('status') or '—'}",
-            f"- 标签：{', '.join(doc.get('tags') or []) or '—'}", "",
-            _bundle_body(doc.get("body", "")), "", "---", ""
-        ])
-    return "\n".join(lines).rstrip() + "\n"
-
-
-
 def _bundle_body(body: str) -> str:
     # A knowledge bundle is stored two levels below Knowledge/. Make image links portable.
     body = re.sub(r"\(/workspace-file/Knowledge/Attachments/([^\)]+)\)", r"(../../Attachments/\1)", body)
@@ -617,31 +1005,6 @@ def save_bundle(filename: str, content: str) -> dict:
         _atomic_write(path, content)
     activity.record("knowledge_export", ref=path.name, kind="bundle", title=path.stem)
     return {"ok": True, "path": str(path.relative_to(ensure_workspace())).replace("\\", "/")}
-
-
-def export_bibtex(ids: list[str] | None = None) -> dict[str, Any]:
-    docs = list_docs("literature")
-    selected = set(ids or [])
-    blocks = []
-    for summary in docs:
-        if selected and summary["id"] not in selected:
-            continue
-        doc = get_doc(summary["id"])
-        bib = doc.get("bibtex", "").strip()
-        if bib:
-            blocks.append(bib)
-    content = "\n\n".join(blocks).strip() + ("\n" if blocks else "")
-    root = ensure_workspace() / "Knowledge" / "Exports" / "BibTeX"
-    root.mkdir(parents=True, exist_ok=True)
-    filename = f"literature-{datetime.now().strftime('%Y%m%d-%H%M%S')}.bib"
-    path = root / filename
-    with _LOCK:
-        _atomic_write(path, content)
-    activity.record("bibtex_export", ref=path.name, kind="literature", title=f"BibTeX export ({len(blocks)})")
-    return {
-        "ok": True, "count": len(blocks), "content": content,
-        "path": str(path.relative_to(ensure_workspace())).replace("\\", "/"),
-    }
 
 
 def _date_only(value: Any) -> date | None:
@@ -811,7 +1174,7 @@ def dashboard() -> dict[str, Any]:
     for name in project_names:
         project_docs = [d for d in docs if name in (d.get("projects") or ([d.get("project")] if d.get("project") else []))]
         project_todos = [t for t in todo_items if str(t.get("project") or "").strip() == name and not t.get("done")]
-        project_milestones = [d for d in project_docs if d.get("kind") == "milestone" and d.get("status") != "完成"]
+        project_milestones = [d for d in project_docs if d.get("kind") == "milestone"]
         timestamps = [str(d.get("updated") or d.get("created") or "") for d in project_docs]
         timestamps += [str(t.get("updated") or t.get("created") or "") for t in todo_items if str(t.get("project") or "").strip() == name]
         last_updated = max([x for x in timestamps if x], default="")
@@ -819,7 +1182,7 @@ def dashboard() -> dict[str, Any]:
             "name": name,
             "docs": len(project_docs),
             "open_todos": len(project_todos),
-            "open_milestones": len(project_milestones),
+            "milestones": len(project_milestones),
             "literature": sum(1 for d in project_docs if d.get("kind") == "literature"),
             "notes": sum(1 for d in project_docs if d.get("kind") in {"note", "journal", "idea"}),
             "last_updated": last_updated,
@@ -842,3 +1205,17 @@ def dashboard() -> dict[str, Any]:
         "academic": _academic_progress(profile, today_obj),
         "activity": _research_activity(docs, todo_items, today_obj),
     }
+
+
+# ---------------------------------------------------------------- 跨模块公开 API（v261009）
+# 索引/查询层原先直接调用下面的私有实现，私有签名一改就会连带破掉上层；
+# 这里给出稳定入口，跨模块调用一律走它。
+
+def doc_from_path(kind: str, path: Path, include_body: bool = True) -> dict[str, Any]:
+    """读单个条目文件为 doc 字典（公开入口，供索引层使用）。"""
+    return _doc_from_path(kind, path, include_body=include_body)
+
+
+def academic_progress(profile: dict[str, Any], today: date) -> dict[str, Any]:
+    """学业进度摘要（公开入口，供索引/仪表盘层使用）。"""
+    return _academic_progress(profile, today)

@@ -1,0 +1,60 @@
+{
+  "id": "billing",
+  "name": "用量计费",
+  "version": "1.0.1",
+  "description": "LLM 调用用量与费用观测（单价表 + 账本 + 聚合统计）",
+  "api_version": 1,
+  "core_min": "v261009",
+  "kind": "inprocess",
+  "distribution": "bundled",
+  "default_enabled": true,
+  "entry": "backend.py",
+  "permissions": [
+    "storage:own",
+    "config:own",
+    "ui:panel"
+  ],
+  "nav": [
+    {
+      "id": "billing",
+      "label": "用量",
+      "icon": "▤",
+      "mount": "web/panel.js",
+      "style": "web/panel.css"
+    }
+  ],
+  "routes": [
+    {
+      "method": "GET",
+      "path": "summary"
+    },
+    {
+      "method": "GET",
+      "path": "records"
+    },
+    {
+      "method": "GET",
+      "path": "prices"
+    },
+    {
+      "method": "POST",
+      "path": "prices"
+    },
+    {
+      "method": "POST",
+      "path": "clear"
+    }
+  ],
+  "preview": {
+    "summary": "按内核广播的 llm.usage 事件记账：调用次数、token、时长与花费",
+    "features": [
+      "订阅内核 llm.usage 事件，逐条落账到插件自己的 sqlite",
+      "侧栏「用量统计」页：按时间/模型/人设汇总",
+      "纯本地记账，无网络依赖"
+    ],
+    "where": "侧栏 → 用量统计",
+    "screens": [
+      "web/preview.png"
+    ]
+  }
+}

@@ -13,31 +13,17 @@ from typing import Any
 
 from .config import ROOT, get_app, workspace_root
 from . import activity
+from core.contracts import kinds as contracts
 
 _LOCK = threading.RLock()
 _MIGRATION_CHECKED = False
+#: 已确认过骨架的根路径（进程级快路径，见 ensure_workspace）；reset_runtime_state() 会清空
+_ENSURED: str | None = None
 
-WORKSPACE_LAYOUT = [
-    "Knowledge/Ideas",
-    "Knowledge/Journals",
-    "Knowledge/Notes",
-    "Knowledge/Milestones",
-    "Knowledge/Summaries",
-    "Knowledge/Literature",
-    "Knowledge/Attachments",
-    "Knowledge/Exports/KnowledgeBundles",
-    "Knowledge/Exports/BibTeX",
-    "Projects",
-    "Resources",
-    "System/Trash",
-    "System/Cache",
-    "System/AgentChats/Attachments",
-    "System/AgentChats/Trash",
-]
+# 工作区骨架的唯一声明处：core/contracts/kinds.py（v261009 起与 MCP 侧共用同一份）。
+WORKSPACE_LAYOUT = contracts.WORKSPACE_LAYOUT
 
-PROJECT_LAYOUT = [
-    "Notes", "Experiments", "Data", "Results", "Figures", "Manuscript", "References"
-]
+PROJECT_LAYOUT = contracts.PROJECT_LAYOUT
 
 LEGACY_RELATIVE = {
     "data/research_os/ideas": "Knowledge/Ideas",
@@ -53,9 +39,24 @@ LEGACY_RELATIVE = {
 
 
 def ensure_workspace(run_migration: bool = True) -> Path:
-    global _MIGRATION_CHECKED
+    """确保工作区骨架存在，返回根路径。
+
+    v261009.36 · **加进程级快路径**：此前每次调用都会把 ~24 个骨架目录各 mkdir/stat 一遍，
+    而它被 CRUD 热路径反复调用（`list_docs` 每条文档一次）——实测 /api/docs 单请求 837ms 里
+    0.77s 花在这里。现在同一根路径只确认一次；换根（改设置/迁移）时键不同会重新确认，
+    `reset_runtime_state()` 会清掉缓存。
+
+    安全性：写路径各自 `mkdir(parents=True, exist_ok=True)`，所以即使骨架目录被外部删掉，
+    写入仍会自己建目录；缓存只影响"读之前顺手补齐骨架"这一动作。
+    """
+    global _MIGRATION_CHECKED, _ENSURED
+    root = workspace_root()
+    # 快路径：本进程已确认过这个根，直接返回（不再 stat/mkdir 24 个目录）
+    if _ENSURED is not None and _ENSURED == str(root):
+        return root
     with _LOCK:
-        root = workspace_root()
+        if _ENSURED is not None and _ENSURED == str(root):      # 双检：并发请求只补一次
+            return root
         root.mkdir(parents=True, exist_ok=True)
         for rel in WORKSPACE_LAYOUT:
             (root / rel).mkdir(parents=True, exist_ok=True)
@@ -65,13 +66,15 @@ def ensure_workspace(run_migration: bool = True) -> Path:
         if run_migration and not _MIGRATION_CHECKED and get_app().get("workspace_migration", {}).get("enabled", True):
             _MIGRATION_CHECKED = True
             migrate_legacy(root)
+        _ENSURED = str(root)
         return root
 
 
 def reset_runtime_state() -> None:
-    global _MIGRATION_CHECKED
+    global _MIGRATION_CHECKED, _ENSURED
     with _LOCK:
         _MIGRATION_CHECKED = False
+        _ENSURED = None          # 换根/重载后重新确认骨架
 
 
 def _write_workspace_readme(root: Path) -> None:
@@ -92,7 +95,7 @@ def ensure_project(name: str) -> Path | None:
     if not name:
         return None
     # Prevent path traversal and accidental nested project creation via metadata.
-    safe = name.replace("\\", "-").replace("/", "-").replace("..", "-").strip(" .")[:100]
+    safe = name.replace("\\", "-").replace("/", "-").replace("..", "-").strip(" .")[:128]
     if not safe:
         return None
     root = ensure_workspace() / "Projects" / safe
@@ -287,6 +290,78 @@ def open_path(rel: str = "") -> dict:
     elif sys.platform == "darwin": subprocess.Popen(["open", str(target)])
     else: subprocess.Popen(["xdg-open", str(target)])
     return {"ok": True, "path": str(target)}
+
+
+# v261008 · 笔记页「打开原文件」：以指定外部编辑器打开 Workspace 内的 Markdown 原文件
+_EDITOR_LABELS = {"vscode": "VS Code", "typora": "Typora"}
+
+
+def _windows_app_path(exe_name: str) -> str:
+    """从 Windows 注册表 App Paths 读取可执行文件绝对路径，覆盖非默认安装位置（如 Typora 装在 D:\\Typora）。"""
+    if not sys.platform.startswith("win"):
+        return ""
+    try:
+        import winreg
+    except ImportError:
+        return ""
+    sub = rf"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{exe_name}"
+    for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+        for access in (winreg.KEY_READ | winreg.KEY_WOW64_64KEY, winreg.KEY_READ | winreg.KEY_WOW64_32KEY):
+            try:
+                with winreg.OpenKey(root, sub, 0, access) as key:
+                    value, _ = winreg.QueryValueEx(key, "")
+            except OSError:
+                continue
+            candidate = Path(str(value or "").strip().strip('"'))
+            if str(candidate) and candidate.is_file():
+                return str(candidate)
+    return ""
+
+
+def _editor_executable(editor: str) -> str:
+    """解析 vscode / typora 可执行文件：优先 PATH，其次注册表 App Paths，最后各平台常见安装路径；找不到时抛 FileNotFoundError。"""
+    editor = str(editor or "").strip().lower()
+    if editor not in _EDITOR_LABELS:
+        raise ValueError("不支持的打开方式")
+    home = Path.home()
+    if editor == "vscode":
+        exe = shutil.which("code") or shutil.which("code.cmd") or _windows_app_path("Code.exe")
+        candidates = (
+            Path(os.environ.get("LOCALAPPDATA", "")) / "Programs/Microsoft VS Code/Code.exe",
+            Path(os.environ.get("ProgramFiles", "")) / "Microsoft VS Code/Code.exe",
+            Path(os.environ.get("ProgramFiles(x86)", "")) / "Microsoft VS Code/Code.exe",
+            Path("/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"),
+        )
+    else:
+        exe = shutil.which("typora") or shutil.which("typora.exe") or _windows_app_path("Typora.exe")
+        candidates = (
+            Path(os.environ.get("LOCALAPPDATA", "")) / "Programs/Typora/Typora.exe",
+            Path(os.environ.get("ProgramFiles", "")) / "Typora/Typora.exe",
+            Path(os.environ.get("ProgramFiles(x86)", "")) / "Typora/Typora.exe",
+            home / "Applications/Typora.app/Contents/MacOS/Typora",
+            Path("/Applications/Typora.app/Contents/MacOS/Typora"),
+        )
+    if not exe:
+        for candidate in candidates:
+            if str(candidate) and candidate.is_file():
+                exe = str(candidate)
+                break
+    if not exe:
+        raise FileNotFoundError(f"未找到 {_EDITOR_LABELS[editor]}，请确认已安装")
+    return exe
+
+
+def open_file_with(rel: str, editor: str) -> dict:
+    """在 VS Code / Typora 中打开 Workspace 内的原文件（相对路径 rel 须位于 Workspace 内）。"""
+    path = _safe_under_workspace(rel)
+    if not path.is_file():
+        raise FileNotFoundError(str(path))
+    exe = _editor_executable(editor)
+    if Path(exe).suffix.lower() in (".cmd", ".bat"):  # Windows 上的 code.cmd 等批处理须经 cmd.exe 启动
+        subprocess.Popen([os.environ.get("COMSPEC", "cmd.exe"), "/c", exe, str(path)])
+    else:
+        subprocess.Popen([exe, str(path)])
+    return {"ok": True, "path": str(path), "editor": str(editor).strip().lower()}
 
 
 def workspace_info() -> dict:

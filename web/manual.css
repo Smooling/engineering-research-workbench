@@ -1,0 +1,77 @@
+/* manual.css · v261009.30 —— 使用手册页（内核模块 web/manual.js 的样式）
+ *
+ * 版式：左目录（可滚动、当前章高亮）+ 右正文（限宽阅读、图自适应、宽表格可横滚）。
+ */
+
+/* 版式：与内核两栏页（.docs-layout / .agent-layout）同款——**显式高度 + 内部滚动**，
+   窗口不滚、只有内容列滚（用户要求"只拖动内容页，不是整个页面"）。
+   121 = topbar 82+1 + padding 14+24；紧凑模式 133（与 .docs-layout 的口径一致）。 */
+.manual-layout{display:grid;grid-template-columns:250px minmax(0,1fr);grid-template-rows:minmax(0,1fr);
+  gap:12px;height:calc(100vh - 121px)}
+html[data-density="compact"] .manual-layout{gap:8px;height:calc(100vh - 133px)}
+@media (max-width:900px){.manual-layout{grid-template-columns:1fr;height:auto}}
+
+/* 左列：说明 + 章节目录。**按内容高度贴顶**（不拉伸成一张空卡片）。
+   用 flex 而不是 grid 行模板：之前 `grid-template-rows:auto minmax(0,1fr)` 用在 4 个子元素上，
+   把 h3 塞进 1fr 行拉高 → 标题在上、说明与目录沉到底部（实测的怪版式）。 */
+.manual-side{align-self:start;max-height:100%;display:flex;flex-direction:column;gap:8px;padding:12px}
+.manual-side h3{margin:0}
+.manual-side .row-meta{white-space:normal;line-height:1.65}
+.manual-toc{display:grid;gap:1px;align-content:start;min-height:0;overflow:auto;padding-right:2px}
+/* 章节目录：照内核既有两种"栏目条"的口径来做，而不是自创——
+   · 行高 31px / 字号 12px / 圆角 7px / 前置图标与「文件夹」树行一致（树里文件行用 `·`、目录用 `▱`）；
+   · 当前项用内核惯用的 `--accent-soft` 底 + `--accent-ink` 字（同 .settings-nav button.active），
+     不用左侧色条（内核没有这种做法）；
+   · 未选中用 --muted、悬停淡底并回到正文字色，与左侧栏 .nav-item 的手感一致。 */
+.manual-toc-item{
+  display:flex;align-items:center;gap:7px;width:100%;height:31px;padding:0 8px;text-align:left;
+  border:0;border-radius:7px;background:transparent;color:var(--muted);font:inherit;font-size:12px;
+  cursor:pointer;
+}
+.manual-toc-item:hover{background:color-mix(in srgb,var(--line) 22%,transparent);color:var(--text)}
+.manual-toc-item.active{background:var(--accent-soft);color:var(--accent-ink)}
+.manual-toc-icon{flex:0 0 auto;font-size:12px;line-height:1;color:var(--muted)}
+.manual-toc-item:hover .manual-toc-icon{color:var(--text)}
+.manual-toc-item.active .manual-toc-icon{color:var(--accent-ink)}
+.manual-toc-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* 右列：正文是**唯一的滚动容器**（高度由网格行分配），页脚钉在列底，翻章始终可见 */
+.manual-pane{padding:0;min-height:0;display:grid;grid-template-rows:minmax(0,1fr) auto}
+.manual-body{
+  overflow:auto;min-height:0;padding:20px 26px 26px;font-size:13.5px;line-height:1.85;
+}
+/* 阅读列**居中**：宽屏下右侧不留一大片空白。
+   注意用**容器**居中，不要只给子元素设 margin:auto——h1/p/ul 等自身的 `margin:0 0 …` 简写会覆盖它
+   （实测 1920 宽下左右留白 26/278，居中失效）。 */
+.manual-doc{max-width:min(900px,100%);margin:0 auto}
+/* 截图可以比正文行宽更宽（图里的字要看得清） */
+.manual-doc img{max-width:100%;height:auto;border:1px solid var(--line);border-radius:10px;margin:10px auto;display:block}
+.manual-body h1{font-size:20px;margin:0 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.manual-body h2{font-size:16px;margin:22px 0 8px}
+.manual-body h3{font-size:14px;margin:18px 0 6px}
+.manual-body p{margin:8px 0}
+.manual-body ul,.manual-body ol{margin:8px 0 8px 20px;padding:0}
+.manual-body li{margin:3px 0}
+.manual-body code{font:12px/1.6 Consolas,monospace;background:color-mix(in srgb,var(--line) 35%,transparent);padding:1px 5px;border-radius:5px}
+.manual-body pre{background:color-mix(in srgb,var(--line) 14%,transparent);padding:10px 12px;border-radius:8px;overflow:auto}
+.manual-body pre code{background:none;padding:0}
+.manual-body blockquote{margin:10px 0;padding:6px 12px;border-left:3px solid var(--accent);color:var(--muted);background:color-mix(in srgb,var(--accent) 5%,transparent)}
+.manual-body table{border-collapse:collapse;font-size:12px;margin:10px 0;display:block;overflow:auto;max-width:100%}
+.manual-body th,.manual-body td{border:1px solid var(--line);padding:5px 9px;text-align:left;vertical-align:top}
+.manual-body th{background:color-mix(in srgb,var(--line) 18%,transparent)}
+.manual-body a{color:var(--accent)}
+.manual-body hr{border:none;border-top:1px solid var(--line);margin:18px 0}
+.manual-raw{white-space:pre-wrap;font:12px/1.7 Consolas,monospace}
+.manual-error{border:1px solid color-mix(in srgb,var(--danger) 40%,var(--line));border-radius:8px;padding:10px 12px;font-size:12px;background:color-mix(in srgb,var(--danger) 6%,transparent)}
+.manual-foot{display:flex;gap:10px;align-items:center;justify-content:space-between;border-top:1px solid var(--line);padding:9px 12px}
+.manual-foot .row-meta{font:10px/1.5 Consolas,monospace;color:var(--muted)}
+
+/* ---- 阅读列限宽（放在文件最后：必须压过上面各元素自己的 `margin:0 0 …` 简写）----
+   **单一栏宽**：正文、标题、图片、表格全用同一宽度，左边缘对齐——之前"正文 700 / 图片 900"
+   会让图片从文字左边"冒出去"，图内文字看着也比正文大，比例失调（用户反馈）。
+   760px ≈ 13.5px 字号下 80+ 字符，对"参考手册 + 表格/截图"够用；
+   900px 截图在此按 0.84× 显示，图内文字与正文接近。 */
+/* 用 .manual-body .manual-doc>* 而非 .manual-doc>*：要压过上面 `.manual-body p{h1,ul…}` 的
+   元素选择器（权重 0,1,1 > 0,1,0），否则段落的 margin:auto 又被覆盖（实测段落左贴、右留 158-420px） */
+.manual-body .manual-doc{max-width:min(760px,100%);margin:0 auto}
+.manual-body .manual-doc>*{max-width:100%;margin-left:auto;margin-right:auto}

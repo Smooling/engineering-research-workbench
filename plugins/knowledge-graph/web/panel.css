@@ -1,0 +1,113 @@
+/* knowledge-graph · 图谱可视化插件自有样式（从内核 web/v260922-graph-performance.css 迁出）
+ *
+ * 只放**插件自己注入的 UI**（`#graph-smart-toolbar` 及其搜索/结果/聚焦工具/状态行）。
+ * 内核图谱页自身的 markup 样式（`.graph-wrap` / `.graph-canvas` / `.graph-side` / `.graph-preview` 等）
+ * 留在内核那个文件里 —— 插件被禁用、内核回退兜底渲染时仍然需要它们。
+ *
+ * 层级契约（与内核一致）：顶栏 z-index:20 > 图谱工具栏 8 > 搜索结果 12 > 预览/侧栏 2 > 画布 0。
+ */
+
+.graph-smart-toolbar{
+  position:relative;
+  z-index:8;
+  isolation:isolate;
+  overflow:visible;
+  display:grid;
+  grid-template-columns:minmax(280px,1fr) auto;
+  gap:10px 14px;
+  align-items:center;
+  margin:0 0 12px;
+  padding:10px 12px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:color-mix(in srgb,var(--surface) 96%,transparent);
+  box-shadow:0 3px 14px rgba(25,47,52,.035);
+}
+.graph-smart-search-wrap{
+  position:relative;
+  z-index:10;
+  min-width:0;
+  overflow:visible;
+}
+.graph-smart-search{
+  position:relative;
+  z-index:1;
+  height:42px;
+  display:flex;
+  align-items:center;
+  gap:9px;
+  border:1px solid var(--line-strong);
+  border-radius:11px;
+  padding:0 11px;
+  background:var(--surface);
+  box-shadow:0 1px 0 color-mix(in srgb,var(--text) 4%,transparent);
+}
+.graph-smart-search:focus-within{
+  border-color:var(--accent);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 12%,transparent);
+}
+.graph-smart-search>span{font-size:19px;color:var(--muted)}
+.graph-smart-search input{min-width:0;flex:1;border:0;outline:0;background:transparent;color:var(--text);font:inherit}
+.graph-smart-search kbd{font-size:10px;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:2px 5px;background:var(--surface-2)}
+
+.graph-smart-results{
+  position:absolute;
+  left:0;
+  right:auto;
+  top:calc(100% + 6px);
+  z-index:12;
+  width:min(760px,100%);
+  max-width:calc(100vw - 72px);
+  max-height:min(340px,calc(100vh - 210px));
+  overflow:auto;
+  overscroll-behavior:contain;
+  border:1px solid var(--line-strong);
+  border-radius:12px;
+  background:var(--surface);
+  box-shadow:0 20px 54px rgba(8,31,36,.20),0 0 0 1px color-mix(in srgb,var(--surface) 80%,transparent);
+  padding:7px;
+  opacity:1;
+  pointer-events:auto;
+}
+.graph-smart-results.hidden{display:none}
+.graph-result-heading{padding:5px 8px 7px;color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.08em;background:var(--surface)}
+.graph-result-row{
+  width:100%;
+  display:grid;
+  grid-template-columns:58px minmax(0,1fr) auto;
+  align-items:center;
+  gap:9px;
+  text-align:left;
+  border:0;
+  background:var(--surface);
+  color:var(--text);
+  border-radius:9px;
+  padding:8px;
+  cursor:pointer;
+}
+.graph-result-row:hover,.graph-result-row.active{background:color-mix(in srgb,var(--accent) 10%,var(--surface))}
+.graph-result-kind{display:inline-flex;justify-content:center;border:1px solid var(--line);border-radius:999px;padding:2px 6px;color:var(--muted);font-size:10px;background:var(--surface-2)}
+.graph-result-row strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.graph-result-row small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);margin-top:2px}
+.graph-result-row time{font-size:10px;color:var(--muted);white-space:nowrap}
+.graph-result-empty{padding:18px;text-align:center;color:var(--muted);background:var(--surface)}
+
+.graph-focus-tools{position:relative;z-index:2;display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap}
+.graph-focus-tools .active{border-color:var(--accent);color:var(--accent);background:color-mix(in srgb,var(--accent) 9%,transparent)}
+.graph-tool-sep{width:1px;height:24px;background:var(--line);margin:0 2px}
+.graph-engine-status{position:relative;z-index:1;grid-column:1/-1;color:var(--muted);font-size:11px;min-height:16px;line-height:1.4}
+
+@media (max-width:1050px){
+  .graph-smart-toolbar{grid-template-columns:1fr}
+  .graph-focus-tools{justify-content:flex-start}
+  .graph-smart-results{width:min(680px,100%)}
+}
+@media (max-width:720px){
+  .graph-smart-toolbar{padding:8px}
+  .graph-focus-tools{overflow:visible;flex-wrap:wrap;justify-content:flex-start}
+  .graph-focus-tools button{white-space:nowrap}
+  .graph-smart-search kbd{display:none}
+  .graph-smart-results{left:0;right:0;width:auto;max-width:none;max-height:min(300px,calc(100vh - 180px))}
+  .graph-result-row{grid-template-columns:52px minmax(0,1fr)}
+  .graph-result-row time{display:none}
+}

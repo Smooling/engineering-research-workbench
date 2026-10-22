@@ -1,0 +1,31 @@
+{
+  "id": "knowledge-graph",
+  "name": "知识图谱可视化",
+  "version": "1.0.0",
+  "description": "知识图谱页面整体渲染：力导向布局、筛选、搜索定位、节点预览、关联 Markdown 导出，以及研究总览的迷你关系图。纯前端插件（页面 markup 也由它产出）；停用后图谱页给「请启用插件」提示——内核不再自带那份简易兜底图。",
+  "api_version": 1,
+  "core_min": "v261009.18",
+  "kind": "inprocess",
+  "distribution": "bundled",
+  "default_enabled": true,
+  "permissions": [
+    "ui:panel"
+  ],
+  "panel": {
+    "mount": "web/panel.js",
+    "style": "web/panel.css"
+  },
+  "preview": {
+    "summary": "知识图谱页与总览迷你图：力导向布局、筛选、节点预览、导出",
+    "features": [
+      "图谱页整页由本插件渲染（内核不再自带渲染；停用后图谱页只显示启用提示）",
+      "力导向布局，按类别/关系/标记筛选，搜索定位节点",
+      "点节点看预览、跳转条目、从节点导出知识包",
+      "总览页的迷你图（overview.enhance）"
+    ],
+    "where": "侧栏 → 知识图谱；总览页的迷你图",
+    "screens": [
+      "web/preview.png"
+    ]
+  }
+}

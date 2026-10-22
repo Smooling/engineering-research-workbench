@@ -1,0 +1,39 @@
+{
+  "id": "floating-assist",
+  "name": "悬浮球 AI 助手",
+  "version": "1.0.1",
+  "description": "悬浮球助手：随时对话 / 检索知识库 / 建档；含工具轨迹时间线、本页关联知识、历史对话回看、写模式开关与 AI 助手人设编辑器。纯前端插件；LLM 调用与草稿确认闸门仍在内核。",
+  "api_version": 1,
+  "core_min": "v261009.16",
+  "kind": "inprocess",
+  "distribution": "bundled",
+  "default_enabled": true,
+  "permissions": [
+    "ui:panel"
+  ],
+  "nav": [
+    {
+      "id": "floating-assist",
+      "label": "AI 助手",
+      "icon": "◉",
+      "mount": "web/panel.js",
+      "style": "web/panel.css",
+      "slot": "overlay"
+    }
+  ],
+  "preview": {
+    "summary": "常驻页面的悬浮球 AI 助手：对话、引用、截图问图、人设与工具轨迹",
+    "features": [
+      "悬浮球常驻页面（overlay 槽位），点开即对话，流式输出",
+      "引用研究条目/文献作为上下文；选中文本的快捷动作",
+      "框选截图问图（多模态开关留在内核设置里）",
+      "工具轨迹时间线与会话历史回看",
+      "设置页 tab：AI 助手人设编辑器（人设解析与工具白名单仍在内核）",
+      "术语建档流水线与快捷动作"
+    ],
+    "where": "右下角悬浮球；设置 → 插件 → 悬浮球助手（人设）",
+    "screens": [
+      "web/preview.png"
+    ]
+  }
+}

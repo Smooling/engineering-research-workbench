@@ -1,0 +1,52 @@
+{
+  "id": "literature-reader",
+  "name": "文献阅读工作区",
+  "version": "2.0.1",
+  "description": "文献阅读工作区（合并原「文献阅读工作区 / 文献笔记 / 阅读区 AI 助手」三个插件）：PDF 打开·翻页·缩放·跳页、批注增改删、阅读区「笔记」tab（编辑·保存·插图）+ 两个 AI 工具（读文献上下文 / 写文献笔记）、阅读区「AI」tab（翻译·总结·整理·润色·自定义指令·多模态截图，结果可写回笔记）。文献数据与文件服务仍在内核；停用后文献列表页照常可用，阅读区不可用。",
+  "api_version": 1,
+  "core_min": "v261009.17",
+  "kind": "inprocess",
+  "distribution": "bundled",
+  "default_enabled": true,
+  "permissions": [
+    "ui:panel",
+    "storage:own"
+  ],
+  "entry": "backend.py",
+  "panel": {
+    "mount": "web/panel.js",
+    "style": "web/panel.css"
+  },
+  "mcp_tools": [
+    "context",
+    "note_write"
+  ],
+  "routes": [
+    {
+      "method": "GET",
+      "path": "note"
+    },
+    {
+      "method": "POST",
+      "path": "note"
+    },
+    {
+      "method": "POST",
+      "path": "note-image"
+    }
+  ],
+  "preview": {
+    "summary": "在条目页直接读 PDF、划选批注、写文献笔记，并在阅读区里用 AI 整理",
+    "features": [
+      "点文献条目的 PDF 徽章即进入阅读工作区（阅读区由本插件接管；停用后该入口消失）",
+      "划选/框选批注：批注随附件数据保存，可在列表回看",
+      "「笔记」tab：与知识库同一份正文，支持粘贴图片",
+      "阅读区 AI：选中内容做翻译/总结/提问，多模态截图问图（用内核的 LLM 设置）",
+      "两个 Agent 工具：读当前文献上下文、写文献笔记（写操作走内核草稿确认）"
+    ],
+    "where": "文献列表 → 点条目/PDF 徽章；批注与笔记在阅读区内",
+    "screens": [
+      "web/preview.png"
+    ]
+  }
+}

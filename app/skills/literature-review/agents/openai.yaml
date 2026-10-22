@@ -1,0 +1,5 @@
+interface:
+  display_name: "文献阅读与比较"
+  short_description: "解释方法、对照证据并保留来源"
+policy:
+  allow_implicit_invocation: true

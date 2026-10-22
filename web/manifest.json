@@ -1,0 +1,307 @@
+{
+  "schema_version": 1,
+  "note": "web/ 前端装配清单。index.html 的三段引用块由 tools/web_manifest.py 生成；顺序有语义（补丁按加载顺序互相覆盖），改顺序请改这里并跑 --write，然后跑 tools/web_check.py。引用一律带 ?v=<版本> 版本参数，避免 WebView 缓存旧样式——改动对应文件时必须同步改这里的 v。",
+  "css": [
+    {
+      "file": "styles.css",
+      "v": "261021-sidebar",
+      "theme": "base",
+      "note": "v261010b · 条目卡片统一高度：标题固定两行（超出省略 + title 悬停）、摘要固定两行、徽章行固定单行（放不下时右端淡出）；列宽锁定面板宽（.doc-list minmax(0,1fr)、.doc-item/.proj-text min-width:0）修多项目卡片撑宽网格轨道；上版：笔记卡片的时间标签默认右对齐（无项目名时也贴右）；再上版：天气样式搬出内核"
+    },
+    {
+      "file": "projects-manager.css",
+      "v": "261009ac",
+      "theme": "projects",
+      "note": "v261009ac · 按功能改名（原 v260922-*），职责写进文件名；上版："
+    },
+    {
+      "file": "layout-compact.css",
+      "v": "261021-sidebar",
+      "theme": "layout",
+      "note": "v261009ac · 按功能改名（原 v260922-*），职责写进文件名；上版：v261009o · 紧凑密度下 PDF 阅读区高度那条 `html[data-density=\"c"
+    },
+    {
+      "file": "overview-editor-tools.css",
+      "v": "261009ac",
+      "theme": "overview",
+      "note": "v261009ac · 按功能改名（原 v260922-*），职责写进文件名；上版："
+    },
+    {
+      "file": "perf-affordances.css",
+      "v": "261009ac",
+      "theme": "performance",
+      "note": "v261009ac · 按功能改名（原 v260922-*），职责写进文件名；上版："
+    },
+    {
+      "file": "graph-page-layers.css",
+      "v": "261009ac",
+      "theme": "graph",
+      "note": "v261009ac · 按功能改名（原 v260922-*），职责写进文件名；上版：v261009m · 图谱可视化迁成插件（plugins/knowledge-graph）：本文件只"
+    },
+    {
+      "file": "sidebar-agent-profiles.css",
+      "v": "261009ac",
+      "theme": "agent",
+      "note": "v261009ac · 按功能改名（原 v260922-*），职责写进文件名；上版："
+    },
+    {
+      "file": "layout-fixes.css",
+      "v": "261009ac",
+      "theme": "layout",
+      "note": "v261009ac · 按功能改名（原 v260922-*），职责写进文件名；上版："
+    },
+    {
+      "file": "plugin-manager.css",
+      "v": "261009s",
+      "theme": "plugin-manager",
+      "note": "v261009s · 插件设置页新增「演示预览」：悬停/点击插件卡片浮出摘要+功能点+截图（内容由插件 manifest 的 preview 声明，内核不认识具体插件）；上版：v261009q · 设置页新增「单文件包安装结果」区块（解包/升级/拒收/冲突逐条显示，空列表时也显示）；上版：v26"
+    },
+    {
+      "file": "v261014-linear-luxe.css",
+      "v": "261021-ui",
+      "theme": "base",
+      "note": "v261014o · 线性奢华版壳层（v3 UI 重设计）"
+    },
+    {
+      "file": "v261014-soft-chromatic.css",
+      "v": "261014w",
+      "theme": "overview",
+      "note": "261014w · Soft Chromatic Workspace · 概览方案 A 柔和标题色块"
+    },
+    {
+      "file": "v261015-usability.css",
+      "v": "261020-meta-pad",
+      "theme": "base",
+      "note": "v261020 · 条目信息折叠按钮离卡片右上圆角/滚动条留 12px 间距；上版：分类标记模板库 + 分组图案面板"
+    },
+    {
+      "file": "milestone-gantt.css",
+      "v": "261022-gantt",
+      "theme": "base",
+      "note": "v261022.1 · 里程碑甘特图（上游并入，按本地主题变量重写）"
+    },
+    {
+      "file": "v261019-todo-edit.css",
+      "v": "261019",
+      "theme": "base",
+      "note": "v261019 · 待办行内编辑态布局 + 截止时间（到分）与逾期高亮；追加在 usability 之后覆盖其 todo-row 列定义"
+    },
+    {
+      "file": "sync.css",
+      "v": "261022-sync",
+      "theme": "base",
+      "note": "v261022.2 · 同步页与顶栏同步按钮"
+    },
+    {
+      "file": "agent-system.css",
+      "v": "261022-ai",
+      "theme": "base",
+      "note": "v261022.3 · AI 能力 / RAG / 技能设置（上游并入）"
+    },
+    {
+      "file": "document-references.css",
+      "v": "261022-refs",
+      "theme": "base",
+      "note": "v261022.4 · 引用补全/预览/断链样式"
+    },
+    {
+      "file": "research-ui.css",
+      "v": "v261022-ui",
+      "theme": "base",
+      "note": "v261022.5 · 阅读字号/证据徽章/项目范围样式"
+    },
+    {
+      "file": "project-scope.css",
+      "v": "v261022-ui",
+      "theme": "base",
+      "note": "v261022.5 · 可搜索的项目范围选择器"
+    },
+    {
+      "file": "vendor/github.min.css",
+      "theme": "vendor",
+      "cdn": "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css"
+    },
+    {
+      "file": "manual.css",
+      "v": "261009aa",
+      "theme": "base",
+      "note": "v261009aa · 栏目条照内核既有口径重做（行高 31/字号 12/圆角 7/前置 · 图标，当前章用 accent-soft+accent-ink，同 .settings-nav）；去掉行内 KB 噪音；上版：v261009z · 统一栏宽 760px（图片与文字左边缘对齐、图内文字与正文"
+    },
+    {
+      "file": "external-access.css",
+      "v": "261009ab",
+      "theme": "base",
+      "note": "v261009.38 · 「设置 → 外部接入」版式"
+    },
+    {
+      "file": "desktop.css",
+      "v": "261016-v3",
+      "theme": "base"
+    },
+    {
+      "file": "theme-dark.css",
+      "v": "261016-v3",
+      "theme": "base"
+    },
+    {
+      "file": "workbench-ui.css",
+      "v": "261021-shrink",
+      "theme": "base"
+    }
+  ],
+  "vendor_js": [
+    {
+      "file": "vendor/marked.min.js",
+      "theme": "vendor",
+      "cdn": "https://unpkg.com/marked@15.0.12/marked.min.js"
+    },
+    {
+      "file": "vendor/purify.min.js",
+      "theme": "vendor",
+      "cdn": "https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.6/purify.min.js"
+    },
+    {
+      "file": "vendor/highlight-umd.min.js",
+      "theme": "vendor",
+      "cdn": "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"
+    },
+    {
+      "file": "vendor-lazy.js",
+      "v": "261009",
+      "theme": "vendor",
+      "note": "v261009 · A1：mathjax（2.11 MB）与 mermaid（2.57 MB）改为按需加载，不再首屏无条件下载；调用方走 window.erwVendor.load('mathjax'|'mermaid')，本地失败回退 CDN。见 vendor-lazy.js"
+    }
+  ],
+  "js": [
+    {
+      "file": "ui-dialogs.js",
+      "v": "261016-v3",
+      "theme": "base"
+    },
+    {
+      "file": "dom-seam.js",
+      "v": "261009",
+      "theme": "seam",
+      "note": "v261009 · A9：共享 DOM 变更订阅（window.ERWDom.onChildList）——7 个补丁各自建的文档级 MutationObserver 收敛为 1 个；提供 root 作用域、ignore 过滤、按帧合并与回调隔离。必须在所有补丁之前加载"
+    },
+    {
+      "file": "perf-and-fetch-seam.js",
+      "v": "261009ac",
+      "theme": "performance",
+      "note": "v261009ac · 按功能改名（原 v260922-*），职责写进文件名；上版：v261009r · A9：文档级观察改走 ERWDom.onChildList（带 ignore "
+    },
+    {
+      "file": "render-libraries.js",
+      "v": "261015-perf",
+      "theme": "render",
+      "note": "渲染库按需加载接缝：window.ERWRenderLibraries = {ensureMermaid, renderMath}，走 /vendor/mermaid.min.js 与 /vendor/mathjax-tex-svg.js"
+    },
+    {
+      "file": "v261014-milestone-timeline.js",
+      "v": "261014o",
+      "theme": "milestones",
+      "note": "v261014h · 自适应密度状态泳道里程碑时间轴（window.ERWMilestoneTimeline）"
+    },
+    {
+      "file": "milestone-gantt.js",
+      "v": "261022-gantt",
+      "theme": "base",
+      "note": "v261022.1 · 里程碑甘特图（window.ERWMilestoneGantt）；网络走 erwFetch、项目筛选无 project-scope 时降级原生下拉"
+    },
+    {
+      "file": "research-ui.js",
+      "v": "261022-ui",
+      "theme": "base",
+      "note": "v261022.5 · 项目显示名/证据徽章/阅读字号（window.ERWResearchUI）；网络走 erwFetch"
+    },
+    {
+      "file": "project-scope.js",
+      "v": "261022-ui",
+      "theme": "base",
+      "note": "v261022.5 · 可搜索、键盘可用的项目范围选择器（window.ERWProjectScope）"
+    },
+    {
+      "file": "app.js",
+      "v": "261021-scroll",
+      "theme": "base",
+      "note": "v261020 · 分类标记：设置页内置模板一键添加（图标/颜色/用途）、分组图案面板与实时预览；自定义标记写入期校验放行；上版：v261019 · 待办可编辑（标题/截止日期+时间/项目/优先级，行内表单）与完成时间限制（逾期二次确认、completed_at 展示）；再上版：v261015c · 合并上游 UI 重设计 v3：移除重复页 research-overview（导航项/路由分支/渲染函数），保留旧书签别名"
+    },
+    {
+      "file": "document-references.js",
+      "v": "261022-refs",
+      "theme": "base",
+      "note": "v261022.4 · 引用补全与预览（window.ERWDocReferences）；网络走 erwFetch"
+    },
+    {
+      "file": "agent-system.js",
+      "v": "261022-ai",
+      "theme": "base",
+      "note": "v261022.3 · AI 能力与 RAG 设置面板（window.ERWAgentSystem）；DOM 走 ERWDom"
+    },
+    {
+      "file": "agent-client.js",
+      "v": "261022-ai",
+      "theme": "base",
+      "note": "v261022.3 · Agent 会话/RAG 客户端（window.ERWAgentClient）；网络走 erwFetch"
+    },
+    {
+      "file": "sync.js",
+      "v": "261022-sync",
+      "theme": "base",
+      "note": "v261022.2 · 同步状态轮询/冲突处理/设置页；网络走 erwFetch、DOM 走 ERWDom、宿主走 window.ERWSyncUI"
+    },
+    {
+      "file": "plugin-host.js",
+      "v": "261009c",
+      "theme": "plugin-host",
+      "note": "v261009c · 除 nav[0] 外，还加载 manifest.panel.mount（没有导航页的 UI，如阅读区 tab）"
+    },
+    {
+      "file": "research-pages.js",
+      "v": "261016-v3",
+      "theme": "research-pages",
+      "note": "v261009ac · 按功能改名（原 v260922-*），职责写进文件名；上版：v261009q · 人设编辑器宿主（#erw-persona-host 与 erw-llm-set"
+    },
+    {
+      "file": "layout-fixes.js",
+      "v": "261009ac",
+      "theme": "layout",
+      "note": "v261009ac · 按功能改名（原 v260922-*），职责写进文件名；上版：v261009b · A9：文档级 childList 改走 ERWDom.onChildList；"
+    },
+    {
+      "file": "plugin-manager.js",
+      "v": "261009s",
+      "theme": "plugin-manager",
+      "note": "v261009s · 插件设置页新增「演示预览」：悬停/点击插件卡片浮出摘要+功能点+截图（内容由插件 manifest 的 preview 声明，内核不认识具体插件）；上版：v261009q · 设置页新增「单文件包安装结果」区块（解包/升级/拒收/冲突逐条显示，空列表时也显示）；上版：v26"
+    },
+    {
+      "file": "v261014-shell.js",
+      "v": "261015a",
+      "theme": "shell",
+      "note": "v261014e · 柔和工作台壳层 + 可拖拽侧栏宽度（纯 IIFE，无 window.ERW* 接缝）"
+    },
+    {
+      "file": "v261014-soft-chromatic.js",
+      "v": "261015b",
+      "theme": "overview",
+      "note": "v261014q · Markdown 分栏拖拽与视觉增强（v261015b · 文档级 DOM 变更改走 ERWDom）"
+    },
+    {
+      "file": "manual.js",
+      "v": "261009aa",
+      "theme": "base",
+      "note": "v261009aa · 栏目条照内核既有口径重做（行高 31/字号 12/圆角 7/前置 · 图标，当前章用 accent-soft+accent-ink，同 .settings-nav）；去掉行内 KB 噪音；上版：v261009z · 统一栏宽 760px（图片与文字左边缘对齐、图内文字与正文"
+    },
+    {
+      "file": "external-access.js",
+      "v": "261009ab",
+      "theme": "base",
+      "note": "v261009.38 · 设置新增「外部接入」tab：MCP/插件写入知识库的授权开关（默认 MCP 只读）"
+    },
+    {
+      "file": "desktop.js",
+      "v": "261016-v3",
+      "theme": "base"
+    }
+  ]
+}

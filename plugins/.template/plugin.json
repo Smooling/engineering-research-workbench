@@ -1,0 +1,38 @@
+{
+  "id": "__ID__",
+  "name": "__NAME__",
+  "version": "0.1.0",
+  "description": "__DESC__",
+
+  "api_version": 1,
+  "core_min": "__CORE_MIN__",
+
+  "kind": "inprocess",
+  "distribution": "optional",
+  "default_enabled": false,
+
+  "entry": "backend.py",
+
+  "permissions": ["ui:panel", "storage:own", "config:own"],
+
+  "nav": [
+    { "id": "__ID__", "label": "__NAME__", "icon": "__ICON__", "mount": "web/panel.js" }
+  ],
+  "panel": { "mount": "web/panel.js", "style": "web/panel.css" },
+
+  "routes": [
+    { "method": "GET", "path": "hello" },
+    { "method": "GET", "path": "config" },
+    { "method": "POST", "path": "config" }
+  ],
+  "mcp_tools": ["ping"],
+
+  "preview": {
+    "summary": "一句话说明这个插件解决什么问题",
+    "features": [
+      "功能点 1（能做什么，而不是内部怎么实现）",
+      "功能点 2"
+    ],
+    "where": "在哪里能找到它，如「侧栏 → __NAME__」"
+  }
+}

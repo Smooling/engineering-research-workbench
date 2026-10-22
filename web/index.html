@@ -3,17 +3,37 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#087f83">
+  <meta name="theme-color" content="#F7F8FB">
   <title>科研工作台</title>
-  <link rel="stylesheet" href="/styles.css">
-  <link rel="stylesheet" href="/v260922-projects.css">
-  <link rel="stylesheet" href="/v260922-compact-layout.css">
-  <link rel="stylesheet" href="/v260922-overview-editor-tools.css">
-  <link rel="stylesheet" href="/v260922-performance.css">
-  <link rel="stylesheet" href="/v260922-graph-performance.css">
-  <link rel="stylesheet" href="/v260922-agent-profiles.css">
-  <link rel="stylesheet" href="/v260922-layout-bugfixes.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/styles/github.min.css" onerror="this.onerror=null;this.href='https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css'">
+  <link rel="icon" type="image/svg+xml" href="/workbench-mark.svg?v=261015">
+  <link rel="apple-touch-icon" href="/favicon.png?v=261015">
+  <!-- web:css:start（由 tools/web_manifest.py 生成，勿手改；顺序见 web/manifest.json） -->
+  <link rel="stylesheet" href="/styles.css?v=261021-sidebar"><!-- v261010b · 条目卡片统一高度：标题固定两行（超出省略 + title 悬停）、摘要固定两行、徽章行固定单行（放不下时右端淡出）；列宽锁定面板宽（.doc-list minmax(0,1fr)、.doc-item/.proj-text min-width:0）修多项目卡片撑宽网格轨道；上版：笔记卡片的时间标签默认右对齐（无项目名时也贴右）；再上版：天气样式搬出内核 -->
+  <link rel="stylesheet" href="/projects-manager.css?v=261009ac"><!-- v261009ac · 按功能改名（原 v260922-*），职责写进文件名；上版： -->
+  <link rel="stylesheet" href="/layout-compact.css?v=261021-sidebar"><!-- v261009ac · 按功能改名（原 v260922-*），职责写进文件名；上版：v261009o · 紧凑密度下 PDF 阅读区高度那条 `html[data-density="c -->
+  <link rel="stylesheet" href="/overview-editor-tools.css?v=261009ac"><!-- v261009ac · 按功能改名（原 v260922-*），职责写进文件名；上版： -->
+  <link rel="stylesheet" href="/perf-affordances.css?v=261009ac"><!-- v261009ac · 按功能改名（原 v260922-*），职责写进文件名；上版： -->
+  <link rel="stylesheet" href="/graph-page-layers.css?v=261009ac"><!-- v261009ac · 按功能改名（原 v260922-*），职责写进文件名；上版：v261009m · 图谱可视化迁成插件（plugins/knowledge-graph）：本文件只 -->
+  <link rel="stylesheet" href="/sidebar-agent-profiles.css?v=261009ac"><!-- v261009ac · 按功能改名（原 v260922-*），职责写进文件名；上版： -->
+  <link rel="stylesheet" href="/layout-fixes.css?v=261009ac"><!-- v261009ac · 按功能改名（原 v260922-*），职责写进文件名；上版： -->
+  <link rel="stylesheet" href="/plugin-manager.css?v=261009s"><!-- v261009s · 插件设置页新增「演示预览」：悬停/点击插件卡片浮出摘要+功能点+截图（内容由插件 manifest 的 preview 声明，内核不认识具体插件）；上版：v261009q · 设置页新增「单文件包安装结果」区块（解包/升级/拒收/冲突逐条显示，空列表时也显示）；上版：v26 -->
+  <link rel="stylesheet" href="/v261014-linear-luxe.css?v=261021-ui"><!-- v261014o · 线性奢华版壳层（v3 UI 重设计） -->
+  <link rel="stylesheet" href="/v261014-soft-chromatic.css?v=261014w"><!-- 261014w · Soft Chromatic Workspace · 概览方案 A 柔和标题色块 -->
+  <link rel="stylesheet" href="/v261015-usability.css?v=261020-meta-pad"><!-- v261020 · 条目信息折叠按钮离卡片右上圆角/滚动条留 12px 间距；上版：分类标记模板库 + 分组图案面板 -->
+  <link rel="stylesheet" href="/milestone-gantt.css?v=261022-gantt"><!-- v261022.1 · 里程碑甘特图（上游并入，按本地主题变量重写） -->
+  <link rel="stylesheet" href="/v261019-todo-edit.css?v=261019"><!-- v261019 · 待办行内编辑态布局 + 截止时间（到分）与逾期高亮；追加在 usability 之后覆盖其 todo-row 列定义 -->
+  <link rel="stylesheet" href="/sync.css?v=261022-sync"><!-- v261022.2 · 同步页与顶栏同步按钮 -->
+  <link rel="stylesheet" href="/agent-system.css?v=261022-ai"><!-- v261022.3 · AI 能力 / RAG / 技能设置（上游并入） -->
+  <link rel="stylesheet" href="/document-references.css?v=261022-refs"><!-- v261022.4 · 引用补全/预览/断链样式 -->
+  <link rel="stylesheet" href="/research-ui.css?v=v261022-ui"><!-- v261022.5 · 阅读字号/证据徽章/项目范围样式 -->
+  <link rel="stylesheet" href="/project-scope.css?v=v261022-ui"><!-- v261022.5 · 可搜索的项目范围选择器 -->
+  <link rel="stylesheet" href="/vendor/github.min.css" onerror="this.onerror=null;this.href='https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css'">
+  <link rel="stylesheet" href="/manual.css?v=261009aa"><!-- v261009aa · 栏目条照内核既有口径重做（行高 31/字号 12/圆角 7/前置 · 图标，当前章用 accent-soft+accent-ink，同 .settings-nav）；去掉行内 KB 噪音；上版：v261009z · 统一栏宽 760px（图片与文字左边缘对齐、图内文字与正文 -->
+  <link rel="stylesheet" href="/external-access.css?v=261009ab"><!-- v261009.38 · 「设置 → 外部接入」版式 -->
+  <link rel="stylesheet" href="/desktop.css?v=261016-v3">
+  <link rel="stylesheet" href="/theme-dark.css?v=261016-v3">
+  <link rel="stylesheet" href="/workbench-ui.css?v=261021-shrink">
+  <!-- web:css:end -->
   <script>
     window.MathJax = {
       tex: {
@@ -25,17 +45,33 @@
       options: {skipHtmlTags: ['script','noscript','style','textarea','pre','code']}
     };
   </script>
-  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js" onerror="this.onerror=null;this.src='https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.min.js'"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/marked@15.0.12/marked.min.js" onerror="this.onerror=null;this.src='https://unpkg.com/marked@15.0.12/marked.min.js'"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js" onerror="this.onerror=null;this.src='https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.6/purify.min.js'"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/lib/common.min.js" onerror="this.onerror=null;this.src='https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js'"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js" onerror="this.onerror=null;this.src='https://unpkg.com/mermaid@11.4.1/dist/mermaid.min.js'"></script>
+  <!-- web:vendor-js:start（由 tools/web_manifest.py 生成，勿手改；顺序见 web/manifest.json） -->
+  <script defer src="/vendor/marked.min.js" onerror="this.onerror=null;this.src='https://unpkg.com/marked@15.0.12/marked.min.js'"></script>
+  <script defer src="/vendor/purify.min.js" onerror="this.onerror=null;this.src='https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.6/purify.min.js'"></script>
+  <script defer src="/vendor/highlight-umd.min.js" onerror="this.onerror=null;this.src='https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js'"></script>
+  <script defer src="/vendor-lazy.js?v=261009"></script><!-- v261009 · A1：mathjax（2.11 MB）与 mermaid（2.57 MB）改为按需加载，不再首屏无条件下载；调用方走 window.erwVendor.load('mathjax'|'mermaid')，本地失败回退 CDN。见 vendor-lazy.js -->
+  <!-- web:vendor-js:end -->
 </head>
 <body>
+  <header id="desktop-titlebar" class="desktop-drag-region" hidden aria-label="窗口控制">
+    <div class="desktop-brand desktop-drag-region">
+      <img src="/workbench-mark.svg?v=261015" width="24" height="24" alt="">
+      <span id="desktop-caption">科研工作台</span>
+    </div>
+    <div class="desktop-page-tools desktop-drag-region" id="desktop-page-tools"></div>
+    <div class="desktop-status" id="desktop-save-status" hidden aria-live="polite"><i></i><span>已保存</span></div>
+    <button id="desktop-search" class="desktop-tool" type="button" title="搜索 · Ctrl+K" aria-label="搜索"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m12.5 12.5 4 4"/></svg></button>
+    <div id="desktop-reload-slot"></div>
+    <div class="desktop-window-controls">
+      <button id="desktop-minimize" class="desktop-control" type="button" aria-label="最小化到任务栏" title="最小化到任务栏"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12"/></svg></button>
+      <button id="desktop-maximize" class="desktop-control" type="button" aria-label="最大化窗口" title="最大化窗口"><svg class="desktop-max-icon" viewBox="0 0 20 20" aria-hidden="true"><rect x="4.5" y="4.5" width="11" height="11" rx=".5"/></svg><svg class="desktop-restore-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M7 5V3.5h9.5V13H15"/><rect x="3.5" y="7" width="9.5" height="9.5" rx=".5"/></svg></button>
+      <button id="desktop-close" class="desktop-control" type="button" aria-label="关闭窗口" title="关闭窗口"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4.5 4.5 11 11m0-11-11 11"/></svg></button>
+    </div>
+  </header>
   <div id="app" class="app-shell">
     <aside class="sidebar">
       <div class="brand">
-        <div class="brand-mark"><span></span></div>
+        <div class="brand-mark"><img src="/workbench-mark.svg?v=261015" alt="科研工作台" width="36" height="36"></div>
         <div class="brand-copy">
           <h1 id="brand-title">科研工作台</h1>
           <p id="brand-subtitle">Engineering Research Workspace</p>
@@ -51,22 +87,30 @@
     <div class="main-shell">
       <header class="topbar">
         <div class="page-heading">
-          <div class="eyebrow" id="page-eyebrow">CORE WORK</div>
           <h2 id="page-title">概览</h2>
           <div class="page-date" id="page-date"></div>
         </div>
         <div class="top-actions">
           <button class="top-search-btn" id="global-search-btn" type="button" title="全局搜索 · Ctrl/⌘ K"><span>⌕</span><span>搜索</span><kbd>⌘K</kbd></button>
-          <button class="weather-pill" id="weather-pill" type="button" title="天气详情">
-            <span class="status-dot"></span><span id="weather-text">天气加载中</span>
-          </button>
+          <!-- v261009 · §6.3 顶栏槽位：插件（如天气）把组件画进这里，内核不认识具体功能 -->
+          <span class="topbar-slot" id="topbar-slot" data-erw-slot="topbar"></span>
           <button class="icon-btn" id="theme-btn" type="button" title="切换主题">◐</button>
+          <button class="density-pill" id="density-btn" type="button" title="当前：紧凑型（热力图与学业卡并排、一屏收纳免滚动）。点击切换为宽松型">紧凑型</button>
+          <div class="zoom-wrap">
+            <button class="zoom-pill" id="zoom-btn" type="button" title="界面缩放">100%</button>
+            <div class="dropdown hidden" id="zoom-menu">
+              <button type="button" data-zoom="80">80% · 紧凑</button>
+              <button type="button" data-zoom="90">90% · 偏小</button>
+              <button type="button" data-zoom="100">100% · 默认</button>
+              <button type="button" data-zoom="110">110% · 偏大</button>
+              <button type="button" data-zoom="125">125% · 宽松</button>
+            </div>
+          </div>
           <div class="reload-wrap">
-            <button class="primary-btn reload-btn" id="reload-btn" type="button" title="重新读取所有配置并刷新本地缓存">↻ Reload</button>
-            <button class="primary-btn reload-menu-btn" id="reload-menu-btn" type="button" aria-label="Reload 菜单">⌄</button>
-            <div class="dropdown hidden" id="reload-menu">
-              <button type="button" data-system-action="reload">Reload 全部配置</button>
-              <button type="button" data-system-action="restart">快速重启服务</button>
+            <button class="reload-btn" id="reload-btn" type="button" title="刷新与重启" aria-label="刷新与重启" aria-haspopup="menu" aria-expanded="false" aria-controls="reload-menu"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 7a6.4 6.4 0 1 0 .2 5M16 3v4h-4"/></svg></button>
+            <div class="dropdown hidden" id="reload-menu" role="menu" aria-label="刷新与重启">
+              <button type="button" role="menuitem" data-system-action="reload">重新加载配置与索引</button>
+              <button type="button" role="menuitem" data-system-action="restart">快速重启服务</button>
             </div>
           </div>
         </div>
@@ -76,6 +120,9 @@
   </div>
 
   <div class="toast-stack" id="toast-stack"></div>
+  <!-- v261009.16 · 浮层槽位：悬浮球等"始终挂在页面上"的插件 UI 由内核提供挂载点，
+       插件只在这个容器里画（`ERWPanels.register({slot:'overlay', renderSlot})`）。 -->
+  <div id="erw-overlay-host" data-erw-slot="overlay"></div>
   <div class="modal-backdrop hidden" id="modal-backdrop">
     <section class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <header><h3 id="modal-title">操作</h3><button type="button" class="icon-btn" id="modal-close">×</button></header>
@@ -84,13 +131,29 @@
     </section>
   </div>
 
-  <script defer src="/v260922-performance.js"></script>
-  <script defer src="/app.js"></script>
-  <script defer src="/v260922-projects.js"></script>
-  <script defer src="/v260922-overview-editor-tools.js"></script>
-  <script defer src="/v260922-graph-performance.js"></script>
-  <script defer src="/v260922-overview-graph.js"></script>
-  <script defer src="/v260922-agent-profiles.js"></script>
-  <script defer src="/v260922-layout-bugfixes.js"></script>
+  <!-- web:app-js:start（由 tools/web_manifest.py 生成，勿手改；顺序见 web/manifest.json） -->
+  <script defer src="/ui-dialogs.js?v=261016-v3"></script>
+  <script defer src="/dom-seam.js?v=261009"></script><!-- v261009 · A9：共享 DOM 变更订阅（window.ERWDom.onChildList）——7 个补丁各自建的文档级 MutationObserver 收敛为 1 个；提供 root 作用域、ignore 过滤、按帧合并与回调隔离。必须在所有补丁之前加载 -->
+  <script defer src="/perf-and-fetch-seam.js?v=261009ac"></script><!-- v261009ac · 按功能改名（原 v260922-*），职责写进文件名；上版：v261009r · A9：文档级观察改走 ERWDom.onChildList（带 ignore  -->
+  <script defer src="/render-libraries.js?v=261015-perf"></script><!-- 渲染库按需加载接缝：window.ERWRenderLibraries = {ensureMermaid, renderMath}，走 /vendor/mermaid.min.js 与 /vendor/mathjax-tex-svg.js -->
+  <script defer src="/v261014-milestone-timeline.js?v=261014o"></script><!-- v261014h · 自适应密度状态泳道里程碑时间轴（window.ERWMilestoneTimeline） -->
+  <script defer src="/milestone-gantt.js?v=261022-gantt"></script><!-- v261022.1 · 里程碑甘特图（window.ERWMilestoneGantt）；网络走 erwFetch、项目筛选无 project-scope 时降级原生下拉 -->
+  <script defer src="/research-ui.js?v=261022-ui"></script><!-- v261022.5 · 项目显示名/证据徽章/阅读字号（window.ERWResearchUI）；网络走 erwFetch -->
+  <script defer src="/project-scope.js?v=261022-ui"></script><!-- v261022.5 · 可搜索、键盘可用的项目范围选择器（window.ERWProjectScope） -->
+  <script defer src="/app.js?v=261021-scroll"></script><!-- v261020 · 分类标记：设置页内置模板一键添加（图标/颜色/用途）、分组图案面板与实时预览；自定义标记写入期校验放行；上版：v261019 · 待办可编辑（标题/截止日期+时间/项目/优先级，行内表单）与完成时间限制（逾期二次确认、completed_at 展示）；再上版：v261015c · 合并上游 UI 重设计 v3：移除重复页 research-overview（导航项/路由分支/渲染函数），保留旧书签别名 -->
+  <script defer src="/document-references.js?v=261022-refs"></script><!-- v261022.4 · 引用补全与预览（window.ERWDocReferences）；网络走 erwFetch -->
+  <script defer src="/agent-system.js?v=261022-ai"></script><!-- v261022.3 · AI 能力与 RAG 设置面板（window.ERWAgentSystem）；DOM 走 ERWDom -->
+  <script defer src="/agent-client.js?v=261022-ai"></script><!-- v261022.3 · Agent 会话/RAG 客户端（window.ERWAgentClient）；网络走 erwFetch -->
+  <script defer src="/sync.js?v=261022-sync"></script><!-- v261022.2 · 同步状态轮询/冲突处理/设置页；网络走 erwFetch、DOM 走 ERWDom、宿主走 window.ERWSyncUI -->
+  <script defer src="/plugin-host.js?v=261009c"></script><!-- v261009c · 除 nav[0] 外，还加载 manifest.panel.mount（没有导航页的 UI，如阅读区 tab） -->
+  <script defer src="/research-pages.js?v=261016-v3"></script><!-- v261009ac · 按功能改名（原 v260922-*），职责写进文件名；上版：v261009q · 人设编辑器宿主（#erw-persona-host 与 erw-llm-set -->
+  <script defer src="/layout-fixes.js?v=261009ac"></script><!-- v261009ac · 按功能改名（原 v260922-*），职责写进文件名；上版：v261009b · A9：文档级 childList 改走 ERWDom.onChildList； -->
+  <script defer src="/plugin-manager.js?v=261009s"></script><!-- v261009s · 插件设置页新增「演示预览」：悬停/点击插件卡片浮出摘要+功能点+截图（内容由插件 manifest 的 preview 声明，内核不认识具体插件）；上版：v261009q · 设置页新增「单文件包安装结果」区块（解包/升级/拒收/冲突逐条显示，空列表时也显示）；上版：v26 -->
+  <script defer src="/v261014-shell.js?v=261015a"></script><!-- v261014e · 柔和工作台壳层 + 可拖拽侧栏宽度（纯 IIFE，无 window.ERW* 接缝） -->
+  <script defer src="/v261014-soft-chromatic.js?v=261015b"></script><!-- v261014q · Markdown 分栏拖拽与视觉增强（v261015b · 文档级 DOM 变更改走 ERWDom） -->
+  <script defer src="/manual.js?v=261009aa"></script><!-- v261009aa · 栏目条照内核既有口径重做（行高 31/字号 12/圆角 7/前置 · 图标，当前章用 accent-soft+accent-ink，同 .settings-nav）；去掉行内 KB 噪音；上版：v261009z · 统一栏宽 760px（图片与文字左边缘对齐、图内文字与正文 -->
+  <script defer src="/external-access.js?v=261009ab"></script><!-- v261009.38 · 设置新增「外部接入」tab：MCP/插件写入知识库的授权开关（默认 MCP 只读） -->
+  <script defer src="/desktop.js?v=261016-v3"></script>
+  <!-- web:app-js:end -->
 </body>
 </html>
