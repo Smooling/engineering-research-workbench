@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -17,6 +18,7 @@ from .workspace import ensure_workspace
 
 READING_STATUSES = ("未读", "在读", "已读")
 ANNOTATION_TYPES = ("highlight", "underline", "strikeout", "rect", "ink", "note")
+_ANNOTATION_LOCK = threading.RLock()
 
 def _root() -> Path:
     root = ensure_workspace() / "Knowledge" / "Literature"
@@ -98,7 +100,18 @@ def _document_item(doc: dict[str, Any]) -> dict[str, Any]:
     item = {"id": "entry-" + doc["id"], "doc_id": doc["id"], "filename": "", "stored_filename": "", "last_page": 1,
             "page_count": 0, "created_at": doc.get("created", ""), "updated_at": doc.get("updated", ""), "legacy": True}
     _apply_doc_meta(item, doc)
+    state = _reading_state_path(doc["id"])
+    if state.is_file():
+        saved = json.loads(state.read_text(encoding="utf-8"))
+        for key in ("last_page", "page_count"):
+            item[key] = saved.get(key, item[key])
     return item
+
+
+def _reading_state_path(doc_id: str) -> Path:
+    # Keep direct attachments out of the PDF registry; their document ID is stable.
+    folder = ensure_workspace() / "Knowledge" / "Literature" / "Index" / "Reading"
+    return folder / (hashlib.sha256(doc_id.encode()).hexdigest() + ".json")
 
 
 def list_items(query: str = "", status: str = "", category: str = "", page: int = 1, page_size: int = 60, mark: str = "", pdf: str = "") -> dict[str, Any]:
@@ -150,7 +163,7 @@ def _apply_doc_meta(item: dict[str, Any], doc: dict[str, Any]) -> None:
     if "status" in doc:
         item["reading_status"] = {"已精读": "已读", "已归档": "已读", "阅读中": "在读", "待阅读": "未读"}.get(doc["status"], item.get("reading_status", "未读"))
     if "pinned" in doc:
-        item["favorite"] = bool(doc["pinned"] or item.get("favorite"))
+        item["favorite"] = bool(doc["pinned"])
 
 
 def _join_doc_meta_batch(rows: list[dict[str, Any]]) -> None:
@@ -220,7 +233,19 @@ def update_item(paper_id: str, patch: dict[str, Any]) -> dict[str, Any]:
     if paper_id.startswith("entry-") and not any(item.get("id") == paper_id for item in data["items"]):
         from . import indexer
         item = get_item(paper_id)
-        indexer.update_doc(item["doc_id"], {key: value for key, value in patch.items() if key in _MD_SYNC_KEYS})
+        md_patch = {key: value for key, value in patch.items() if key in _MD_SYNC_KEYS}
+        state = {key: max(1 if key == "last_page" else 0, int(patch.get(key, item[key])))
+                 for key in ("last_page", "page_count")}
+        if md_patch:
+            indexer.update_doc(item["doc_id"], md_patch)
+        path = _reading_state_path(item["doc_id"])
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix("." + uuid.uuid4().hex + ".tmp")
+        try:
+            tmp.write_text(json.dumps(state), encoding="utf-8")
+            tmp.replace(path)
+        finally:
+            tmp.unlink(missing_ok=True)
         return get_item(paper_id)
     for item in data.get("items") or []:
         if item.get("id") != paper_id:
@@ -369,10 +394,10 @@ def _ensure_doc_entry(item: dict[str, Any]) -> str:
 
 def rebuild_registry(doc_id: str = "") -> dict[str, Any]:
     """v260929 · 真值归一重建（阶段 3）：以文献 md 条目为唯一真值修复 library.json，幂等可重复执行。
-    a) md.attachment 尾段名与库内 stored_filename 匹配 → 回填 doc_id 双向关联（link）
+    a) md.attachment 实际路径与库内 PDF 匹配 → 回填 doc_id 双向关联（link）
     b) md.attachment 指向有效 PDF 但库内未登记 → PDF 迁入 Knowledge/Literature/PDF/ 统一存放并登记
        新条目（元数据取自 md frontmatter），md.attachment 同步更新为库内路径（register）；
-       Workspace 内的附件原地移动（合并存放空间、不留双份），Workspace 外绝对路径仅复制（不破坏外部文件）
+       复制附件并保留原文件，避免破坏其他条目的共享引用
     c) 库中 doc_id 为空的孤儿条目 → 经 _ensure_doc_entry 补建 md（ensure，仅全量模式）
     doc_id 传入时仅处理该条目（附件徽章点击的自动登记路径），返回值附处理后的 attachment。"""
     from . import store
@@ -387,37 +412,38 @@ def rebuild_registry(doc_id: str = "") -> dict[str, Any]:
         att = str(doc.get("attachment") or "").strip()
         if not att:
             continue
-        name = att.replace("\\", "/").split("/")[-1]
-        hit = next((x for x in items if str(x.get("stored_filename") or "") == name), None)
+        src = store.resolve_attachment(doc)
+        hit = next((x for x in items if src is not None and x.get("stored_filename") and
+                    (_pdf_dir() / x["stored_filename"]).resolve() == src.resolve()), None)
         if hit is not None:
             if not hit.get("doc_id"):
                 hit["doc_id"] = doc["id"]
                 stats["linked"] += 1
             result_att = att
             continue
-        src = store.resolve_attachment(doc)
         if src is None:
             continue
-        paper_id = uuid.uuid4().hex
+        registered = next((x for x in items if x.get("doc_id") == doc["id"]), None)
+        # Registration must retain the identity already used by annotations and
+        # previews. Older UUID registrations keep their existing identity too.
+        paper_id = str(registered["id"]) if registered else "entry-" + doc["id"]
         safe = _safe_name(src.name)
-        dest = _pdf_dir() / f"{paper_id}-{safe}"
+        # The attachment filename is independent of the stable reader ID, so
+        # registration never overwrites an earlier or unrelated same-name copy.
+        dest = _pdf_dir() / f"{uuid.uuid4().hex}-{safe}"
         if src.resolve() != dest.resolve():
-            in_ws = False  # v260929 · 合并存放空间：Workspace 内移动迁入，外部绝对路径复制保原件
-            try:
-                in_ws = src.resolve().is_relative_to(ensure_workspace().resolve())
-            except Exception:
-                pass
-            (shutil.move if in_ws else shutil.copy2)(str(src), str(dest))
+            shutil.copy2(str(src), str(dest))
         h = hashlib.sha256()
         with dest.open("rb") as f:
             for chunk in iter(lambda: f.read(1024 * 1024), b""):
                 h.update(chunk)
         now = datetime.now().isoformat(timespec="seconds")
+        reading = get_item(paper_id) if registered else _document_item(doc)
         try:
             bibtex = str(indexer.get_doc(doc["id"]).get("bibtex") or "")
         except Exception:
             bibtex = ""
-        items.append({
+        row = {
             "id": paper_id, "title": str(doc.get("title") or Path(safe).stem),
             "authors": str(doc.get("authors") or ""), "year": str(doc.get("year") or ""),
             "venue": str(doc.get("venue") or ""), "doi": str(doc.get("doi") or ""),
@@ -427,9 +453,13 @@ def rebuild_registry(doc_id: str = "") -> dict[str, Any]:
             "projects": list(doc.get("projects") or []), "favorite": False,
             "filename": safe, "stored_filename": dest.name,
             "size": dest.stat().st_size, "sha256": h.hexdigest(),
-            "last_page": 1, "page_count": 0, "doc_id": doc["id"],
+            "last_page": reading["last_page"], "page_count": reading["page_count"], "doc_id": doc["id"],
             "created_at": now, "updated_at": now,
-        })
+        }
+        if registered is not None:
+            registered.update(row)
+        else:
+            items.append(row)
         stats["registered"] += 1
         rel = _attachment_rel(dest)
         result_att = rel  # 单条模式：登记后的库内路径，返回给前端重试跳转
@@ -471,10 +501,26 @@ def storage_info() -> dict[str, Any]:
     }
 
 def set_pdf_dir(new_dir: str, move_existing: bool = True) -> dict[str, Any]:
-    """v260929 · 设置页：修改 PDF 存放目录（app.literature.pdf_dir）。
-    move_existing 时把旧目录下现有 PDF 移动到新目录，并回写指向旧目录的文献条目 attachment。
-    目录本身不变更 Annotations/Notes/Index/Previews（仍在 Workspace 知识目录内）。"""
-    from . import config
+    from .sync_engine import mutation_lock
+    with mutation_lock:
+        return _set_pdf_dir(new_dir, move_existing)
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _set_pdf_dir(new_dir: str, move_existing: bool) -> dict[str, Any]:
+    """Prepare and verify files and references before committing the directory setting.
+
+    Originals survive any preparation failure, including interrupted copies. Only
+    after the configuration commit may old copies be removed.
+    """
+    from . import config, indexer, store
     new_dir = str(new_dir or "").strip()
     old = _pdf_dir()
     if new_dir:
@@ -490,45 +536,74 @@ def set_pdf_dir(new_dir: str, move_existing: bool = True) -> dict[str, Any]:
         target = (_root() / "PDF").resolve()
         if target == old:
             return {"ok": True, "pdf_dir": str(old), "moved": 0, "skipped": 0, "updated": 0}
-    app = config.get_app()
-    app.setdefault("literature", {})["pdf_dir"] = new_dir
-    config.save_app(app)
-    moved = skipped = updated = 0
-    if move_existing and old.is_dir() and old != target:
-        target.mkdir(parents=True, exist_ok=True)
-        for f in old.iterdir():
-            if not (f.is_file() and f.suffix.lower() == ".pdf"):
-                continue
-            dest = target / f.name
+    files = [p for p in old.iterdir() if p.is_file() and p.suffix.lower() == ".pdf"]
+    # Preflight the whole batch, including when switching without moving files:
+    # a same-name destination must never silently change a paper's content.
+    for source in files:
+        dest = target / source.name
+        if dest.exists() and (not dest.is_file() or _file_sha256(source) != _file_sha256(dest)):
+            raise ValueError("目标目录存在同名但内容不同的 PDF：" + source.name)
+    mapping = {p: target / p.name for p in files} if move_existing else {}
+    resolved_mapping = {p.resolve(): dest for p, dest in mapping.items()}
+    references = []
+    for doc in indexer.document_metadata() if move_existing else []:
+        source = store.resolve_attachment(doc)
+        if source in resolved_mapping:
+            path = ensure_workspace() / doc["path"]
+            references.append((doc["id"], path, path.read_bytes(), resolved_mapping[source]))
+    target.mkdir(parents=True, exist_ok=True)
+    created, changed = [], []
+    config_paths = (config.CONFIG_DIR / "app.json", config.SECRET_PATH)
+    config_backups = {p: p.read_bytes() if p.exists() else None for p in config_paths}
+    committing = False
+    skipped = 0
+    try:
+        for source, dest in mapping.items():
             if dest.exists():
+                if not dest.is_file() or _file_sha256(source) != _file_sha256(dest):
+                    raise ValueError("目标目录存在同名但内容不同的 PDF：" + source.name)
                 skipped += 1
                 continue
-            shutil.move(str(f), str(dest))
-            moved += 1
-    if move_existing:
+            # Exclusive creation also prevents overwriting a file added after preflight.
+            with dest.open("xb") as output:
+                created.append(dest)
+                with source.open("rb") as input_file:
+                    shutil.copyfileobj(input_file, output)
+            if _file_sha256(source) != _file_sha256(dest):
+                raise OSError("PDF 迁移内容校验失败：" + source.name)
+        for doc_id, path, original, dest in references:
+            changed.append((path, original))
+            indexer.update_doc(doc_id, {"attachment": _attachment_rel(dest)})
+        app = config.get_app()
+        app.setdefault("literature", {})["pdf_dir"] = new_dir
+        committing = True
+        config.save_app(app)
+    except BaseException:
+        if committing:
+            for path, original in config_backups.items():
+                if original is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    path.write_bytes(original)
+            config.reload_all()
+        for path, original in reversed(changed):
+            path.write_bytes(original)
+            indexer.index_doc_path(path)
+        for dest in created:
+            dest.unlink(missing_ok=True)
+        raise
+    retained = 0
+    linked_sources = {dest.resolve() for dest in mapping.values() if dest.is_symlink()}
+    for source in mapping:
+        if source.resolve() in linked_sources:
+            retained += 1
+            continue
         try:
-            from . import indexer, store
-            for doc in indexer.document_metadata():
-                if doc["kind"] != "literature":
-                    continue
-                src = store.resolve_attachment(doc)
-                if src is None:
-                    continue
-                try:
-                    src.relative_to(old)
-                except ValueError:
-                    continue  # 不指向旧目录的附件（含外部绝对路径）不动
-                dest = target / src.name
-                if not dest.exists():
-                    continue
-                try:
-                    indexer.update_doc(doc["id"], {"attachment": _attachment_rel(dest)})
-                    updated += 1
-                except Exception:
-                    pass
-        except Exception:
-            pass
-    return {"ok": True, "pdf_dir": str(target), "moved": moved, "skipped": skipped, "updated": updated}
+            source.unlink()
+        except OSError:
+            retained += 1  # The committed destination remains readable; retain a backup.
+    return {"ok": True, "pdf_dir": str(target), "moved": len(created), "skipped": skipped,
+            "updated": len(references), "retained": retained}
 
 def open_folder() -> dict[str, Any]:
     """v260929 · 设置页：在系统文件管理器中打开 PDF 存放目录。"""
@@ -718,13 +793,24 @@ def pdf_path(paper_id: str) -> Path:
     return _item_pdf_path(get_item(paper_id))
 
 def annotation_path(paper_id: str) -> Path:
-    return _root() / "Annotations" / f"{paper_id}.json"
+    return _root() / "Annotations" / f"{_annotation_storage_id(paper_id)}.json"
+
+
+def _annotation_storage_id(paper_id: str) -> str:
+    # Old reader windows and saved links may still address entry-<doc_id> after
+    # an older version registered that same document under a UUID.
+    if paper_id.startswith("entry-"):
+        doc_id = paper_id[len("entry-"):]
+        for item in _load_registry().get("items") or []:
+            if item.get("doc_id") == doc_id:
+                return str(item["id"])
+    return paper_id
 
 def note_path(paper_id: str) -> Path:
     return _root() / "Notes" / f"{paper_id}.md"
 
 def preview_dir(paper_id: str) -> Path:
-    p = _root() / "Previews" / str(paper_id)
+    p = _root() / "Previews" / _annotation_storage_id(paper_id)
     p.mkdir(parents=True, exist_ok=True)
     return p
 
@@ -747,11 +833,47 @@ def _save_preview_data_url(paper_id: str, ann_id: str, data_url: str) -> str:
     return str(target.relative_to(ensure_workspace())).replace("\\", "/")
 
 def get_annotations(paper_id: str, page: int | None = None) -> list[dict[str, Any]]:
-    get_item(paper_id)
+    with _ANNOTATION_LOCK:
+        return _get_annotations(paper_id, page)
+
+
+def _read_annotations(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(rows, list) or any(not isinstance(x, dict) or not x.get("id") for x in rows):
+        raise ValueError("批注文件格式无效：" + path.name)
+    return rows
+
+
+def _write_annotations(path: Path, rows: list[dict[str, Any]]) -> None:
+    tmp = path.with_suffix("." + uuid.uuid4().hex + ".tmp")
+    try:
+        tmp.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def _get_annotations(paper_id: str, page: int | None = None) -> list[dict[str, Any]]:
+    item = get_item(paper_id)
     p = annotation_path(paper_id)
-    if not p.exists(): return []
-    try: rows = json.loads(p.read_text(encoding="utf-8"))
-    except Exception: rows = []
+    rows = _read_annotations(p)
+    legacy = _root() / "Annotations" / ("entry-" + str(item.get("doc_id") or "") + ".json")
+    recovering = bool(item.get("doc_id") and legacy != p and legacy.is_file())
+    if recovering:
+        # Preserve annotations saved under both IDs. On duplicate IDs the current
+        # registered record wins, so recovery cannot revert a later saved edit.
+        known = {x["id"] for x in rows}
+        used_numbers = {x.get("no") for x in rows}
+        for row in _read_annotations(legacy):
+            if row["id"] in known:
+                continue
+            if row.get("no") in used_numbers:
+                row.pop("no", None)
+            rows.append(row)
+            known.add(row["id"])
+            used_numbers.add(row.get("no"))
     # v260929f · 存量批注回填编号：缺 no 的按 created_at 顺序续接当前最大号，一次性写回
     # （旧批注一打开阅读区即获得编号，无需逐条编辑；save_annotation 经此读取后 existing 即带号）
     missing = [x for x in rows if not isinstance(x.get("no"), int) or int(x["no"]) <= 0]
@@ -759,13 +881,24 @@ def get_annotations(paper_id: str, page: int | None = None) -> list[dict[str, An
         nxt = max((int(x.get("no") or 0) for x in rows), default=0) + 1
         for x in sorted(missing, key=lambda x: str(x.get("created_at") or "")):
             x["no"] = nxt; nxt += 1
-        tmp = p.with_suffix(".tmp")
-        tmp.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(p)
+    if missing or recovering:
+        _write_annotations(p, rows)
+    if recovering:
+        # Archive only after the merged file has been atomically committed. Do
+        # not move previews: existing annotations and note links retain their URLs.
+        # Retiring the old JSON prevents deleted annotations returning on a read.
+        archive = p.parent / "Legacy"
+        archive.mkdir(exist_ok=True)
+        legacy.replace(archive / f"{legacy.stem}-{uuid.uuid4().hex}.json")
     if page is not None: rows = [x for x in rows if int(x.get("page") or 0) == int(page)]
     return rows
 
 def save_annotation(paper_id: str, annotation: dict[str, Any]) -> dict[str, Any]:
+    with _ANNOTATION_LOCK:
+        return _save_annotation(paper_id, annotation)
+
+
+def _save_annotation(paper_id: str, annotation: dict[str, Any]) -> dict[str, Any]:
     get_item(paper_id)
     typ = str(annotation.get("type") or "highlight")
     if typ not in ANNOTATION_TYPES:
@@ -801,19 +934,20 @@ def save_annotation(paper_id: str, annotation: dict[str, Any]) -> dict[str, Any]
         "updated_at": datetime.now().isoformat(timespec="seconds"),
     }
     rows = [x for x in rows if x.get("id") != ann_id] + [row]
-    tmp = p.with_suffix(".tmp")
-    tmp.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(p)
+    _write_annotations(p, rows)
     return row
 
 def delete_annotation(paper_id: str, annotation_id: str) -> dict[str, Any]:
+    with _ANNOTATION_LOCK:
+        return _delete_annotation(paper_id, annotation_id)
+
+
+def _delete_annotation(paper_id: str, annotation_id: str) -> dict[str, Any]:
     rows = get_annotations(paper_id)
     victim = next((x for x in rows if x.get("id") == annotation_id), None)
     rows = [x for x in rows if x.get("id") != annotation_id]
     p = annotation_path(paper_id)
-    tmp = p.with_suffix(".tmp")
-    tmp.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(p)
+    _write_annotations(p, rows)
     if victim and victim.get("preview_path"):
         target = (ensure_workspace() / str(victim["preview_path"])).resolve()
         root = ensure_workspace().resolve()

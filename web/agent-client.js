@@ -11,7 +11,7 @@
   let capabilities=null,capabilityLoad=null,settingsQueue=Promise.resolve(),savingSettings=0;
   const capabilityNames={rag_enabled:'RAG',memory_enabled:'记忆',skills_enabled:'Skill'};
   function capabilityControls(){
-    return `<div class="agent-capability-controls" aria-label="默认能力开关"><span class="agent-capability-label" title="本次实际使用的能力还会受提问要求与助手权限限制">默认能力</span>${Object.entries(capabilityNames).map(([key,label])=>`<button type="button" data-agent-capability="${key}" aria-pressed="false" disabled><span aria-hidden="true">●</span> ${label}</button>`).join('')}<button type="button" data-agent-rag-config title="配置 Embedding 接口与向量索引" aria-label="配置 RAG">⚙</button></div>`;
+    return `<div class="agent-capability-controls" aria-label="默认能力开关"><span class="agent-capability-label" title="本次实际使用的能力还会受提问要求与助手权限限制">默认能力</span>${Object.entries(capabilityNames).map(([key,label])=>`<button type="button" data-agent-capability="${key}" aria-pressed="false" disabled><span aria-hidden="true">●</span> ${label}</button>`).join('')}<button type="button" data-agent-settings title="Agent 设置：任务、记忆、技能与 RAG" aria-label="Agent 设置">⚙</button></div>`;
   }
   function paintCapabilities(){
     document.querySelectorAll('[data-agent-capability]').forEach(button=>{
@@ -37,7 +37,7 @@
     root.querySelectorAll('[data-agent-capability]').forEach(button=>button.onclick=async()=>{
       try{const options=await getCapabilities();await saveSettings({[button.dataset.agentCapability]:options[button.dataset.agentCapability]===false})}catch(error){window.ERWToast?.('能力设置未保存：'+error.message,true)}
     });
-    root.querySelectorAll('[data-agent-rag-config]').forEach(button=>button.onclick=()=>window.ERWAgentSystem?.open('rag'));
+    root.querySelectorAll('[data-agent-settings]').forEach(button=>button.onclick=()=>window.ERWAgentSystem?.open('settings'));
     paintCapabilities();getCapabilities().catch(error=>{window.ERWToast?.('能力设置加载失败：'+error.message,true);root.querySelectorAll('[data-agent-capability]').forEach(button=>{button.disabled=false;button.title='加载失败，点击重试'})});
   }
   function entry(id){if(!sessions.has(id))sessions.set(id,{session:{id,title:'新对话',messages:[]},live:null,owner:'',runId:''});return sessions.get(id)}
@@ -77,6 +77,10 @@
     else if(event==='round'){
       if(m.content&&m.__round&&m.__responseRound!==m.__round)m.response_parts.push({round:m.__round,content:m.content});
       close();m.content='';m.__round=(data.i|0)+1;m.__tl.push({kind:'llm',round:m.__round,t0:stamp(),t1:null});m.__note=`第 ${m.__round} 轮 · 正在生成…`;
+    }else if(event==='sources_updated'){
+      m.run_id=data.run_id||e.runId;
+      if(data.source_summary&&(!m.source_summary||data.revision>m.source_summary.revision))m.source_summary=data.source_summary;
+      document.dispatchEvent(new CustomEvent('erw-agent-sources-updated',{detail:data}));
     }else if(event==='capabilities'){m.capabilities=data.capabilities;m.source_policy=data.source_policy}
     else if(event==='retrieval'){m.retrievals=(m.retrievals||[]).filter(r=>r.call_id!==data.call_id);m.retrievals.push(data);m.__note=`RAG 检索返回 ${data.count||0} 条${data.warning?' · 语义检索已回退':''}`}
     else if(event==='skill'){m.skills_used=(m.skills_used||[]).filter(s=>s.name!==data.name);m.skills_used.push(data)}

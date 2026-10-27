@@ -29,7 +29,7 @@
 
   function bindWheelZoom(element,key,apply){
     if(!element||element.dataset.wheelZoomReady)return;element.dataset.wheelZoomReady='true';
-    element.title='Ctrl + 滚轮缩放当前分栏；其他分栏保持不变';
+    // Keep native tooltips off reading surfaces; zoom help stays on toolbar controls.
     let frame=0,next=0,point=0,anchor=null,release=0;
     element.addEventListener('wheel',event=>{
       if(!(event.ctrlKey||event.metaKey)||!event.deltaY)return;

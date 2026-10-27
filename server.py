@@ -171,7 +171,7 @@ class Handler(BaseHTTPRequestHandler):
                 batch = agent_memory.events(run["id"], cursor)
                 for item in batch:
                     cursor = item["seq"]
-                    if item["event"] in ("round", "delta", "response", "tool", "done", "error", "plan", "status", "compaction", "skill", "retrieval", "capabilities"):
+                    if item["event"] in ("round", "delta", "response", "tool", "done", "error", "plan", "status", "compaction", "skill", "retrieval", "capabilities", "sources_updated"):
                         emit(item["event"], item["data"], item["seq"])
                         terminal_sent |= item["event"] in ("done", "error")
                 current = agent_memory.get_run(run["id"])
@@ -453,6 +453,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json([agent_runtime.public_run(r) for r in agent_memory.list_runs(str((q.get("session_id") or [""])[0]))])
         if path.startswith("/api/agent/runs/"):
             tail = path.split("/api/agent/runs/", 1)[1]
+            if tail.endswith("/sources"):
+                from app import agent_sources
+                return self.send_json(agent_sources.run_view(tail[:-len("/sources")]))
             if tail.endswith("/events"):
                 return self.send_json(agent_memory.events(tail[:-len("/events")], _q_int(q, "after", 0, 0, 1000000000)))
             return self.send_json(agent_runtime.public_run(agent_memory.get_run(tail)))
@@ -460,6 +463,13 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(agent.list_sessions())
         if path.startswith("/api/agent/sessions/"):
             session_id = unquote(path.split("/api/agent/sessions/", 1)[1])
+            parts = session_id.split("/")
+            if len(parts) == 5 and parts[1] == "messages" and parts[3] == "sources":
+                from app import agent_sources
+                return self.send_json(agent_sources.message_view(parts[0], parts[2], parts[4], str((q.get("snapshot_id") or [""])[0])))
+            if len(parts) == 4 and parts[1] == "messages" and parts[3] == "sources":
+                from app import agent_sources
+                return self.send_json(agent_sources.message_view(parts[0], parts[2]))
             return self.send_json(agent.get_session(session_id))
         if path == "/api/agent/tools":  # v260930 · M1 工具清单：前端人设编辑器/悬浮球按白名单展示
             return self.send_json(agent_tools.list_tool_meta())
@@ -570,6 +580,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/docs":
             doc = indexer.create_doc(str(payload.get("kind") or "note"), payload)
             return self.send_json(doc, 201)
+        if path.startswith("/api/docs/") and path.endswith("/convert-kind"):
+            doc_id = unquote(path[len("/api/docs/"):-len("/convert-kind")])
+            return self.send_json(indexer.convert_doc_kind(doc_id, payload))
         if path.startswith("/api/docs/"):
             doc_id = unquote(path.split("/api/docs/", 1)[1])
             doc = indexer.update_doc(doc_id, payload)

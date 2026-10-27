@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from app import agent, config, indexer, rss, store, todos, workspace  # noqa: E402
+from app import agent, agent_memory, agent_sources, config, indexer, rss, store, todos, workspace  # noqa: E402
 
 
 def ok(name: str):
@@ -180,12 +180,16 @@ def main() -> int:
         config.save_app(llm_cfg)
         captured = {}
         original_http = agent._http_json
-        def fake_http(url, payload, api_key, timeout=120, method="POST", extra_headers=None):
-            captured.update({"url": url, "payload": payload, "api_key": api_key, "method": method, "headers": extra_headers or {}})
-            return {"choices": [{"message": {"content": "mock answer", "reasoning_content": "mock reasoning"}}]}
+        def fake_http(url, payload, api_key, timeout=120, method="POST", extra_headers=None, source_recorder=None):
+            with agent_sources.attempt(source_recorder, payload) as sent:
+                captured.update({"url": url, "payload": payload, "api_key": api_key, "method": method, "headers": extra_headers or {}})
+                sent()
+                return {"choices": [{"message": {"content": "mock answer", "reasoning_content": "mock reasoning"}}]}
         agent._http_json = fake_http
         try:
-            sent = agent.send_message(chat["id"], "请结合引用分析", [note["id"]], [chat_image["path"]], "high")
+            source_run = agent_memory.create_run(chat["id"], {"message": "请结合引用分析"})
+            sent = agent.send_message(chat["id"], "请结合引用分析", [note["id"]], [chat_image["path"]], "high", run_id=source_run["id"])
+            agent_memory.update_run(source_run["id"], status="completed")
             assert sent["assistant"]["content"] == "mock answer" and sent["assistant"]["reasoning"] == "mock reasoning"
             assert captured["url"].endswith("/chat/completions") and captured["api_key"] == "mock-key"
             assert captured["headers"].get("X-Self-Check") == "1"
@@ -194,6 +198,8 @@ def main() -> int:
             assert captured["payload"]["reasoning_effort"] == "high"
             assert captured["payload"]["model"] == "mock-model"  # params 中的 model 不得覆盖模式模型
             assert sent["assistant"]["request_preset"] == "high"
+            summary = sent["assistant"]["source_summary"]
+            assert summary["recording_status"] == "complete" and summary["provided_source_count"] >= 1
         finally:
             agent._http_json = original_http
         agent.delete_session(chat["id"])

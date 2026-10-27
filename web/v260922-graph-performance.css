@@ -125,6 +125,16 @@
   touch-action:none;
 }
 .graph-canvas-help{position:absolute;z-index:2;pointer-events:none}
+#graph-wrap .graph-canvas-wrap{height:var(--graph-height,760px);min-height:420px;max-height:1600px}
+#graph-wrap .graph-canvas-help{bottom:30px}
+.graph-height-handle{position:absolute;inset:auto 0 0;height:20px;z-index:4;display:flex;align-items:center;justify-content:center;cursor:ns-resize;touch-action:none;user-select:none;border-radius:0 0 10px 10px;background:color-mix(in srgb,var(--surface) 75%,transparent)}
+.graph-height-handle::before{content:"";width:44px;height:3px;border-radius:3px;background:var(--muted);opacity:.55}
+.graph-height-handle:hover::before,.graph-height-handle:focus-visible::before,.resizing .graph-height-handle::before{width:64px;background:var(--accent);opacity:1}
+.graph-height-handle:focus-visible{outline:2px solid var(--accent);outline-offset:-3px}
+#graph-wrap[data-graph-view="3d"] .graph-height-handle{background:rgba(9,20,27,.85)}
+#graph-wrap[data-graph-view="3d"] .graph-height-handle::before{background:#8bb5be}
+.graph-canvas-wrap.resizing,.graph-canvas-wrap.resizing *{cursor:ns-resize!important;user-select:none}
+@media(min-width:1101px){#graph-wrap .graph-preview{max-height:var(--graph-height,760px)}}
 .graph-side,.graph-preview{
   position:relative;
   z-index:2;
@@ -141,6 +151,28 @@
 /* The global sticky topbar must always remain above graph-local floating UI. */
 .topbar{z-index:20}
 
+/* The star view is a canvas treatment; document panels keep the app theme. */
+.graph-view-switch{display:inline-flex;gap:3px;padding:3px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2)}
+.graph-view-switch button{border:0;border-radius:7px;min-height:30px;padding:0 13px;background:transparent;color:var(--muted);font:inherit;font-size:12px;cursor:pointer}
+.graph-view-switch button.active{background:var(--surface);color:var(--text);box-shadow:0 1px 5px rgba(0,0,0,.08)}
+.graph-view-switch button:focus-visible,.graph-canvas:focus-visible{outline:2px solid var(--accent);outline-offset:-3px}
+#graph-rotate[hidden]{display:none}
+#graph-rotate[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
+#graph-wrap[data-graph-view="3d"] .graph-canvas-wrap{border-color:#23323d!important;background:#030609!important;box-shadow:inset 0 0 70px rgba(0,0,0,.35)}
+#graph-wrap[data-graph-view="3d"] .graph-canvas{cursor:grab}
+.graph-canvas.dragging{cursor:grabbing!important}
+#graph-wrap[data-graph-view="3d"] .graph-canvas-help{right:12px;left:auto;bottom:30px;max-width:calc(100% - 24px);border-color:rgba(139,176,195,.16)!important;color:#8da6b5!important;background:rgba(6,13,19,.75)!important;font-size:10px!important;line-height:1.7}
+.graph-star-legend{display:none;position:absolute;left:18px;top:16px;z-index:2;gap:14px;align-items:center;flex-wrap:wrap;color:#a4b9c7;font-size:10px;pointer-events:none;max-width:calc(100% - 36px)}
+#graph-wrap[data-graph-view="3d"] .graph-star-legend{display:flex}
+.graph-star-legend>span{display:inline-flex;align-items:center;gap:6px}
+.graph-star-legend i{width:4px;height:4px;display:inline-block;border-radius:50%;background:var(--star-color);box-shadow:0 0 7px 2px var(--star-color)}
+.graph-star-legend small{width:100%;font-size:9px;letter-spacing:.03em;color:#617b8b}
+.graph-star-tooltip{position:absolute;z-index:3;max-width:min(340px,calc(100% - 16px));padding:8px 11px;border:1px solid var(--line-strong);border-radius:9px;background:var(--surface);color:var(--text);font-size:11px;line-height:1.65;box-shadow:0 6px 28px rgba(0,0,0,.16);overflow-wrap:anywhere;pointer-events:none}
+#graph-wrap[data-graph-view="3d"] .graph-star-tooltip{border-color:#304951;background:rgba(9,21,28,.94);color:#d9edea;box-shadow:0 6px 28px rgba(0,0,0,.4)}
+.graph-empty-message{position:absolute;inset:0;display:grid;place-content:center;padding:32px;text-align:center;color:var(--muted);font-size:13px;line-height:1.8;pointer-events:none}
+#graph-wrap[data-graph-view="3d"] .graph-empty-message{color:#92abba}
+.graph-star-tooltip[hidden],.graph-empty-message[hidden]{display:none}
+
 @media (max-width:1050px){
   .graph-smart-toolbar{grid-template-columns:1fr}
   .graph-focus-tools{justify-content:flex-start}
@@ -154,4 +186,6 @@
   .graph-smart-results{left:0;right:0;width:auto;max-width:none;max-height:min(300px,calc(100vh - 180px))}
   .graph-result-row{grid-template-columns:52px minmax(0,1fr)}
   .graph-result-row time{display:none}
+  #graph-wrap[data-graph-view="3d"] .graph-canvas-help{display:block;left:10px;right:10px;bottom:30px;text-align:center;font-size:9px}
+  .graph-view-label{display:none}
 }

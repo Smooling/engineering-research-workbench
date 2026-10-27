@@ -38,6 +38,73 @@
     knowledgeTypes: [],
     dirty: false, editorBaseline:null, draft:null, saving:null, leaving:null, docSelectSeq: 0, docSelection: new Set(), todoSelection: new Set(), docSelectionMode:false, todoSelectionMode:false, bulkBusy:false,
   };
+  const navHistory={entries:[],index:-1,travelling:false};
+  const locationKey=entry=>entry.route+'\n'+(entry.docId||'');
+  function captureLocation(){
+    const paper=state.route==='literature'?window.ERWLiterature?.navigationState():null;
+    const doc=state.selectedDoc,ta=$('#md-input'),filters={};
+    for(const [key,id] of [['q','doc-search'],['status','doc-status'],['project','doc-project'],['mark','doc-mark']])if($('#'+id))filters[key]=$('#'+id).value;
+    const scrolls={};
+    for(const selector of ['#main','#doc-list','.doc-editor-content','#meta-block','#md-input','#md-preview']){
+      const element=$(selector);if(element)scrolls[selector]={top:element.scrollTop,left:element.scrollLeft};
+    }
+    return {route:state.route,docId:paper?.docId||(!doc?.draft?doc?.id:'')||'',kind:paper?'literature':doc?.kind,
+      title:paper?.title||doc?.title||$('#page-title')?.textContent||'',filters,page:window.__workbenchPerf?.docPage||1,
+      mode:state.editorMode,milestoneView:state.milestoneView,metaFold:$('#meta-block')?.classList.contains('compact'),scrolls,
+      windowScroll:{x:window.scrollX,y:window.scrollY},cursor:ta&&document.activeElement===ta?{start:ta.selectionStart,end:ta.selectionEnd}:null,paper};
+  }
+  function updateHistoryButtons(){
+    const busy=navHistory.travelling||state.navBusy||state.converting;
+    for(const [id,delta,label] of [['nav-back',-1,'后退'],['nav-forward',1,'前进']]){
+      const button=$('#'+id);if(!button)continue;const target=navHistory.entries[navHistory.index+delta];
+      button.disabled=!!busy||!target;button.title=label+(target?'：'+target.title:'')+' · Alt + '+(delta<0?'←':'→');
+    }
+  }
+  function commitNavigation(origin){
+    const current=captureLocation();
+    if(navHistory.index<0){navHistory.entries=[current];navHistory.index=0}
+    else{
+      navHistory.entries[navHistory.index]=origin;
+      if(locationKey(origin)===locationKey(current))navHistory.entries[navHistory.index]=current;
+      else{
+        navHistory.entries.splice(navHistory.index+1);navHistory.entries.push(current);
+        if(navHistory.entries.length>100)navHistory.entries.shift();navHistory.index=navHistory.entries.length-1;
+      }
+    }
+    updateHistoryButtons();
+  }
+  async function restoreLocation(entry){
+    if(entry.paper)await window.ERWLiterature?.restoreNavigation(entry.paper);
+    if($('#md-input')){
+      state.editorMode=entry.mode;
+      $('#doc-editor').dataset.reading=String(entry.mode==='preview');
+      $('#editor-pane').className='editor-pane '+(entry.mode==='edit'?'edit-only':entry.mode==='preview'?'preview-only':'');
+      $$('[data-edit-mode]').forEach(button=>button.classList.toggle('active',button.dataset.editMode===entry.mode));
+      if(entry.mode!=='edit')await renderMarkdownPreview();
+      if(typeof entry.metaFold==='boolean'){
+        $('#meta-block').classList.toggle('compact',entry.metaFold);
+        $('#meta-toggle').textContent=entry.metaFold?'更多资料':'精简信息';$('#meta-toggle').setAttribute('aria-expanded',String(!entry.metaFold));
+      }
+    }
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    if(entry.cursor&&$('#md-input')){$('#md-input').setSelectionRange(entry.cursor.start,entry.cursor.end);$('#md-input').focus({preventScroll:true})}
+    for(const [selector,point] of Object.entries(entry.scrolls||{})){const element=$(selector);if(element){element.scrollTop=point.top;element.scrollLeft=point.left}}
+    window.scrollTo({left:entry.windowScroll?.x||0,top:entry.windowScroll?.y||0,behavior:'instant'});
+  }
+  async function travelHistory(delta){
+    const next=navHistory.index+delta,entry=navHistory.entries[next];
+    if(!entry||navHistory.travelling||state.navBusy||state.converting)return;
+    const origin=captureLocation();navHistory.travelling=true;updateHistoryButtons();
+    try{
+      const options={...entry,recordHistory:false,restoring:true,historyTravel:true};
+      const ok=entry.docId?await openDocRoute(entry.route,entry.docId,options):await navigate(entry.route,options);
+      if(ok===false)return;
+      navHistory.entries[navHistory.index]=origin;navHistory.index=next;
+      await restoreLocation(entry);navHistory.entries[next]=captureLocation();
+    }catch(error){toast('无法'+(delta<0?'后退':'前进')+'：'+error.message,true)}
+    finally{navHistory.travelling=false;updateHistoryButtons()}
+  }
+  window.ERWNavigation={capture:captureLocation,commit:origin=>{if(!state.navBusy&&!navHistory.travelling)commitNavigation(origin)}};
   window.ERWDesktop = {...window.ERWDesktop, hasUnsavedChanges: () => editorDirty()||!!state.saving,
     documentOpen: () => !!state.selectedDoc, documentDraft: () => !!state.selectedDoc?.draft,
     prepareToLeave: () => guardEditor('退出工作台'),
@@ -198,10 +265,13 @@
     document.title = `${pageTitle} · ${state.config?.app?.app_name || '科研工作台'}`;
   }
 
-  async function navigate(route){
+  async function navigate(route,options={}){
+    if(state.converting||(navHistory.travelling&&!options.historyTravel))return false;
     if(state.bulkBusy){toast('正在删除所选条目，请稍候');return false}
     if(route==='research-overview')route='overview'; // Keep old bookmarks working after removing the duplicate page.
     if (!await guardEditor('离开当前页面')){if(location.hash.slice(1)!==state.route)location.replace('#'+state.route);return false}
+    const origin=captureLocation();
+    if(options.restoring&&options.milestoneView)state.milestoneView=options.milestoneView;
     window.ERWDocReferences?.close();
     window.ERWKnowledgeGraph?.destroy();
     window.ERWLiterature?.destroy();
@@ -215,6 +285,7 @@
     $('#main').setAttribute('aria-busy','true');
     $('#main').innerHTML=`<section class="page-loading" role="status"><strong>正在打开${esc($('#page-title').textContent)}…</strong><div class="page-loading-lines" aria-hidden="true"></div></section>`;
     const seq=state.navSeq=(state.navSeq||0)+1;
+    state.navBusy=true;updateHistoryButtons();
     try {
       if(route==='overview') await renderOverview();
       else if(route==='projects') await window.ERWProjects.render();
@@ -226,14 +297,16 @@
       else if(route==='folders') await renderFolders();
       else if(route==='billing') await renderBillingPage(); /* v261008 · 用量计费 */
       else if(route==='settings') await renderSettings();
-      else if(kindFromRoute(route)) await renderDocsPage(kindFromRoute(route));
+      else if(kindFromRoute(route)) await renderDocsPage(kindFromRoute(route),false,options);
       else await renderOverview();
       if(seq!==state.navSeq) return false; /* v260930g9c · 已被更新导航取代：视为未完成 */
       animateMain();
+      if(options.recordHistory!==false&&!navHistory.travelling)commitNavigation(origin);
     } catch(err){
       if(seq!==state.navSeq) return false;
       console.error(err); $('#main').innerHTML=`<div class="card page-load-error" role="alert"><strong>暂时无法载入${esc($('#page-title').textContent)}</strong><span>${esc(err.message)}</span><button type="button" class="secondary-btn" id="page-load-retry">重试</button></div>`;$('#page-load-retry').onclick=()=>navigate(route);animateMain();
-    }finally{if(seq===state.navSeq)$('#main').removeAttribute('aria-busy')}
+      return false;
+    }finally{if(seq===state.navSeq){$('#main').removeAttribute('aria-busy');state.navBusy=false;updateHistoryButtons()}}
     return true; /* v260930g9c · 导航成功完成 */
   }
 
@@ -647,12 +720,12 @@
   }
 
   async function openDocRoute(route,id,options={}){
+    // Resolve again so history and old references follow entries converted since last visit.
+    const doc=await api('/api/docs/'+encodeURIComponent(id));route=routeForKind(doc.kind);
     const oldView=state.milestoneView;
     if(route==='milestones')state.milestoneView='docs';
-    const ok=await navigate(route);
+    const ok=await navigate(route,{...options,docId:id});
     if(ok===false){state.milestoneView=oldView;return false}
-    if(route==='literature')return window.ERWLiterature.openByDocument(id,options);
-    await selectDoc(id);
     return true;
   }
 
@@ -822,7 +895,7 @@
     modal('全局搜索',`<div class="global-search"><div class="global-search-box"><span>⌕</span><input id="global-search-input" autocomplete="off" placeholder="搜索灵感、日志、笔记、里程碑、总结、文献、待办与 Agent 对话…" value="${esc(initial)}"></div><div class="global-search-hint">支持标题、正文、标签、项目等全文匹配 · Ctrl/⌘ + K</div><div class="global-search-results" id="global-search-results"><div class="empty">输入关键词开始检索</div></div></div>`,'');
     const input=$('#global-search-input'); const run=debounce(async()=>{const q=input.value.trim();if(!q){$('#global-search-results').innerHTML='<div class="empty">输入关键词开始检索</div>';return}try{const rows=await api('/api/search?q='+encodeURIComponent(q));$('#global-search-results').innerHTML=rows.length?rows.map(searchResultRow).join(''):'<div class="empty">没有找到相关条目</div>';$$('[data-search-result]').forEach(b=>b.onclick=()=>openSearchResult(rows[+b.dataset.searchResult]));}catch(e){$('#global-search-results').innerHTML=`<div class="empty danger">${esc(e.message)}</div>`}},180);input.oninput=run;setTimeout(()=>input.focus(),20);if(initial)run();
   }
-  function searchResultRow(r,i){const label=r.source==='chat'?'Agent 对话':r.source==='todo'?'待办':kindLabel(r.kind);return `<button class="global-search-row" type="button" data-search-result="${i}"><span class="global-search-kind">${esc(label)}</span><span class="global-search-copy"><strong>${esc(r.title||'未命名')}</strong><small>${esc(r.project||'')}${r.project?' · ':''}${esc(r.excerpt||'')}</small></span><span>↗</span></button>`}
+  function searchResultRow(r,i){const label=r.source==='chat'?'Agent 对话':r.source==='todo'?'待办':kindLabel(r.kind);return `<button class="global-search-row" type="button" data-search-result="${i}" ${r.source==='doc'?`data-hover-doc-id="${esc(r.id)}"`:''}><span class="global-search-kind">${esc(label)}</span><span class="global-search-copy"><strong>${esc(r.title||'未命名')}</strong><small>${esc(r.project||'')}${r.project?' · ':''}${esc(r.excerpt||'')}</small></span><span>↗</span></button>`}
   async function openSearchResult(r){closeModal();if(!r)return;if(r.source==='chat'){state.agentSession=r.id;await navigate('agent');return}if(r.source==='todo'){await navigate('todos');return}await openDocRoute(routeForKind(r.kind),r.id)}
 
   async function renderAgent(){
@@ -838,7 +911,7 @@
     window.ERWAgentClient?.select(state.agentSession,'main');
     const personas=llmCfg.personas?.length?llmCfg.personas:[{id:'executor',name:'执行助手'}];
     if(!personas.some(persona=>persona.id===state.agentPersona))state.agentPersona=personas[0].id;
-    $('#main').innerHTML=`<div class="agent-layout"><button type="button" class="agent-session-drawer-toggle" id="agent-session-drawer" aria-expanded="false">会话列表 <span>展开</span></button><aside class="card agent-sessions" id="agent-session-drawer-panel"><div class="agent-side-head"><div><h3>Agent 对话</h3></div><button class="primary-btn" id="agent-new">＋</button></div><div class="agent-session-list">${sessions.length?sessions.map(x=>`<button type="button" class="agent-session ${x.id===state.agentSession?'active':''}" data-agent-session="${x.id}"><strong>${esc(x.title)}</strong><small>${esc(fmtTime(x.updated))} · ${x.message_count||0} 条</small></button>`).join(''):'<div class="empty compact">暂无对话</div>'}</div></aside><section class="agent-workspace" id="agent-workspace"><nav class="agent-workspace-tabs" id="agent-workspace-tabs" role="tablist" aria-label="Agent 功能"></nav><section class="card agent-chat" id="agent-chat-panel" role="tabpanel" aria-labelledby="agent-tab-chat"><header class="agent-chat-head"><div class="agent-chat-heading"><span class="agent-chat-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H5l-3 3v-10a7.5 7.5 0 0 1 7.5-7.5h3a7.5 7.5 0 0 1 7.5 7.5Z"/><path d="M7 10h8M7 14h5"/></svg></span><div class="agent-chat-title-group"><span class="agent-chat-caption">当前对话</span><h3 id="agent-chat-title">科研 Agent</h3></div></div><div class="agent-head-actions"><button type="button" class="secondary-btn agent-title-reference" id="agent-ref" title="选择文献、笔记等资料作为提问上下文"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg><span>引用资料</span></button><button type="button" class="ghost-btn agent-title-delete" id="agent-delete" aria-label="删除对话" title="删除对话" ${state.agentSession?'':'disabled'}><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h14M8 3h4M5 5l1 12h8l1-12M8 8v6M12 8v6"/></svg></button></div></header><div class="agent-messages" id="agent-messages"><div class="empty">${state.agentSession?'正在载入对话…':'新建一个对话开始'}</div></div><div class="agent-context-strip" id="agent-context-strip"></div><div class="agent-composer"><div class="agent-image-strip" id="agent-image-strip"></div><textarea id="agent-input" placeholder="向科研 Agent 提问，可引用研究资料或粘贴图片…"></textarea><div class="agent-compose-actions">${window.ERWAgentClient.capabilityControls()}<div class="agent-compose-left"><button class="ghost-btn" id="agent-image">▧ 图片</button><label class="agent-preset-label">助手 <select class="search-input" id="agent-persona">${personas.map(persona=>`<option value="${esc(persona.id)}" ${persona.id===state.agentPersona?'selected':''}>${esc(persona.name)}</option>`).join('')}</select></label></div><details class="agent-model-options"><summary>模型选项</summary><div><label class="agent-preset-label">请求模式 <select class="search-input agent-preset-select" id="agent-preset">${requestPresetHtml}</select></label><span class="row-meta">Enter 发送 · Shift+Enter 换行</span></div></details><button class="primary-btn" id="agent-send">发送</button></div></div></section><section class="card agent-system" id="agent-system-panel" role="tabpanel" hidden><div class="as-content"></div></section></section></div>`;
+    $('#main').innerHTML=`<div class="agent-layout"><button type="button" class="agent-session-drawer-toggle" id="agent-session-drawer" aria-expanded="false">会话列表 <span>展开</span></button><aside class="card agent-sessions" id="agent-session-drawer-panel"><div class="agent-side-head"><div><h3>Agent 对话</h3></div><button class="primary-btn" id="agent-new">＋</button></div><div class="agent-session-list">${sessions.length?sessions.map(x=>`<button type="button" class="agent-session ${x.id===state.agentSession?'active':''}" data-agent-session="${x.id}"><strong>${esc(x.title)}</strong><small>${esc(fmtTime(x.updated))} · ${x.message_count||0} 条</small></button>`).join(''):'<div class="empty compact">暂无对话</div>'}</div></aside><section class="agent-workspace" id="agent-workspace"><section class="card agent-chat" id="agent-chat-panel" role="region" aria-labelledby="agent-chat-title"><header class="agent-chat-head"><div class="agent-chat-heading"><span class="agent-chat-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H5l-3 3v-10a7.5 7.5 0 0 1 7.5-7.5h3a7.5 7.5 0 0 1 7.5 7.5Z"/><path d="M7 10h8M7 14h5"/></svg></span><div class="agent-chat-title-group"><span class="agent-chat-caption">当前对话</span><h3 id="agent-chat-title">科研 Agent</h3></div></div><div class="agent-head-actions"><button type="button" class="secondary-btn agent-title-reference" id="agent-ref" title="选择文献、笔记等资料作为提问上下文"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg><span>引用资料</span></button><button type="button" class="ghost-btn agent-title-delete" id="agent-delete" aria-label="删除对话" title="删除对话" ${state.agentSession?'':'disabled'}><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h14M8 3h4M5 5l1 12h8l1-12M8 8v6M12 8v6"/></svg></button></div></header><div class="agent-messages" id="agent-messages"><div class="empty">${state.agentSession?'正在载入对话…':'新建一个对话开始'}</div></div><div class="agent-context-strip" id="agent-context-strip"></div><div class="agent-composer"><div class="agent-image-strip" id="agent-image-strip"></div><textarea id="agent-input" placeholder="向科研 Agent 提问，可引用研究资料或粘贴图片…"></textarea><div class="agent-compose-actions">${window.ERWAgentClient.capabilityControls()}<div class="agent-compose-left"><button class="ghost-btn" id="agent-image">▧ 图片</button><label class="agent-preset-label">助手 <select class="search-input" id="agent-persona">${personas.map(persona=>`<option value="${esc(persona.id)}" ${persona.id===state.agentPersona?'selected':''}>${esc(persona.name)}</option>`).join('')}</select></label></div><details class="agent-model-options"><summary>模型选项</summary><div><label class="agent-preset-label">请求模式 <select class="search-input agent-preset-select" id="agent-preset">${requestPresetHtml}</select></label><span class="row-meta">Enter 发送 · Shift+Enter 换行</span></div></details><button class="primary-btn" id="agent-send">发送</button></div></div></section><section class="card agent-system" id="agent-system-panel" aria-labelledby="agent-settings-title" hidden><header class="as-workspace-head"><h3 id="agent-settings-title">Agent 设置</h3><button type="button" id="as-back-chat">← 返回对话</button></header><nav class="agent-workspace-tabs" id="agent-workspace-tabs" role="tablist" aria-label="Agent 设置分类"></nav><div class="as-content" id="agent-system-content" role="tabpanel"></div></section></section></div>`;
     window.ERWAgentClient.mountCapabilities($('#agent-chat-panel'));
     $('#agent-session-drawer').onclick=()=>{const layout=$('.agent-layout'),open=layout.dataset.sessionsOpen!=='true';layout.dataset.sessionsOpen=String(open);$('#agent-session-drawer').setAttribute('aria-expanded',String(open));$('#agent-session-drawer span').textContent=open?'收起':'展开'};
     $('#agent-new').onclick=async()=>{const s=await api('/api/agent/sessions',{method:'POST',body:{}});state.agentSession=s.id;window.ERWAgentClient?.setSession(s,'main');window.ERWAgentClient?.select(s.id,'main');state.agentRefs=[];state.agentImages=[];state.agentQuotes=[];state.agentEdit=null;window.ERWAgentSystem?.open('chat');renderAgent()};
@@ -1023,25 +1096,29 @@
     load(false);
   }
 
-  async function renderDocsPage(kind,syncRefresh=false){
+  async function renderDocsPage(kind,syncRefresh=false,options={}){
     if(kind==='literature'&&syncRefresh){await window.ERWLiterature?.refresh();return true}
     const activeId=syncRefresh?state.selectedDoc?.id:null,navSeq=state.navSeq;
     if(!syncRefresh&&!await guardEditor('重新载入文档列表'))return;
     if(kind==='literature'){
       state.selectedDoc=null;state.draft=null;state.editorBaseline=null;state.dirty=false;
+      if(options.docId){await window.ERWLiterature.start({autoOpen:false});return window.ERWLiterature.openByDocument(options.docId,options)}
       return window.ERWLiterature.start();
     }
     /* v260929 · 文献页保留原有列表/编辑器（BibTeX 同步、自动 cite_key、元数据表单均在此），
        PDF 阅读工作区不整体接管，改由列表页头部按钮进入（openLiteratureWorkspace），两套 UI 共存 */
-    const [docs,projects] = await Promise.all([api('/api/docs?kind='+encodeURIComponent(kind)), api('/api/projects')]);
+    const params=new URLSearchParams({kind,...(options.filters||{})});
+    if(options.restoring&&window.__workbenchPerf){window.__workbenchPerf.docKey=['kind','q','status','project','mark'].map(key=>key+'='+(params.get(key)||'')).join('&');window.__workbenchPerf.docPage=options.page||1}
+    const [docs,projects] = await Promise.all([api('/api/docs?'+params), api('/api/projects')]);
     if(state.navSeq!==navSeq||kindFromRoute(state.route)!==kind)return false;
     if(syncRefresh&&(editorDirty()||state.saving||state.draft||state.navSeq!==navSeq||activeId!==state.selectedDoc?.id))return false;
     state.docs=docs; state.projects=projects; state.selectedDoc=null;state.draft=null;state.editorBaseline=null;state.dirty=false;
-    if(kind==='milestone') return renderMilestoneShell(docs,projects);
+    if(kind==='milestone'){await renderMilestoneShell(docs,projects);if(options.docId)await selectDoc(options.docId,{restoring:options.restoring,recordHistory:false});return}
     $('#main').innerHTML=docsShell(kind,docs,projects);
+    for(const [key,id] of [['q','doc-search'],['status','doc-status'],['project','doc-project'],['mark','doc-mark']])if(options.filters?.[key])$('#'+id).value=options.filters[key];
     wireDocList(kind); wireDocFilters(kind); $('#new-doc').onclick=()=>createAndSelect(kind);
     if(kind==='literature'){$('#export-bib').onclick=exportBibtex;const ws=$('#open-lit-workspace');if(ws)ws.onclick=openLiteratureWorkspace;}
-    if(docs.length) await selectDoc(docs.some(d=>d.id===activeId)?activeId:docs[0].id); else showEmptyEditor(kind);
+    if(options.docId||docs.length)await selectDoc(options.docId||(docs.some(d=>d.id===activeId)?activeId:docs[0].id),{restoring:options.restoring,recordHistory:false});else showEmptyEditor(kind);
     return true;
   }
   /* v260929 · 文献列表页 → PDF 阅读工作区入口：编辑中先提示保存；进入后清选中态，
@@ -1122,10 +1199,11 @@
     const meta=`<span class="doc-project" title="${esc(project)}">${esc(window.ERWResearchUI?.projectLabel(project)||project)}</span>${markBadges(d)}${d.kind==='literature'?(window.ERWResearchUI?.evidenceBadge(d)||''):''}${d.status?`<span class="doc-status">${esc(d.status)}</span>`:''}${val?`<time>${esc(fmtDate(val))}</time>`:''}`;
     const attB=d.attachment_exists?'<span class="doc-mini-flag" title="有 PDF 附件">⧉</span>':'';
     const pinB=d.pinned?'<span class="doc-mini-flag" title="已置顶">📌</span>':'';
-    return `<article class="doc-item${d.pinned?' pinned':''}" data-doc-id="${d.id}" data-doc-kind="${esc(d.kind||'')}" ${d.draft?'data-doc-draft="true"':''}><input type="checkbox" class="row-select doc-select" ${state.docSelectionMode&&!d.draft?'':'hidden'} ${d.draft?'disabled':''} data-doc-pick="${esc(d.id)}" data-bulk-control aria-label="选择文档：${esc(d.title)}"><div class="doc-type-rail" aria-hidden="true"></div><div class="doc-compact-main"><div class="title">${esc(d.title)}</div><div class="doc-compact-meta">${meta}</div><div class="excerpt">${esc(d.draft?'新建草稿 · 尚未保存':d.excerpt||'')}</div></div><div class="doc-mini-flags">${attB}${pinB}</div></article>`
+    return `<article class="doc-item${d.pinned?' pinned':''}" data-doc-id="${d.id}" data-doc-kind="${esc(d.kind||'')}" tabindex="0" role="button" aria-label="打开 ${esc(d.title)}" ${d.draft?'data-doc-draft="true"':''}><input type="checkbox" class="row-select doc-select" ${state.docSelectionMode&&!d.draft?'':'hidden'} ${d.draft?'disabled':''} data-doc-pick="${esc(d.id)}" data-bulk-control aria-label="选择文档：${esc(d.title)}"><div class="doc-type-rail" aria-hidden="true"></div><div class="doc-compact-main"><div class="title">${esc(d.title)}</div><div class="doc-compact-meta">${meta}</div><div class="excerpt">${esc(d.draft?'新建草稿 · 尚未保存':d.excerpt||'')}</div></div><div class="doc-mini-flags">${attB}${pinB}</div></article>`
   }).join(''):'<div class="empty" style="min-height:140px">暂无内容</div>'}
   function dateBadge(d){ const val=d.due||d.record_date||d.added_date; if(val)return `<span class="badge mono">${fmtDate(val)}</span>`; return d.updated?`<span class="badge mono" title="更新时间">更新 ${fmtDate(d.updated)}</span>`:''; }
   function wireDocList(kind){
+    $$('[data-doc-id]').forEach(x=>x.onkeydown=e=>{if(e.target===x&&['Enter',' '].includes(e.key)){e.preventDefault();x.click()}});
     $$('[data-doc-id]').forEach(x=>x.onclick=e=>{
       if(e.target.closest('[data-doc-pick]')||state.bulkBusy)return;
       const att=e.target.closest('.att-badge');
@@ -1166,13 +1244,16 @@
     }catch(error){toast('新建文档失败：'+error.message,true)}
   }
   function showEmptyEditor(kind){ $('#doc-editor').className='card doc-editor empty-editor'; $('#doc-editor').innerHTML=`<div class="empty"><div><div class="empty-symbol">${esc(kindLabel(kind).toUpperCase())}</div>选择一条${kindLabel(kind)}，或点击左侧 ＋ 新建</div></div>`; }
-  async function selectDoc(id){
+  async function selectDoc(id,options={}){
+    if(state.converting)return false;
     if(state.selectedDoc?.id===id)return true;
     if(!await guardEditor('切换文档'))return false;
+    const origin=captureLocation(),record=options.recordHistory!==false&&!state.navBusy&&!navHistory.travelling;
     window.ERWDocReferences?.close();
     const seq=++state.docSelectSeq;
     const doc=await api('/api/docs/'+encodeURIComponent(id));
     if(seq!==state.docSelectSeq)return; /* later selection wins; prevents milestone jump race */
+    if(kindFromRoute(state.route)!==doc.kind)return openDocRoute(routeForKind(doc.kind),id,options);
     state.draft=null;state.selectedDoc=doc;state.dirty=false;
     $$('#doc-list [data-doc-draft]').forEach(x=>x.remove());
     window.ERWCurrentDoc=doc.id;
@@ -1181,9 +1262,12 @@
     rows.forEach(x=>x.classList.toggle('active',String(x.dataset.docId)===String(id)));
     const active=rows.find(x=>String(x.dataset.docId)===String(id));
     if(active){
-      requestAnimationFrame(()=>active.scrollIntoView({block:'nearest',inline:'nearest',behavior:'smooth'}));
+      requestAnimationFrame(()=>active.isConnected&&active.scrollIntoView({block:'nearest',inline:'nearest',behavior:options.restoring?'instant':'smooth'}));
     }
-    renderDocEditor(doc);
+    await renderDocEditor(doc);
+    if(seq!==state.docSelectSeq)return false;
+    if(record)commitNavigation(origin);
+    return true;
   }
   /* v260929 · 条目信息（填写一次即固定）可收起：收起后只留一行摘要，腾出正文撰写/阅读空间；收起状态按条目类型分别记忆 */
   function metaCollapsed(kind){try{return localStorage.getItem('erwMetaCollapsed:'+kind)!=='0'}catch{return true}}
@@ -1191,6 +1275,32 @@
     const parts=String(doc.authors||'').split(/[;,，；]/).map(x=>x.trim()).filter(Boolean);
     const authors=parts.length?parts.length>1?parts[0]+' 等':parts[0]:'';
     return [doc.title,authors,doc.year?String(doc.year):'',doc.venue||''].filter(Boolean).join(' · ');
+  }
+  function docTypeMenu(doc){
+    if(doc.draft||!['idea','note','summary'].includes(doc.kind))return '';
+    return `<details class="doc-entry-menu" id="doc-entry-menu"><summary aria-label="条目菜单" title="条目菜单">⋯</summary><div class="doc-entry-menu-items"><span>更改类型</span>${['idea','note','summary'].map(kind=>`<button type="button" data-convert-kind="${kind}" ${kind===doc.kind?'disabled aria-current="true"':''}>${esc(kindLabel(kind))}${kind===doc.kind?' · 当前':''}</button>`).join('')}<button type="button" id="doc-type-history" ${doc.type_history?.length?'':'disabled'}>类型变更记录</button></div></details>`;
+  }
+  async function changeCurrentDocKind(kind){
+    const id=state.selectedDoc?.id;if(!id||state.converting)return;
+    $('#doc-entry-menu')?.removeAttribute('open');
+    if(!await guardEditor('更改类型')||state.selectedDoc?.id!==id)return;
+    const editor=$('#doc-editor'),revision=state.selectedDoc.revision;
+    state.converting=true;editor.inert=true;updateHistoryButtons();
+    let saved;
+    try{saved=await api('/api/docs/'+encodeURIComponent(id)+'/convert-kind',{method:'POST',body:{kind,expected_revision:revision}})}
+    catch(error){toast('类型变更失败：'+error.message,true);return}
+    finally{state.converting=false;editor.inert=false;updateHistoryButtons()}
+    state.dirty=false;state.editorBaseline=null;window.ERWDocReferences?.invalidate();
+    const route=routeForKind(saved.kind);
+    await navigate(route,{docId:id,recordHistory:false});
+    navHistory.entries=navHistory.entries.map(entry=>entry.docId===id?{...entry,route,kind:saved.kind,title:saved.title}:entry);
+    if(navHistory.index>=0)navHistory.entries[navHistory.index]=captureLocation();else commitNavigation(captureLocation());
+    updateHistoryButtons();toast('已转换为'+kindLabel(saved.kind));
+  }
+  function showTypeHistory(doc){
+    $('#doc-entry-menu')?.removeAttribute('open');
+    modal('类型变更记录',`<div class="doc-type-history">${(doc.type_history||[]).slice().reverse().map(entry=>`<div><strong>${esc(kindLabel(entry.from))} → ${esc(kindLabel(entry.to))}</strong><time>${esc(fmtTime(entry.timestamp))}</time>${entry.previous_status!==entry.status?`<small>状态：${esc(entry.previous_status)} → ${esc(entry.status)}</small>`:''}</div>`).join('')}</div>`,'<button type="button" class="secondary-btn" id="type-history-close">关闭</button>');
+    $('#type-history-close').onclick=closeModal;
   }
   function renderDocEditor(doc){
     const kind=doc.kind, special=kind==='literature';
@@ -1217,7 +1327,7 @@
       </div>
     </div>
     <div class="editor-wrap">${editorHtml(doc.body||'')}</div></div>
-    <div class="editor-actions"><span class="row-meta">${doc.draft?'新建草稿 · 首次保存后生成 Markdown 文件':`${esc(doc.path)} · 更新 ${fmtTime(doc.updated)}`}</span><div class="right"><button class="secondary-btn" id="doc-open-file" ${doc.draft?'disabled':''} title="在外部编辑器中打开该 Markdown 原文件">↗ 打开原文件</button><button class="secondary-btn" id="doc-delete">${doc.draft?'丢弃草稿':'删除'}</button><button class="primary-btn" id="doc-save">保存</button></div></div>`;
+    <div class="editor-actions"><span class="row-meta">${doc.draft?'新建草稿 · 首次保存后生成 Markdown 文件':`${esc(doc.path)} · 更新 ${fmtTime(doc.updated)}`}</span><div class="right">${docTypeMenu(doc)}<button class="secondary-btn" id="doc-open-file" ${doc.draft?'disabled':''} title="在外部编辑器中打开该 Markdown 原文件">↗ 打开原文件</button><button class="secondary-btn" id="doc-delete">${doc.draft?'丢弃草稿':'删除'}</button><button class="primary-btn" id="doc-save">保存</button></div></div>`;
     ['f-title','f-status','f-projects'].forEach(id=>$('#'+id)?.closest('.field')?.classList.add('meta-essential'));
     wireEditor();
     const metaBtn=$('#meta-toggle'); /* v260929 · 条目信息收起/展开：只切类名不动输入值，保存仍带全部字段 */
@@ -1236,9 +1346,12 @@
     wireMarkChips();
     $('#doc-save').onclick=()=>saveCurrentDoc(state.selectedDoc).catch(()=>{}); $('#doc-delete').onclick=()=>deleteCurrentDoc(state.selectedDoc);
     $('#doc-open-file').onclick=()=>openSourceFile(doc);
-    renderMarkdownPreview();
+    $$('[data-convert-kind]').forEach(button=>button.onclick=()=>changeCurrentDocKind(button.dataset.convertKind));
+    if($('#doc-type-history'))$('#doc-type-history').onclick=()=>showTypeHistory(doc);
+    const rendering=renderMarkdownPreview();
     state.editorBaseline=JSON.stringify(editorPayload(doc));state.dirty=false;
     window.dispatchEvent(new Event('workbench:editor-state'));
+    return rendering;
   }
   /* v261008 · 打开原文件：选择外部编辑器（VS Code / Typora）打开该条目的 Markdown 原文件（服务端按编辑器解析可执行文件） */
   function openSourceFile(doc){
@@ -1551,7 +1664,7 @@
     state.saving=(async()=>{
       const button=$('#doc-save');if(button)button.disabled=true;
       try{
-        const saved=await api(doc.draft?'/api/docs':'/api/docs/'+encodeURIComponent(doc.id),{method:'POST',body:doc.draft?{...body,kind:doc.kind}:{...body,...(doc.kind==='milestone'&&doc.revision?{expected_revision:state.selectedDoc?.id===doc.id?state.selectedDoc.revision:doc.revision}:{})}});
+        const saved=await api(doc.draft?'/api/docs':'/api/docs/'+encodeURIComponent(doc.id),{method:'POST',body:doc.draft?{...body,kind:doc.kind}:{...body,...(doc.revision?{expected_revision:state.selectedDoc?.id===doc.id?state.selectedDoc.revision:doc.revision}:{})}});
         window.ERWDocReferences?.invalidate();
         state.draft=null;state.selectedDoc=saved;window.ERWCurrentDoc=saved.id;
         // Do not drop edits typed while the request was in flight.
@@ -1879,7 +1992,7 @@
     <div class="field span-4"><label class="field-check-label"><input type="checkbox" id="lit-pdf-move" checked> 保存时迁移现有 PDF 到新目录，并回写文献条目的附件指向</label><span class="field-help">按上方「新的存放路径」执行迁移；Workspace 内为移动，外部路径保留原件复制。</span></div>
     <div class="field span-4"><label>笔记图片存放目录（批注截图入笔记 / 笔记插图）</label><input id="lit-noteimg-dir" value="${esc(st.note_images_dir||'')}" placeholder="例如 Knowledge/Literature/Images（相对 Workspace）或 D:\\Notes\\Images"><span class="field-help">阅读区「批注加入笔记」与笔记「插入图片」上传的图片统一存到这里；支持 Workspace 相对路径或任意绝对路径，仅影响之后上传的图片（现有 ${st.note_images_count||0} 张不迁移）。留空 = 默认 Workspace/Knowledge/Literature/Images。</span></div></div>
     <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap"><button class="primary-btn" id="lit-pdf-save">保存并应用</button><button class="secondary-btn" id="lit-noteimg-save">保存图片目录</button><button class="secondary-btn" id="lit-pdf-open">打开 PDF 文件夹</button><button class="secondary-btn" id="lit-pdf-rebuild" title="以文献条目为准，补齐 PDF 工作区关联与登记">重建关联</button></div>
-    <p class="field-help" style="margin-top:8px">重建关联：以文献条目的附件记录为准，把未登记的 PDF 迁入上方存放目录统一保管（Workspace 内为移动，外部路径保留原件复制），并补齐「条目 ↔ PDF」双向关联；幂等可重复执行，批注与笔记不受影响。</p>
+    <p class="field-help" style="margin-top:8px">重建关联：以文献条目的附件记录为准，把未登记的 PDF 复制到上方存放目录统一保管，保留来源文件，并补齐「条目 ↔ PDF」双向关联；幂等可重复执行，保留批注与笔记，打开文献时自动恢复旧版本登记后遗留的批注。</p>
     <div class="section-title" style="margin-top:22px"><div><h3>AI 阅读助手</h3><p>控制 PDF 阅读区的选中文本 AI 处理（翻译 / 总结 / 整理 / 笔记润色 / 自定义指令）。模型接口沿用「Agent / LLM」中启用的配置，此处仅调整阅读场景的行为参数。</p></div><span class="badge ${as.enabled===false?'warn':'accent'}">${as.enabled===false?'已关闭':'已启用'}</span></div>
     <div class="form-grid">
     <div class="field"><label>启用 AI 阅读助手</label><select id="lit-ai-enabled"><option value="1" ${as.enabled!==false?'selected':''}>启用</option><option value="0" ${as.enabled===false?'selected':''}>关闭</option></select></div>
@@ -1955,6 +2068,10 @@
   async function loadBootstrap(){ const [cfg,statuses,projects,health,ws,knowledgeTypes]=await Promise.all(['/api/config','/api/statuses','/api/projects','/api/health','/api/workspace/info','/api/knowledge-types'].map(bootstrapRead)); state.config=cfg;state.statuses=statuses;state.projects=projects;await window.ERWResearchUI?.loadProjects();state.knowledgeTypes=Array.isArray(knowledgeTypes)?knowledgeTypes:[];if(localStorage.getItem('sidebarPinned')===null){state.sidebarPinned=new Set(cfg.app.ui?.sidebar_pinned_groups||['core']);saveSidebarState();}$('#brand-title').textContent=cfg.app.app_name;$('#brand-subtitle').textContent=cfg.app.subtitle;$('#version-label').textContent=health.version;$('#workspace-mini').textContent='Workspace · '+ws.relative;state.milestoneView=(['3d','fishbone'].includes(cfg.app.ui?.milestone_default_view)?'timeline':cfg.app.ui?.milestone_default_view)||state.milestoneView;state.graphView='2d';state.heatmapMonths=Math.max(1,Math.min(12,Number(cfg.app.ui?.heatmap_months)||state.heatmapMonths||12));if(Array.isArray(cfg.app.ui?.heatmap_thresholds)&&cfg.app.ui.heatmap_thresholds.length===2)state.heatmapThresholds=[Math.max(1,Math.round(+cfg.app.ui.heatmap_thresholds[0]||1)),Math.max(Math.max(1,Math.round(+cfg.app.ui.heatmap_thresholds[0]||1))+1,Math.round(+cfg.app.ui.heatmap_thresholds[1]||3))];if(Array.isArray(cfg.app.ui?.heatmap_colors)&&cfg.app.ui.heatmap_colors.length===3)state.heatmapColors=cfg.app.ui.heatmap_colors;localStorage.setItem('heatmapMonths',String(state.heatmapMonths));localStorage.setItem('heatmapThresholds',JSON.stringify(state.heatmapThresholds));localStorage.setItem('heatmapColors',JSON.stringify(state.heatmapColors));const theme=localStorage.getItem('theme')||cfg.app.ui?.theme||'light';applyTheme(theme); }
 
   function bindGlobal(){
+    $('#nav-back').onclick=()=>travelHistory(-1);$('#nav-forward').onclick=()=>travelHistory(1);
+    document.addEventListener('keydown',event=>{if(event.altKey&&!event.ctrlKey&&!event.metaKey&&['ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();travelHistory(event.key==='ArrowLeft'?-1:1)}});
+    document.addEventListener('click',event=>{const menu=$('#doc-entry-menu');if(menu&&!menu.contains(event.target))menu.removeAttribute('open')});
+    document.addEventListener('keydown',event=>{if(event.key==='Escape')$('#doc-entry-menu')?.removeAttribute('open')});
     window.addEventListener('workbench:focus-state',event=>acceptNativeFocus(event.detail));
     window.addEventListener('pywebviewready',refreshNativeFocus);
     window.addEventListener('workbench:window-state',event=>{if(!event.detail.hidden)refreshNativeFocus()});

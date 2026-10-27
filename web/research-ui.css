@@ -106,3 +106,21 @@ html[data-theme=dark] #main .graph-overview-metrics>div{background:var(--surface
   .agent-capability-label{display:none}
   .overview-continue button{max-width:100%}
 }
+.navigation-history{display:flex;gap:3px;flex:0 0 auto;align-items:center}
+.navigation-history button{display:grid;place-items:center;width:28px;height:28px;padding:0;border:1px solid var(--sc-line-strong);border-radius:6px;background:var(--sc-subtle);color:var(--sc-text);font:inherit;font-size:16px;cursor:pointer}
+.navigation-history button:disabled{opacity:.35;cursor:default}
+.navigation-history button:not(:disabled):hover{background:var(--sc-task-soft);color:var(--sc-task)}
+.topbar>.page-heading{margin-right:auto}
+.topbar>.navigation-history{margin-right:-10px}
+.doc-entry-menu{position:relative;flex:0 0 auto}
+.doc-entry-menu>summary{display:grid;place-items:center;list-style:none;min-width:30px;min-height:30px;border:1px solid var(--sc-line-strong);border-radius:6px;background:var(--sc-subtle);color:var(--sc-text);font-size:20px;line-height:1;cursor:pointer}
+.doc-entry-menu>summary::-webkit-details-marker{display:none}
+.doc-entry-menu-items{position:absolute;bottom:calc(100% + 6px);right:0;z-index:100;width:176px;box-sizing:border-box;padding:5px;border:1px solid var(--sc-line-strong);border-radius:8px;background:var(--sc-float);color:var(--sc-text);box-shadow:0 8px 24px #0003}
+.doc-entry-menu:not([open])>.doc-entry-menu-items{display:none}
+.doc-entry-menu-items>span{display:block;padding:5px 8px;color:var(--sc-muted);font-size:11px}
+#main .doc-entry-menu-items>button{display:block;width:100%;padding:7px 8px;min-height:30px;border:0;border-radius:4px;background:transparent;color:inherit;text-align:left;font:inherit;font-size:12px;cursor:pointer}
+#main .doc-entry-menu-items>button:not(:disabled):hover{background:var(--sc-subtle)}
+#main .doc-entry-menu-items>button:disabled{opacity:.45;cursor:default}
+.doc-type-history{display:flex;flex-direction:column;gap:12px}
+.doc-type-history>div{display:grid;gap:4px;padding-bottom:10px;border-bottom:1px solid var(--sc-line)}
+.doc-type-history time,.doc-type-history small{font-size:12px;color:var(--sc-muted)}

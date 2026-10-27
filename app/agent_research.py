@@ -10,6 +10,7 @@ import subprocess
 import time
 import uuid
 from html.parser import HTMLParser
+from io import BytesIO
 from pathlib import Path
 from urllib.parse import urlencode, urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -227,12 +228,16 @@ def execute(name: str, args: dict, ctx: dict) -> dict:
         if run["session_id"] != ctx.get("session_id"):
             raise ValueError("只能读取当前会话的执行证据")
         with brain.connection() as conn:
-            row = conn.execute("SELECT result FROM tool_calls WHERE run_id=? AND call_id=?", (run_id, str(args.get("call_id") or ""))).fetchone()
+            row = conn.execute("SELECT result,name,args FROM tool_calls WHERE run_id=? AND call_id=?", (run_id, str(args.get("call_id") or ""))).fetchone()
         if not row or not row[0]:
             raise FileNotFoundError("工具证据")
-        text = row[0]
+        from . import agent_sources
+        original = agent_sources.tool_message(row[1], json.loads(row[2]), json.loads(row[0]), str(args.get("call_id") or ""))
+        text = original["content"]
         offset, limit = max(0, int(args.get("offset") or 0)), max(1, min(int(args.get("limit") or 12000), 24000))
-        return {"run_id": run_id, "call_id": args.get("call_id"), "content": text[offset:offset + limit], "total_chars": len(text), "next_offset": offset + limit if offset + limit < len(text) else None}
+        return {"run_id": run_id, "call_id": args.get("call_id"), "content": text[offset:offset + limit], "total_chars": len(text), "next_offset": offset + limit if offset + limit < len(text) else None,
+                "_evidence_sources": agent_sources.slice_spans(original.get("_sources", []), offset, offset + limit),
+                **({"_source_incomplete": original["_source_incomplete"]} if original.get("_source_incomplete") else {})}
     if name == "workspace_list":
         relative = str(args.get("path") or "Projects")
         path = workspace_path(relative)
@@ -252,7 +257,7 @@ def execute(name: str, args: dict, ctx: dict) -> dict:
             raise ValueError("文件不存在或超过 4 MB，请选用分页 PDF/数据分析工具")
         text = path.read_text(encoding="utf-8-sig")
         offset, limit = max(0, int(args.get("offset") or 0)), max(1, min(int(args.get("limit") or 12000), 24000))
-        return {"path": args["path"], "content": text[offset:offset + limit], "total_chars": len(text), "next_offset": offset + limit if offset + limit < len(text) else None, "version": hashlib.sha256(text.encode()).hexdigest()}
+        return {"path": path.relative_to(ensure_workspace().resolve()).as_posix(), "content": text[offset:offset + limit], "offset": offset, "total_chars": len(text), "next_offset": offset + limit if offset + limit < len(text) else None, "version": hashlib.sha256(text.encode()).hexdigest()}
     if name == "pdf_read":
         from . import literature
         try:
@@ -260,7 +265,9 @@ def execute(name: str, args: dict, ctx: dict) -> dict:
         except ImportError:
             raise ValueError("PDF 读取需要安装 requirements.txt 中的 pypdf") from None
         path = literature.pdf_path(str(args.get("paper_id") or ctx.get("paper_id") or ""))
-        reader = PdfReader(path)
+        # Hash and extract the same bytes, even if the file is later replaced.
+        raw = path.read_bytes()
+        reader = PdfReader(BytesIO(raw))
         start = max(1, int(args.get("page") or 1))
         end = min(len(reader.pages), start + max(1, min(int(args.get("count") or 1), 5)) - 1)
         if start > len(reader.pages):
@@ -271,7 +278,7 @@ def execute(name: str, args: dict, ctx: dict) -> dict:
         except FileNotFoundError:
             paper = {}
         title = paper.get("title") or "当前文献"
-        return {"paper_id": paper_id, "title": title, "display_title": title, "citation": f"[[{title}]]", "stored_filename": paper.get("stored_filename"), "total_pages": len(reader.pages), "pages": [{"page": i + 1, "text": (reader.pages[i].extract_text() or "")[:16000]} for i in range(start - 1, end)], "note": "扫描件可能需要 OCR"}
+        return {"paper_id": paper_id, "title": title, "display_title": title, "citation": f"[[{title}]]", "stored_filename": paper.get("stored_filename"), "version": hashlib.sha256(raw).hexdigest(), "total_pages": len(reader.pages), "pages": [{"page": i + 1, "text": (reader.pages[i].extract_text() or "")[:16000]} for i in range(start - 1, end)], "note": "扫描件可能需要 OCR"}
     if name == "web_fetch":
         return fetch(str(args.get("url") or ""), args.get("limit", 12000))
     if name == "web_search":

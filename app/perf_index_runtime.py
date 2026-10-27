@@ -137,6 +137,73 @@ def update_doc(doc_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         return _update_doc(doc_id, payload)
 
 
+def convert_doc_kind(doc_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Move one ordinary knowledge entry without changing its stable identity."""
+    if not isinstance(payload, dict):
+        raise ValueError("类型变更参数格式无效")
+    target_kind = payload.get("kind")
+    convertible = {"idea", "note", "summary"}
+    if not isinstance(target_kind, str) or target_kind not in convertible:
+        raise ValueError("目前仅支持灵感、笔记与工作总结之间转换")
+    expected = payload.get("expected_revision")
+    if not isinstance(expected, str) or not expected:
+        raise ValueError("更改类型需要条目的最新修订号")
+    ensure_ready()
+    with mutation_lock, _LOCK:
+        with _connect() as conn:
+            row = conn.execute("SELECT path,kind FROM documents WHERE id=?", (doc_id,)).fetchone()
+        if not row:
+            raise FileNotFoundError(doc_id)
+        kind = str(row["kind"])
+        if kind not in convertible:
+            raise ValueError("文献、里程碑及其他专用类型暂不支持转换")
+        path = _root() / str(row["path"])
+        original = path.read_text(encoding="utf-8")
+        if expected != store.document_revision(original):
+            raise store.RevisionConflict(store._doc_from_path(kind, path, include_body=True))
+        if target_kind == kind:
+            return store._doc_from_path(kind, path, include_body=True)
+        destination = store._kind_path(target_kind) / path.name
+        if destination.exists():
+            raise ValueError("目标目录已存在同名文件，无法更改类型")
+        meta, body = store._frontmatter_parse(original)
+        now = datetime.now().isoformat(timespec="seconds")
+        previous_status = str(meta.get("status") or store.kind_statuses(kind)[0])
+        statuses = store.kind_statuses(target_kind)
+        new_status = previous_status if previous_status in statuses else statuses[0]
+        history = meta.get("type_history", [])
+        if not isinstance(history, list):
+            raise ValueError("条目的类型变更记录格式无效，请先修复元数据")
+        meta["type_history"] = [*history, {"from": kind, "to": target_kind, "timestamp": now,
+                                          "previous_status": previous_status, "status": new_status}]
+        meta.update({"kind": target_kind, "status": new_status, "updated": now})
+        if target_kind == "summary":
+            meta.setdefault("summary_type", "阶段总结")
+            meta.setdefault("record_date", str(meta.get("created") or now)[:10])
+        # All supported folders have the same depth, preserving relative attachments.
+        # Keep the original body byte-for-byte after parsing, including trailing lines.
+        store._atomic_write(path, store._frontmatter_dump(meta) + body)
+        moved = False
+        try:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            path.rename(destination)
+            moved = True
+            index_doc_path(destination)
+        except Exception:
+            if moved:
+                destination.rename(path)
+            store._atomic_write(path, original)
+            if moved:
+                try:
+                    index_doc_path(path)
+                except Exception:
+                    pass  # The intact source can be indexed by the next background scan.
+            raise
+        activity.record("doc_type_change", ref=doc_id, kind=target_kind,
+                        title=str(meta.get("title") or doc_id), project=str(meta.get("project") or ""))
+        return store._doc_from_path(target_kind, destination, include_body=True)
+
+
 def _update_doc(doc_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     with _connect() as conn:
         _init_db(conn)
@@ -145,6 +212,8 @@ def _update_doc(doc_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         raise FileNotFoundError(doc_id)
     path = _root() / str(row["path"])
     kind = str(row["kind"])
+    if "kind" in payload and payload["kind"] != kind:
+        raise ValueError("请使用“更改类型”操作转换条目")
     text = path.read_text(encoding="utf-8")
     if "expected_revision" in payload:
         expected = payload["expected_revision"]

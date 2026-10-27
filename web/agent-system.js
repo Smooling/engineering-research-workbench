@@ -19,12 +19,13 @@
     if(!panel||!nav)return;
     const changed=panelHost!==panel;panelHost=panel;
     if(!nav.children.length){
-      nav.innerHTML=tabs.map(([id,label])=>`<button type="button" role="tab" id="agent-tab-${id}" data-as-tab="${id}" aria-controls="${id==='chat'?'agent-chat-panel':'agent-system-panel'}">${label}</button>`).join('');
+      nav.innerHTML=tabs.filter(([id])=>id!=='chat').map(([id,label])=>`<button type="button" role="tab" id="agent-tab-${id}" data-as-tab="${id}" aria-controls="agent-system-content">${label}</button>`).join('');
       nav.querySelectorAll('[data-as-tab]').forEach((button,index)=>{
         button.onclick=()=>{tab=button.dataset.asTab;load()};
-        button.onkeydown=event=>{const key=event.key;if(!['ArrowLeft','ArrowRight','Home','End'].includes(key))return;event.preventDefault();const next=key==='Home'?0:key==='End'?tabs.length-1:(index+(key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;const target=nav.querySelectorAll('button')[next];target.focus();target.click()};
+        button.onkeydown=event=>{const key=event.key;if(!['ArrowLeft','ArrowRight','Home','End'].includes(key))return;event.preventDefault();const buttons=nav.querySelectorAll('button'),next=key==='Home'?0:key==='End'?buttons.length-1:(index+(key==='ArrowRight'?1:-1)+buttons.length)%buttons.length;buttons[next].focus();buttons[next].click()};
       });
     }
+    $('#as-back-chat',panel).onclick=()=>{close();$('#agent-input')?.focus()};
     if(changed){clearInterval(timer);timer=setInterval(()=>{if(!panelHost?.isConnected){clearInterval(timer);timer=null;return}if(tab==='runs')refreshRuns().catch(()=>{})},2500)}
     load();
   }
@@ -35,7 +36,7 @@
     const chat=$('#agent-chat-panel');if(chat)chat.hidden=tab!=='chat';
     panelHost.hidden=tab==='chat';
     if(tab==='chat'){window.ERWAgentPage?.refresh?.().catch(error=>toast(error.message,true));return}
-    panelHost.setAttribute('aria-labelledby','agent-tab-'+tab);
+    $('.as-content',panelHost).setAttribute('aria-labelledby','agent-tab-'+tab);
     const root=document.createElement('div');root.innerHTML='<p>正在载入…</p>';
     $('.as-content',panelHost).replaceChildren(root);
     try{if(tab==='runs')await runs(root);else if(tab==='memory')await memory(root);else if(tab==='skills')await skills(root);else if(tab==='rag')await rag(root);else await settings(root)}catch(e){if(sequence===generation&&root.isConnected)root.innerHTML=`<p class="as-error">${esc(e.message)}</p>`}
@@ -72,7 +73,7 @@
     const plan=log.filter(e=>e.event==='plan').at(-1)?.data.steps||[];
     const key=JSON.stringify([run,pending,log]);if(root._detailKey===key)return;root._detailKey=key;
     const opened=root.dataset.runId===id?new Set([...root.querySelectorAll('details[open]')].map(element=>element.classList.contains('as-run-result')?'result':element.classList.contains('as-draft')?element.querySelector('[data-as-draft]')?.dataset.asDraft:'diagnostics')):new Set();root.dataset.runId=id;
-    root.innerHTML=`<h3>执行记录</h3>${plan.length?`<ol class="as-plan">${plan.map(p=>`<li>${p.status==='completed'?'✓':p.status==='in_progress'?'◉':'○'} ${esc(p.step)}</li>`).join('')}</ol>`:''}${pending.map(d=>`<details class="as-draft"><summary>待确认：${esc(d.tool)}</summary><pre>${esc(window.ERWAgentClient.draftPreview(d))}</pre><button type="button" data-as-draft="${d.id}" data-action="confirm">确认执行</button><button type="button" data-as-draft="${d.id}" data-action="reject">拒绝</button></details>`).join('')}${run.result?.assistant?`<button type="button" id="as-view-answer">查看对话中的回复</button><details class="as-run-result"><summary>展开任务结果</summary><div class="as-answer">${window.ERWFabTimeline?.responses?.(run.result.assistant)||''}${window.ERWFabTimeline?.render?.(run.result.assistant.content)||esc(run.result.assistant.content)}${window.ERWFabTimeline?.retrievals?.(run.result.assistant)||''}</div></details>`:''}<details><summary>诊断信息 · 事件与工具证据 · ${log.length} 项</summary><pre>${esc(JSON.stringify({task_id:run.id,events:log.filter(e=>e.event!=='delta')},null,2))}</pre></details>`;
+    root.innerHTML=`<h3>执行记录</h3>${plan.length?`<ol class="as-plan">${plan.map(p=>`<li>${p.status==='completed'?'✓':p.status==='in_progress'?'◉':'○'} ${esc(p.step)}</li>`).join('')}</ol>`:''}${pending.map(d=>`<details class="as-draft"><summary>待确认：${esc(d.tool)}</summary><pre>${esc(window.ERWAgentClient.draftPreview(d))}</pre><button type="button" data-as-draft="${d.id}" data-action="confirm">确认执行</button><button type="button" data-as-draft="${d.id}" data-action="reject">拒绝</button></details>`).join('')}${run.result?.assistant?`<button type="button" id="as-view-answer">查看对话中的回复</button><details class="as-run-result"><summary>展开任务结果</summary><div class="as-answer">${window.ERWFabTimeline?.responses?.(run.result.assistant)||''}${window.ERWFabTimeline?.render?.(run.result.assistant.content)||esc(run.result.assistant.content)}${window.ERWAgentSources?.entry(run.result.assistant,run.session_id)||''}</div></details>`:''}<details><summary>诊断信息 · 事件与工具证据 · ${log.length} 项</summary><pre>${esc(JSON.stringify({task_id:run.id,events:log.filter(e=>e.event!=='delta')},null,2))}</pre></details>`;
     root.querySelectorAll(':scope > details').forEach(element=>{const key=element.classList.contains('as-run-result')?'result':element.classList.contains('as-draft')?element.querySelector('[data-as-draft]')?.dataset.asDraft:'diagnostics';element.open=opened.has(key)});
     const answerButton=$('#as-view-answer',root);if(answerButton)answerButton.onclick=async()=>{open('chat');await window.ERWAgentPage?.refresh?.();const id=run.result.assistant.id;[...document.querySelectorAll('[data-message-id]')].find(e=>e.dataset.messageId===id)?.scrollIntoView({block:'center'})};
     root.querySelectorAll('[data-as-draft]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{await window.ERWAgentClient.resolveDraft(b.dataset.asDraft,b.dataset.action==='confirm');await detail();toast('草稿已处理，全部处理后点击继续')}catch(e){toast(e.message,true)}});

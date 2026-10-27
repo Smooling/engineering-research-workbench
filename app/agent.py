@@ -18,7 +18,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
-from . import config, store, activity, agent_tools, billing, agent_memory, agent_context
+from . import config, store, activity, agent_tools, billing, agent_memory, agent_context, agent_sources
 from .workspace import ensure_workspace
 
 _LOCK = threading.RLock()
@@ -57,12 +57,14 @@ def get_session(session_id: str) -> dict[str, Any]:
         statuses = dict(connection.execute("SELECT id,status FROM runs WHERE session_id=?", (session_id,)))
     for message in session.get("messages", []):
         if message.get("role") == "assistant":
+            message.setdefault("source_summary", {"schema_version": 1, "revision": 0, "recording_status": "incomplete"})
             names = {} if message.get("expose_internal_ids") else message.get("reference_names") or agent_context.reference_names(message.get("evidence") or [])
             message["content"] = agent_context.display_text(message.get("content"), names)
             message["response_parts"] = agent_context.response_parts(message)
             message["retrievals"] = agent_context.retrievals_from_evidence(message.get("evidence") or []) or message.get("retrievals", [])
             if message.get("run_id") in statuses:
                 message["run_status"] = statuses[message["run_id"]]
+    session["messages"] = [agent_sources.public_message(m) for m in session.get("messages", [])]
     return session
 
 
@@ -73,14 +75,14 @@ def create_session(title: str = "") -> dict[str, Any]:
 
 def rename_session(session_id: str, title: str) -> dict[str, Any]:
     with _LOCK:
-        data = get_session(session_id)
+        data = agent_memory.get_session(session_id)
         data.update(title=(title or "新对话").strip()[:120], updated=_now())
         return agent_memory.save_session(data)
 
 
 def archive_session(session_id: str, flag: bool) -> dict[str, Any]:
     with _LOCK:
-        data = get_session(session_id)
+        data = agent_memory.get_session(session_id)
         data["archived"] = bool(flag)
         return agent_memory.save_session(data)
 
@@ -152,7 +154,8 @@ def _reference_context(ref_ids: list[str]) -> tuple[str, list[dict[str, str]]]:
                 break
             chunk = chunk[:remain]
         chunks.append(chunk)
-        refs.append({"id": doc["id"], "title": str(doc.get("title") or doc["id"]), "kind": str(doc.get("kind") or ""), "project": str(doc.get("project") or ""), "projects": projects_list})
+        refs.append({"id": doc["id"], "title": str(doc.get("title") or doc["id"]), "kind": str(doc.get("kind") or ""), "project": str(doc.get("project") or ""), "projects": projects_list,
+                     "_source_block": agent_sources.span(agent_sources.source(doc, "manual", text=str(doc.get("body") or ""), location={"offset": 0}), chunk, sum(len(c) + 7 for c in chunks[:-1]))})
         total += len(chunk)
         if total >= _MAX_CONTEXT_CHARS:
             break
@@ -232,7 +235,7 @@ def _pool_put(key: tuple[str, str, int], conn: http.client.HTTPConnection) -> No
         pass
 
 
-def _http_json(url: str, payload: dict[str, Any] | None, api_key: str, timeout: int = 120, method: str = "POST", extra_headers: dict[str, Any] | None = None) -> dict[str, Any]:
+def _http_json(url: str, payload: dict[str, Any] | None, api_key: str, timeout: int = 120, method: str = "POST", extra_headers: dict[str, Any] | None = None, source_recorder=None) -> dict[str, Any]:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
     headers = _api_headers(api_key, extra_headers)
     tmo = max(5, min(int(timeout or 120), 600))
@@ -246,16 +249,18 @@ def _http_json(url: str, payload: dict[str, Any] | None, api_key: str, timeout: 
         for attempt in (1, 0):  # 复用连接可能已被服务端关闭 → 新连接重试一次
             conn, reused = _pool_get(key, tmo)
             try:
-                conn.request(method, path, body=body, headers=headers)
-                resp = conn.getresponse()
-                raw = resp.read().decode("utf-8", errors="replace")
-                if resp.will_close:
-                    conn.close()
-                else:
-                    _pool_put(key, conn)
-                if resp.status >= 400:
-                    raise ValueError(_http_error_message(resp.status, raw))
-                return json.loads(raw) if raw else {}
+                with agent_sources.attempt(source_recorder, payload) as sent:
+                    conn.request(method, path, body=body, headers=headers)
+                    sent()
+                    resp = conn.getresponse()
+                    raw = resp.read().decode("utf-8", errors="replace")
+                    if resp.will_close:
+                        conn.close()
+                    else:
+                        _pool_put(key, conn)
+                    if resp.status >= 400:
+                        raise ValueError(_http_error_message(resp.status, raw))
+                    return json.loads(raw) if raw else {}
             except ValueError:
                 raise
             except TimeoutError:
@@ -272,9 +277,14 @@ def _http_json(url: str, payload: dict[str, Any] | None, api_key: str, timeout: 
                     raise ValueError(f"无法连接 LLM API：{e}") from None
     req = Request(url, data=body, method=method, headers=headers)
     try:
-        with urlopen(req, timeout=tmo) as resp:
-            raw = resp.read().decode("utf-8", errors="replace")
-            return json.loads(raw) if raw else {}
+        with agent_sources.attempt(source_recorder, payload) as sent:
+            try:
+                with urlopen(req, timeout=tmo) as resp:
+                    sent()
+                    raw = resp.read().decode("utf-8", errors="replace")
+                    return json.loads(raw) if raw else {}
+            except HTTPError as exc:
+                raise ValueError(_http_error_message(exc.code, exc.read().decode("utf-8", errors="replace"))) from None
     except HTTPError as e:
         detail = e.read().decode("utf-8", errors="replace")[:2000]
         try:
@@ -441,26 +451,28 @@ def _stream_chat(cfg: dict[str, Any], payload: dict[str, Any], tmo: int, on_delt
         for attempt in (1, 0):
             conn, reused = _pool_get(key, tmo)
             try:
-                conn.request("POST", path, body=body, headers=headers)
-                bind_interrupt(conn)
-                resp = conn.getresponse()
-                bind_interrupt(conn, resp)
-                if resp.status >= 400:
-                    raw = resp.read().decode("utf-8", errors="replace")
+                with agent_sources.attempt(cfg.get("_source_recorder"), payload) as sent:
+                    conn.request("POST", path, body=body, headers=headers)
+                    sent()
+                    bind_interrupt(conn)
+                    resp = conn.getresponse()
+                    bind_interrupt(conn, resp)
+                    if resp.status >= 400:
+                        raw = resp.read().decode("utf-8", errors="replace")
+                        if resp.will_close:
+                            conn.close()
+                        else:
+                            _pool_put(key, conn)
+                        raise ValueError(_http_error_message(resp.status, raw))
+                    for line in response_lines(resp, conn):
+                        _feed(line.decode("utf-8", errors="replace").rstrip("\r\n"))
+                    if cfg.get("_check_cancel"):
+                        cfg["_check_cancel"]()
                     if resp.will_close:
                         conn.close()
                     else:
                         _pool_put(key, conn)
-                    raise ValueError(_http_error_message(resp.status, raw))
-                for line in response_lines(resp, conn):
-                    _feed(line.decode("utf-8", errors="replace").rstrip("\r\n"))
-                if cfg.get("_check_cancel"):
-                    cfg["_check_cancel"]()
-                if resp.will_close:
-                    conn.close()
-                else:
-                    _pool_put(key, conn)
-                break
+                    break
             except ValueError:
                 if cfg.get("_check_cancel"):
                     cfg["_check_cancel"]()
@@ -490,15 +502,20 @@ def _stream_chat(cfg: dict[str, Any], payload: dict[str, Any], tmo: int, on_delt
     else:  # v260930k · 代理路径：urlopen 逐行读
         req = Request(endpoint, data=body, method="POST", headers=headers)
         try:
-            resp = urlopen(req, timeout=tmo)
-            try:
-                bind_interrupt(None, resp)
-                for raw_line in response_lines(resp):
-                    _feed(raw_line.decode("utf-8", errors="replace").rstrip("\r\n"))
-                if cfg.get("_check_cancel"):
-                    cfg["_check_cancel"]()
-            finally:
-                resp.close()
+            with agent_sources.attempt(cfg.get("_source_recorder"), payload) as sent:
+                try:
+                    resp = urlopen(req, timeout=tmo)
+                    sent()
+                except HTTPError as exc:
+                    raise ValueError(_http_error_message(exc.code, exc.read().decode("utf-8", errors="replace"))) from None
+                try:
+                    bind_interrupt(None, resp)
+                    for raw_line in response_lines(resp):
+                        _feed(raw_line.decode("utf-8", errors="replace").rstrip("\r\n"))
+                    if cfg.get("_check_cancel"):
+                        cfg["_check_cancel"]()
+                finally:
+                    resp.close()
         except HTTPError as e:
             detail = e.read().decode("utf-8", errors="replace")[:2000]
             try:
@@ -550,7 +567,12 @@ def _post_chat(cfg: dict[str, Any], messages: list[dict[str, Any]], request_para
                         continue
             def request():
                 try:
-                    result = _post_chat({**cfg, "_background_request": True}, messages, request_params, tools, on_delta=(lambda text: deliver("delta", text)) if on_delta else None)
+                    def check_background():
+                        if stopped.is_set():
+                            from .agent_runtime import Suspended
+                            raise Suspended("cancelled")
+                        cfg["_check_cancel"]()
+                    result = _post_chat({**cfg, "_background_request": True, "_check_cancel": check_background}, messages, request_params, tools, on_delta=(lambda text: deliver("delta", text)) if on_delta else None)
                     deliver("result", result)
                 except Exception as exc:
                     deliver("error", exc)
@@ -570,6 +592,8 @@ def _post_chat(cfg: dict[str, Any], messages: list[dict[str, Any]], request_para
                         return value
             finally:
                 stopped.set()
+                if cfg.get("_source_recorder"):
+                    cfg["_source_recorder"].close()
     payload: dict[str, Any] = {"model": cfg["model"], "messages": messages, "stream": False}
     if cfg.get("temperature") is not None:
         payload["temperature"] = float(cfg.get("temperature"))
@@ -586,7 +610,7 @@ def _post_chat(cfg: dict[str, Any], messages: list[dict[str, Any]], request_para
         except ValueError as e:
             if not _STREAM_4XX_RE.search(str(e)):
                 raise
-    data = _http_json(_endpoint(str(cfg["base_url"]), "/chat/completions"), payload, str(cfg["api_key"]), tmo, extra_headers=cfg.get("headers"))
+    data = _http_json(_endpoint(str(cfg["base_url"]), "/chat/completions"), payload, str(cfg["api_key"]), tmo, extra_headers=cfg.get("headers"), source_recorder=cfg.get("_source_recorder"))
     billing.record(cfg, data.get("usage"))  # v261008 · 计费：非流式 usage（流式分支已在 _stream_chat 内记录，4xx 降级不重复计）
     choices = data.get("choices") or []
     if not choices:
@@ -646,7 +670,7 @@ _FALLBACK_STATUS_RE = re.compile(r"LLM API HTTP 4(?:00|04|22)")
 _STREAM_4XX_RE = re.compile(r"LLM API HTTP 4\d\d")  # v260930k · 流式被端点拒绝（4xx）→ 降级非流式重试
 
 
-def _page_context(context: Any) -> str:
+def _page_context(context: Any, source_blocks=None) -> str:
     """v260930 · M1 页面上下文注入：把前端传来的「你在哪/选中了什么」写进系统提示词，
     工具层同享该上下文（lit_context/lit_note_write 缺省 paper_id 时取它）。"""
     if not isinstance(context, dict):
@@ -678,7 +702,17 @@ def _page_context(context: Any) -> str:
         parts.append("用户引用的历史对话内容（供参考，回答时可引用；勿复述全文）：\n" + quote[:4000] + ("…" if len(quote) > 4000 else ""))
     if not parts:
         return ""
-    return "\n\n当前页面上下文（lit_context / lit_note_write 不传 paper_id 时默认使用此文献）：\n" + "\n".join(f"- {p}" for p in parts)
+    prefix = "\n\n当前页面上下文（lit_context / lit_note_write 不传 paper_id 时默认使用此文献）：\n"
+    if source_blocks is not None:
+        offset = len(prefix)
+        for part in parts:
+            quoted = part.startswith("用户引用的历史对话内容")
+            meta = agent_sources.source({**context, "id": "quote-" + agent_sources.digest(quote)[:20] if quoted else doc_id,
+                                          "title": "引用的历史对话选段" if quoted else "当前页面 / 选区", "kind": "page"},
+                                         "history" if quoted else "page", entity_type="quote" if quoted else "page", text=part, location={"page": page} if not quoted else {})
+            source_blocks.append(agent_sources.span(meta, "- " + part, offset))
+            offset += len(part) + 3
+    return prefix + "\n".join(f"- {p}" for p in parts)
 
 
 def _exec_tool_call(name: str, args_raw: Any, ctx: dict[str, Any]) -> dict[str, Any]:
@@ -704,7 +738,7 @@ def persist_interrupted_reply(run_id: str, status: str) -> dict:
     """Keep public partial output in the canonical chat, including after reload."""
     run = agent_memory.get_run(run_id)
     state = run["state"]
-    session = get_session(run["session_id"])
+    session = agent_memory.get_session(run["session_id"])
     user = next((m for m in session["messages"] if m.get("run_id") == run_id and m.get("role") == "user"), {})
     message = {k: user[k] for k in ("model", "profile_id", "profile_name", "persona_id", "persona_name", "request_preset", "request_preset_label") if k in user}
     names = {} if state.get("expose_internal_ids") else state.get("reference_names") or agent_context.reference_names(state.get("evidence", []))
@@ -720,6 +754,7 @@ def persist_interrupted_reply(run_id: str, status: str) -> dict:
     message["capabilities"] = state.get("capabilities", {})
     message["source_policy"] = state.get("source_policy", "default")
     message["timing"] = {"total_ms": state.get("elapsed_ms", 0), "rounds": state.get("step", 0), "tool_calls": len(state.get("trace", [])), "timeline": state.get("timeline", [])}
+    agent_sources.freeze(run["session_id"], message, state.get("partial_answer", ""))
     agent_memory.append_message(run["session_id"], message)
     return message
 
@@ -727,6 +762,7 @@ def persist_interrupted_reply(run_id: str, status: str) -> dict:
 def send_message(session_id: str, text: str, ref_ids: list[str] | None = None, image_paths: list[str] | None = None, request_preset: str = "", context: dict[str, Any] | None = None, persona_id: str = "", on_delta=None, on_round=None, on_tool=None, run_id: str = "") -> dict[str, Any]:
     text = str(text or "").strip()
     ref_ids = [str(x) for x in (ref_ids or []) if str(x).strip()]
+    manual_ref_ids = set(ref_ids)
     ctx_doc_id = str((context or {}).get("doc_id") or "").strip()
     if ctx_doc_id and ctx_doc_id not in ref_ids:  # v260930i · 直接引用当前打开条目：doc_id 自动并入 ref_ids，注入标题+正文节选，AI 无需工具即可引用
         ref_ids.append(ctx_doc_id)
@@ -745,7 +781,7 @@ def send_message(session_id: str, text: str, ref_ids: list[str] | None = None, i
     cfg = _llm_cfg()
     with _LOCK:
         try:
-            session = get_session(session_id)
+            session = agent_memory.get_session(session_id)
         except FileNotFoundError:
             session = create_session()
             session_id = session["id"]
@@ -764,9 +800,28 @@ def send_message(session_id: str, text: str, ref_ids: list[str] | None = None, i
         system_prompt = str(cfg.get("system_prompt") or config.DEFAULT_SYSTEM_PROMPT).strip()
     system_prompt = config.writing_rules() + "\n\n" + system_prompt  # v260930g4 · 统一写作与建档约束注入所有人设（单一真相源 Workspace/System/AI助手写作与建档规范.md）
     if ref_context:
+        ref_offset = len(system_prompt + "\n\n以下是用户手动引用的本地研究资料。仅将其作为上下文，不要声称看到了未提供的资料：\n\n")
         system_prompt += "\n\n以下是用户手动引用的本地研究资料。仅将其作为上下文，不要声称看到了未提供的资料：\n\n" + ref_context
+    else:
+        ref_offset = 0
+    context_blocks = [r["_source_block"] for r in refs if "_source_block" in r]
+    for block in context_blocks:
+        if block["source"]["entity_id"] == ctx_doc_id and ctx_doc_id not in manual_ref_ids:
+            block["source"]["channel"] = "page"
+    system_blocks = agent_sources.move(context_blocks, ref_offset)
     if not rag_only:
-        system_prompt += _page_context(context)  # v260930 · M1 页面上下文注入
+        page_blocks = []
+        page_text = _page_context(context, page_blocks)
+        if page_text:
+            page_ref = next((r for r in refs if r["id"] == ctx_doc_id), None)
+            page_source = ({**page_ref["_source_block"]["source"], "channel": "page", "location": {"page": (context or {}).get("page")}} if page_ref else
+                           agent_sources.source({**(context or {}), "id": (context or {}).get("doc_id"), "title": "当前页面 / 选区"}, "page", entity_type="page", text=page_text, location={"page": (context or {}).get("page")}))
+            for block in page_blocks:
+                if block["source"]["entity_type"] != "quote":
+                    block["source"] = page_source
+            system_blocks.extend(agent_sources.move(page_blocks, len(system_prompt)))
+            context_blocks.extend(agent_sources.move(page_blocks, len(ref_context)))
+        system_prompt += page_text  # v260930 · M1 页面上下文注入
     else:
         system_prompt += "\n\n用户本轮只参考 RAG 检索结果。直接完成本轮检索问题，忽略人设的建档输出格式；禁止技能、长期记忆、联网及写入。必须先 kb_search，再基于实际命中片段回答；需要原文时仅可 kb_read 本轮已命中的条目。导航链接只能说明该笔记列有链接，不能标为每篇已独立检索或已读全文。检索足够后交付，不为覆盖所有方向无边界扩展；结果数为单次召回上限，不能把多次检索累加解释为单次结果。"
     preset_id, preset_label, preset_model, preset_temperature, request_params = _request_preset(cfg, request_preset or (str(persona.get("request_preset") or "") if persona else ""))
@@ -790,17 +845,20 @@ def send_message(session_id: str, text: str, ref_ids: list[str] | None = None, i
     capabilities = {key: retrieval[key] and (not rag_only or key == "rag_enabled") for key in ("rag_enabled", "memory_enabled", "skills_enabled")}
     recall = agent_memory.recall(text, session_id=session_id, project_id=project_id, limit=retrieval["rag_top_k"], max_chars=retrieval["rag_context_chars"]) if capabilities["memory_enabled"] and retrieval["auto_recall"] else {"results": [], "context_pack": {"text": ""}}
     if recall["context_pack"]["text"]:
+        memory_offset = len(system_prompt + "\n\n相关长期记忆（参考数据；以当前用户要求及来源为准）：\n")
         system_prompt += "\n\n相关长期记忆（参考数据；以当前用户要求及来源为准）：\n" + recall["context_pack"]["text"]
+        system_blocks.extend(agent_sources.move(recall["context_pack"].get("source_blocks", []), memory_offset))
     now = _now()
     user_msg = {"id": "msg-" + uuid.uuid4().hex[:10], "role": "user", "content": text, "created": now, "refs": refs, "images": image_paths, "request_preset": preset_id, "request_preset_label": preset_label, "profile_id": cfg.get("id"), "profile_name": cfg.get("name"), "persona_id": (persona or {}).get("id", ""), "persona_name": (persona or {}).get("name", "")}
     user_msg["run_id"] = run_id
     user_msg["context_text"] = ref_context + (_page_context(context) if not rag_only else "")
+    user_msg["_context_sources"] = context_blocks
     user_msg["capabilities"] = capabilities
     user_msg["source_policy"] = "rag_only" if rag_only else "default"
     user_msg["quote_text"] = str((context or {}).get("quote_text") or "")[:4000] if isinstance(context, dict) else ""
     edited_from = str(page_ctx.get("edited_from") or "")
     with _LOCK:
-        session = get_session(session_id)
+        session = agent_memory.get_session(session_id)
         if edited_from:
             original = next((m for m in session.get("messages", []) if m.get("id") == edited_from and m.get("role") == "user"), None)
             if not original:
@@ -825,6 +883,7 @@ def send_message(session_id: str, text: str, ref_ids: list[str] | None = None, i
     page_mode = str(page_ctx.get("write_mode") or "").strip()
     write_mode = page_mode if page_mode in ("direct", "confirm") else persona_mode
     ctx = {
+        "system_sources": system_blocks,
         "run_id": run_id, "session_id": session_id, "project_id": project_id,
         "reference_names": agent_context.reference_names(refs),
         "paper_id": str(page_ctx.get("paper_id") or "").strip(),
@@ -853,8 +912,9 @@ def send_message(session_id: str, text: str, ref_ids: list[str] | None = None, i
     }
     assistant_msg["response_parts"] = agent_context.response_parts(assistant_msg)
     assistant_msg["run_status"] = "waiting_approval" if ctx.get("waiting_drafts") else "completed"
+    agent_sources.freeze(session_id, assistant_msg, ctx.get("source_answer", answer))
     with _LOCK:
-        session = get_session(session_id)
+        session = agent_memory.get_session(session_id)
         session.setdefault("messages", []).append(assistant_msg)
         session["updated"] = _now()
         _atomic_json(_session_path(session_id), session)

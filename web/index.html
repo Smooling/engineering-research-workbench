@@ -15,7 +15,7 @@
   <link rel="stylesheet" href="/v260922-compact-layout.css?v=261009h">
   <link rel="stylesheet" href="/v260922-overview-editor-tools.css?v=260924g">
   <link rel="stylesheet" href="/v260922-performance.css?v=260924g">
-  <link rel="stylesheet" href="/v260922-graph-performance.css?v=261021-planning-1">
+  <link rel="stylesheet" href="/v260922-graph-performance.css?v=261027-star-map-2">
   <link rel="stylesheet" href="/v260922-agent-profiles.css?v=260929d">
   <link rel="stylesheet" href="/v260922-layout-bugfixes.css?v=260924g">
   <link rel="stylesheet" href="/v260930-floating-agent.css?v=261019-responses"><!-- v260930n · 历史列表归档/删除操作样式；上版：停止按钮样式 -->
@@ -28,7 +28,7 @@
   <link rel="stylesheet" href="/workbench-ui.css?v=261020-pdf-sharp-chips-1">
   <link rel="stylesheet" href="/project-scope.css?v=261021-planning-1">
   <link rel="stylesheet" href="/milestone-gantt.css?v=261021-planning-1">
-  <link rel="stylesheet" href="/document-references.css?v=261020-reference-preview-1">
+  <link rel="stylesheet" href="/document-references.css?v=261022-hover-preview-3">
   <link rel="stylesheet" href="/sync.css?v=261016g">
   <link rel="stylesheet" href="/vendor/github.min.css" onerror="this.onerror=null;this.href='https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css'">
   <script>
@@ -81,6 +81,7 @@
 
     <div class="main-shell">
       <header class="topbar">
+        <nav class="navigation-history" id="navigation-history" aria-label="浏览历史"><button type="button" id="nav-back" aria-label="后退" title="后退 · Alt + ←" disabled>←</button><button type="button" id="nav-forward" aria-label="前进" title="前进 · Alt + →" disabled>→</button></nav>
         <div class="page-heading">
           <h2 id="page-title">概览</h2>
           <div class="page-date" id="page-date"></div>
@@ -129,23 +130,25 @@
   <script defer src="/milestone-gantt.js?v=261021-planning-1"></script>
   <script defer src="/v261014-milestone-timeline.js?v=261014o"></script><!-- v261014h · 自适应密度状态泳道里程碑时间轴 -->
   <script defer src="/render-libraries.js?v=261015-perf"></script>
-  <script defer src="/v260922-graph-performance.js?v=261021-planning-1"></script>
+  <script defer src="/v260922-graph-performance.js?v=261027-star-map-3"></script>
   <script defer src="/ui-dialogs.js?v=261016b"></script>
-  <script defer src="/desktop.js?v=261016g"></script>
+  <script defer src="/desktop.js?v=261022-entry-navigation-1"></script>
   <script defer src="/research-ui.js?v=261020-reading-wheel-1"></script>
-  <script defer src="/agent-client.js?v=261020-comfort-3"></script>
-  <script defer src="/document-references.js?v=261021-unified-pdf-2"></script>
-  <script defer src="/app.js?v=261021-unified-pdf-2"></script>
+  <script defer src="/agent-client.js?v=261026-compact-agent-1"></script>
+  <link rel="stylesheet" href="/agent-sources.css?v=261026-ball-dock-1">
+  <script defer src="/agent-sources.js?v=261023-sources-1"></script>
+  <script defer src="/document-references.js?v=261027-graph-hover-1"></script>
+  <script defer src="/app.js?v=261026-compact-agent-1"></script>
   <script defer src="/sync.js?v=261019a"></script>
-  <script defer src="/literature.js?v=261021-unified-pdf-2"></script><!-- v260930n · 修复框选失效（move/up 未挂载）+ Esc/取消时释放截图等待；上版：ERWCapture 桥 -->
+  <script defer src="/literature.js?v=261022-entry-navigation-1"></script><!-- v260930n · 修复框选失效（move/up 未挂载）+ Esc/取消时释放截图等待；上版：ERWCapture 桥 -->
   <script defer src="/v260922-projects.js?v=261020-comfort-3"></script>
-  <script defer src="/v260922-overview-editor-tools.js?v=261020-reading-wheel-1"></script>
+  <script defer src="/v260922-overview-editor-tools.js?v=261022-hover-preview-2"></script>
   <script defer src="/v260922-agent-profiles.js?v=261019-integrated"></script><!-- Agent 配置与人设编辑器 -->
-  <script defer src="/v260930-floating-agent.js?v=261020-comfort-3"></script>
-  <link rel="stylesheet" href="/agent-system.css?v=261020-comfort-3">
-  <link rel="stylesheet" href="/research-ui.css?v=261020-reading-wheel-1">
+  <script defer src="/v260930-floating-agent.js?v=261026-ball-dock-1"></script>
+  <link rel="stylesheet" href="/agent-system.css?v=261026-compact-agent-1">
+  <link rel="stylesheet" href="/research-ui.css?v=261022-entry-navigation-1">
   <link rel="stylesheet" href="/literature-workspace.css?v=261021-unified-pdf-2">
-  <script defer src="/agent-system.js?v=261020-comfort-3"></script>
+  <script defer src="/agent-system.js?v=261026-compact-agent-1"></script>
   <script defer src="/v260922-layout-bugfixes.js?v=261015c"></script>
   <script defer src="/v261008-billing.js?v=261016b"></script><!-- v261008 · 用量计费仪表盘（window.ERWBilling） -->
   <script defer src="/v261014-shell.js?v=261015a"></script>

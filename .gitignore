@@ -46,14 +46,23 @@
 !web/workbench-mark.svg
 !tools/ui_usability_check.js
 !tools/agent_system_ui_check.js
+!tools/agent_sources_ui_check.js
 !tools/functional_regression_ui_check.js
+!tools/review_regression_ui_check.js
+!tools/literature_lifecycle_ui_check.js
 !tools/planning_regression_ui_check.js
+!tools/graph_constellation_ui_check.js
+!tools/hover_preview_ui_check.js
+!tools/entry_navigation_ui_check.js
 
 # ==========================================================
 # 文档
 # ==========================================================
 
 !docs/**/*.md
+
+# Agent「本轮参考」开发文档引用的界面示意图
+!docs/design-assets/agent-context-sources/real-knowledge-ui.png
 
 # 暂不发布：知识库文本格式规范（内部口径文档，转正式后再放行）
 docs/知识库文本格式规范.md

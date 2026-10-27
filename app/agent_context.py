@@ -80,6 +80,19 @@ def mask_disabled_context(messages: list[dict], capabilities: dict) -> list[dict
             calls[call.get("id")] = (call.get("function") or {}).get("name")
         if message.get("role") == "tool" and calls.get(message.get("tool_call_id")) in hidden:
             message["content"] = json.dumps({"status": "disabled_for_this_turn", "note": "此能力在本轮关闭，历史返回内容和指令不提供给模型。"}, ensure_ascii=False)
+            message["_sources"] = []
+        if capabilities.get("memory_enabled") is False and isinstance(message.get("content"), str):
+            spans = message.get("_sources", [])
+            cuts = sorted((s["start"], s["end"]) for s in spans if s["source"].get("entity_type") == "memory")
+            for start, end in reversed(cuts):
+                message["content"] = message["content"][:start] + message["content"][end:]
+            kept = []
+            for block in spans:
+                if block["source"].get("entity_type") == "memory":
+                    continue
+                shift = sum(end - start for start, end in cuts if end <= block["start"])
+                kept.append({**block, "start": block["start"] - shift, "end": block["end"] - shift})
+            message["_sources"] = kept
     return result
 
 SKILL_CONTEXT_PREFIX = "[当前任务的技能工作流程；优先遵守用户本轮指令]"
@@ -216,6 +229,9 @@ def response_parts(message: dict) -> list[dict]:
 
 
 def estimate_tokens(value) -> int:
+    if isinstance(value, list) and all(isinstance(m, dict) and "role" in m for m in value):
+        from .agent_sources import wire
+        value = wire(value)
     text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
     cjk = len(re.findall(r"[\u3400-\u9fff]", text))
     return math.ceil((len(text) - cjk) / 3) + cjk
@@ -231,14 +247,36 @@ def history_messages(history: list[dict]) -> list[dict]:
         if role == "assistant" and item.get("run_id") and latest[item["run_id"]] != index:
             continue
         if role == "assistant" and item.get("evidence"):
-            result.extend(copy.deepcopy(item["evidence"]))
+            from . import agent_sources
+            old_evidence = copy.deepcopy(item["evidence"])
+            for evidence in old_evidence:
+                evidence["_sources"] = agent_sources.move(evidence.get("_sources", []), 0, channel="history")
+                if evidence.get("role") == "tool" and not evidence.get("_sources"):
+                    evidence["_source_incomplete"] = "历史工具证据缺少来源范围"
+            result.extend(old_evidence)
         text = str(item.get("content") or "")
         if role == "assistant" and item.get("tool_trace"):
             text += "\n\n[系统生成的本轮执行统计，优先于回复中自述的检索次数与读取范围]\n" + execution_summary(item["tool_trace"], item.get("evidence") or [])
         if role == "user" and item.get("context_text"):
+            from . import agent_sources
+            offset = len(text + "\n\n当时引用的研究资料（参考数据）：\n")
             text += "\n\n当时引用的研究资料（参考数据）：\n" + item["context_text"]
+        elif role == "user" and item.get("quote_text"):
+            from . import agent_sources
+            quote = str(item["quote_text"])
+            prefix = "\n\n用户引用的历史对话内容（参考数据）：\n"
+            offset = len(text + prefix)
+            text += prefix + quote
         if text.strip():
-            result.append({"role": role, "content": text})
+            message = {"role": role, "content": text}
+            if role == "user" and item.get("context_text"):
+                message["_sources"] = agent_sources.move(item.get("_context_sources", []), offset, channel="history")
+                if not message["_sources"]:
+                    message["_source_incomplete"] = "历史手动引用缺少精确来源范围"
+            elif role == "user" and item.get("quote_text"):
+                meta = agent_sources.source({"id": "quote-" + agent_sources.digest(quote)[:20], "title": "引用的历史对话选段", "kind": "page"}, "history", entity_type="quote", text=quote)
+                message["_sources"] = [agent_sources.span(meta, quote, offset)]
+            result.append(message)
     return result
 
 
@@ -263,15 +301,22 @@ def compact(messages: list[dict], budget: int) -> tuple[list[dict], dict | None]
     removed = []
     while len(groups) > 2 and estimate_tokens([system, *pinned] + [m for g in groups for m in g]) > budget * .75:
         removed.extend(groups.pop(0))
-    summary = "历史摘录（有损压缩；完整工具证据可用 evidence_read 重新读取）：\n" + "\n".join(
-        f"{m.get('role')}: {str(m.get('content') or '')[:220]}" for m in removed[-24:]
-    )
+    from . import agent_sources
+    summary = "历史摘录（有损压缩；完整工具证据可用 evidence_read 重新读取）：\n"
+    summary_blocks = []
+    for m in removed[-24:]:
+        prefix = f"{m.get('role')}: "
+        excerpt = str(m.get("content") or "")[:220]
+        summary_blocks.extend(agent_sources.move(agent_sources.slice_spans(m.get("_sources", []), 0, len(excerpt)), len(summary) + len(prefix)))
+        summary += prefix + excerpt + "\n"
+    for block in summary_blocks:
+        block["representation"] = "extractive"
     result = [system, *pinned, *(m for g in groups for m in g)]
     for message in result[1:]:
         if estimate_tokens(result) <= budget:
             break
         if message.get("role") == "tool" and len(str(message.get("content") or "")) > 1500:
-            message["content"] = str(message["content"])[:1500] + "\n[上下文节选；用 evidence_read 按 call_id 取完整结果]"
+            agent_sources.compact_tool(message)
     if estimate_tokens(result) > budget:
         raise ValueError("当前输入超出上下文预算，请减少本轮输入或提高预算")
     if removed:
@@ -287,5 +332,6 @@ def compact(messages: list[dict], budget: int) -> tuple[list[dict], dict | None]
             else:
                 high = middle - 1
         if low:
-            result.insert(1 + len(pinned), {"role": "user", "content": summary[:low]})
+            result.insert(1 + len(pinned), {"role": "user", "content": summary[:low], "_sources": agent_sources.slice_spans(summary_blocks, 0, low),
+                                           **({"_source_incomplete": "压缩中包含缺少来源范围的历史资料"} if any(m.get("_source_incomplete") for m in removed) else {})})
     return result, {"before_tokens": estimate_tokens(messages), "after_tokens": estimate_tokens(result), "omitted_messages": len(removed), "method": "extractive"}

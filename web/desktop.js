@@ -61,6 +61,7 @@
     const topbar=document.querySelector('#app .topbar');
     const tools=document.getElementById('desktop-page-tools');
     const mountTools=()=>{
+      const history=topbar.querySelector('#navigation-history');if(history)tools.append(history);
       const heading=topbar.querySelector('.page-heading');
       if(heading){heading.classList.add('desktop-drag-region');tools.append(heading)}
       const toggle=topbar.querySelector('#sidebar-toggle');

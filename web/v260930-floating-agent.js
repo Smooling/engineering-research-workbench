@@ -197,7 +197,7 @@ function fabZoom(){return Number.parseFloat(getComputedStyle(document.documentEl
 function fabViewport(){const z=fabZoom();return {w:innerWidth/z,h:innerHeight/z}}
 let ballDockTimer;
 function revealBall(ball){clearTimeout(ballDockTimer);ball.classList.add('is-revealed')}
-function scheduleBallDock(ball){clearTimeout(ballDockTimer);ballDockTimer=setTimeout(()=>{if(!ball.matches(':hover,:focus')&&!ball.classList.contains('dragging'))ball.classList.remove('is-revealed')},650)}
+function scheduleBallDock(ball){clearTimeout(ballDockTimer);ballDockTimer=setTimeout(()=>{if(!ball.matches(':hover,:focus-visible')&&!ball.classList.contains('dragging'))ball.classList.remove('is-revealed')},650)}
 function dockBall(ball){
   const r=ball.getBoundingClientRect(),z=fabZoom(),v=fabViewport();
   let [x,y]=clampBallPos(r.left/z,r.top/z);
@@ -220,6 +220,8 @@ function initBallDrag(ball){
   let drag=false,moved=false,sx=0,sy=0,ox=0,oy=0;
   ball.addEventListener("pointerdown",e=>{
     if(e.button!==0)return;
+    // Native text dragging would cancel the pointer capture used to move the ball.
+    e.preventDefault();
     const r=ball.getBoundingClientRect(),z=fabZoom();
     drag=true;moved=false;sx=e.clientX;sy=e.clientY;ox=r.left/z;oy=r.top/z;
     try{ball.setPointerCapture(e.pointerId)}catch{}
@@ -400,6 +402,7 @@ function syncWriteToggle(){
 }
 async function openPanel(){
   S.open=true;const p=q("#erw-fab-panel");if(!p)return;
+  window.ERWAgentSources?.close();
   p.hidden=false;q("#erw-fab-ball").style.display="none";
   applyPanelSize(); /* v260930g7 · 恢复上次手动调整的面板尺寸 */
   applyPanelPos(); /* v260930j3 · 恢复上次拖动的面板位置 */
@@ -815,13 +818,15 @@ function retrievalHtml(m){
   const caps=m.capabilities;
   const snapshot=caps&&Object.keys(caps).length?`<div class="agent-capability-stamp">本次生效（开始时）：${[['rag_enabled','RAG'],['memory_enabled','记忆'],['skills_enabled','Skill']].map(([key,label])=>label+' '+(caps[key]?'开启':'关闭')).join(' · ')}${m.source_policy==='rag_only'?' · 仅参考 RAG':''}</div>`:'';
   const rows=Array.isArray(m.retrievals)?m.retrievals:[];
-  if(!rows.length)return snapshot;
+  if(m.source_summary){const warnings=[...new Set(rows.map(r=>r.warning).filter(Boolean))];return snapshot+(m.source_policy==='rag_only'?'<p class="agent-policy-note">按你的要求，本次仅使用 RAG，记忆和 Skill 未启用。</p>':'')+(warnings.length?'<p class="agent-retrieval-warning" role="status">检索提示：'+warnings.map(esc).join('；')+'</p>':'')+(window.ERWAgentSources?.entry(m)||'')}
+  const sourcesEntry=window.ERWAgentSources?.entry(m)||'';
+  if(!rows.length)return snapshot+sourcesEntry;
   const labels={keyword:'关键词',semantic:'语义',hybrid:'混合'};
   const unique=new Set(rows.flatMap(r=>(r.items||[]).map(i=>i.id||i.title)));
   const warnings=rows.filter(r=>r.warning);
   const keyPrefix=m.run_id||m.id||'live',detailAttrs=key=>`data-rag-detail-key="${esc(key)}"${RAG_OPEN_DETAILS.has(key)?' open':''}`;
   const warning=warnings.length?`<p class="agent-retrieval-warning" role="status">${warnings.length} 次语义检索未完成，已回退关键词：${[...new Set(warnings.map(r=>r.warning))].map(esc).join('；')}</p>`:'';
-  return snapshot+(m.source_policy==='rag_only'?'<p class="agent-policy-note">按你的要求，本次仅使用 RAG，记忆和 Skill 未启用。</p>':'')+warning+`<details class="agent-retrievals" ${detailAttrs(keyPrefix)}><summary>RAG 检索依据 · ${rows.length} 次 · ${unique.size} 个去重来源</summary><p class="agent-retrieval-hint">以下是实际返回给模型的片段；候选摘要、题录与原文全文的证据范围不同。</p>${rows.map(r=>`<details class="agent-retrieval-query" ${detailAttrs(keyPrefix+':'+r.call_id)}><summary>${esc(r.query||'知识库检索')} · ${labels[r.mode]||esc(r.mode)} · ${Number(r.count)||0} 条${r.limit!=null?' / 上限 '+Number(r.limit):''}</summary>${(r.items||[]).map(item=>`<article class="agent-retrieval-source"><a href="#" class="agent-citation" data-agent-reference="${esc(item.id||item.title)}">${esc(item.title)}</a><div class="agent-evidence-actions">${window.ERWResearchUI?.evidenceBadge(item)||''}${item.evidence?.has_pdf?`<a href="#" data-agent-reference="${esc(item.id||item.title)}">查看原文</a>`:''}<a href="#" data-agent-reference="${esc(item.id||item.title)}" data-agent-view="note">查看笔记</a></div><small>${labels[item.retrieval]||'检索命中'}${item.source?.page?' · 第 '+Number(item.source.page)+' 页':''}${item.source?.offset!=null?' · 字符 '+Number(item.source.offset)+'–'+Number(item.source.end_offset):''}</small><blockquote>${esc(item.excerpt||'未返回片段')}${item.excerpt_truncated?'…（界面节选）':''}</blockquote></article>`).join('')}</details>`).join('')}</details>`;
+  return snapshot+sourcesEntry+(m.source_policy==='rag_only'?'<p class="agent-policy-note">按你的要求，本次仅使用 RAG，记忆和 Skill 未启用。</p>':'')+warning+`<details class="agent-retrievals" ${detailAttrs(keyPrefix)}><summary>RAG 检索依据 · ${rows.length} 次 · ${unique.size} 个去重来源</summary><p class="agent-retrieval-hint">以下为历史工具留存片段；实际发送范围未记录。候选摘要、题录与原文全文的证据范围不同。</p>${rows.map(r=>`<details class="agent-retrieval-query" ${detailAttrs(keyPrefix+':'+r.call_id)}><summary>${esc(r.query||'知识库检索')} · ${labels[r.mode]||esc(r.mode)} · ${Number(r.count)||0} 条${r.limit!=null?' / 上限 '+Number(r.limit):''}</summary>${(r.items||[]).map(item=>`<article class="agent-retrieval-source"><a href="#" class="agent-citation" data-agent-reference="${esc(item.id||item.title)}">${esc(item.title)}</a><div class="agent-evidence-actions">${window.ERWResearchUI?.evidenceBadge(item)||''}${item.evidence?.has_pdf?`<a href="#" data-agent-reference="${esc(item.id||item.title)}">查看原文</a>`:''}<a href="#" data-agent-reference="${esc(item.id||item.title)}" data-agent-view="note">查看笔记</a></div><small>${labels[item.retrieval]||'检索命中'}${item.source?.page?' · 第 '+Number(item.source.page)+' 页':''}${item.source?.offset!=null?' · 字符 '+Number(item.source.offset)+'–'+Number(item.source.end_offset):''}</small><blockquote>${esc(item.excerpt||'未返回片段')}${item.excerpt_truncated?'…（界面节选）':''}</blockquote></article>`).join('')}</details>`).join('')}</details>`;
 }
 function msgHtml(m,idx){
   const who=m.role==="assistant"?"AI":"YOU";

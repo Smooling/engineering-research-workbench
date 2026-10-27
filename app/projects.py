@@ -322,9 +322,17 @@ def create_project(name: str, description: str = "", status: str = "进行中", 
 
 
 def update_project(project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    from .sync_engine import mutation_lock
+    with mutation_lock:
+        return _update_project(project_id, payload)
+
+
+def _update_project(project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     display_name = str(payload.get("display_name") or "").strip()
     if "display_name" in payload and len(display_name) > 32:
         raise ValueError("项目显示简称不能超过 32 个字符")
+    if "status" in payload and str(payload.get("status") or "") not in PROJECT_STATUSES:
+        raise ValueError("无效项目状态")
     with _LOCK:
         ensure_registry()
         items = _load_registry()
@@ -337,28 +345,55 @@ def update_project(project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         if other and other.get("id") != project_id:
             raise ValueError("已存在同名项目")
 
+        old_dir = ensure_workspace() / "Projects" / old_name
+        new_dir = ensure_workspace() / "Projects" / new_name
+        project_root = (ensure_workspace() / "Projects").resolve()
+        if old_dir.resolve().parent != project_root or new_dir.resolve().parent != project_root:
+            raise ValueError("项目目录必须位于 Workspace/Projects 内")
+        renamed = False
+        backups: dict[Path, bytes | None] = {}
         if new_name != old_name:
-            old_dir = ensure_workspace() / "Projects" / old_name
-            new_dir = ensure_workspace() / "Projects" / new_name
             if new_dir.exists() and new_dir.resolve() != old_dir.resolve():
                 raise ValueError("目标项目目录已存在")
-            if old_dir.exists():
-                old_dir.rename(new_dir)
-            else:
-                ensure_project(new_name)
-            _rename_legacy_associations(project_id, old_name, new_name)
-            rec["name"] = new_name
+            # Snapshot before the first mutation so a failed multi-file update
+            # restores exact document revisions, task data and the registry.
+            for path in [*_iter_markdown(), _todos_path(), _registry_path()]:
+                backups[path] = path.read_bytes() if path.exists() else None
         if "description" in payload:
             rec["description"] = str(payload.get("description") or "").strip()
         if "display_name" in payload:
             rec["display_name"] = display_name
         if "status" in payload:
-            value = str(payload.get("status") or "")
-            if value not in PROJECT_STATUSES:
-                raise ValueError("无效项目状态")
-            rec["status"] = value
+            rec["status"] = str(payload["status"])
         rec["updated"] = _now()
-        _save_registry(items)
+        old_exists = old_dir.exists()
+        try:
+            if new_name != old_name:
+                if old_exists:
+                    old_dir.rename(new_dir)
+                    renamed = True
+                else:
+                    new_dir.mkdir()
+                    renamed = True
+                    ensure_project(new_name)
+                _rename_legacy_associations(project_id, old_name, new_name)
+                rec["name"] = new_name
+            _save_registry(items)
+        except Exception:
+            for path, original in backups.items():
+                if original is None:
+                    path.unlink(missing_ok=True)
+                elif not path.exists() or path.read_bytes() != original:
+                    path.write_bytes(original)
+            if renamed:
+                if old_exists:
+                    new_dir.rename(old_dir)
+                else:
+                    # This directory was exclusively created by this attempt.
+                    if new_dir.resolve().parent != project_root:
+                        raise ValueError("无法恢复项目目录：路径已改变")
+                    shutil.rmtree(new_dir)
+            raise
         return {"ok": True, **rec}
 
 
@@ -398,7 +433,7 @@ def _rename_legacy_associations(project_id: str, old_name: str, new_name: str) -
             tmp = path.with_suffix(path.suffix + ".tmp")
             tmp.write_text("---\n" + "\n".join(new_lines) + "\n---\n\n" + body.lstrip("\n"), encoding="utf-8"); tmp.replace(path)
         except Exception:
-            continue
+            raise
     todos = _load_todos(); changed = False
     for item in todos:
         if item.get("project_id") == project_id or str(item.get("project") or "") == old_name:

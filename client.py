@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import os
 import socket
@@ -10,7 +11,7 @@ import sys
 import threading
 import time
 import traceback
-import urllib.request
+from urllib.parse import urlsplit
 from pathlib import Path
 
 from app import paths
@@ -29,12 +30,31 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
+_LAST_HEALTH_ERROR = ""
+
+
 def _health(url: str) -> dict:
+    global _LAST_HEALTH_ERROR
+    connection = None
     try:
-        with urllib.request.urlopen(f"{url}/api/health", timeout=1.5) as resp:
-            return json.load(resp) if resp.status == 200 else {}
-    except (OSError, ValueError):
+        # This is our own local service. Never route readiness checks through
+        # Windows/system proxies or a process-wide urllib opener.
+        parsed = urlsplit(url)
+        connection = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=1.5)
+        connection.request("GET", "/api/health")
+        response = connection.getresponse()
+        if response.status != 200:
+            _LAST_HEALTH_ERROR = f"HTTP {response.status}"
+            return {}
+        result = json.loads(response.read())
+        _LAST_HEALTH_ERROR = "" if isinstance(result, dict) else "本地服务返回格式无效"
+        return result if isinstance(result, dict) else {}
+    except (OSError, ValueError, http.client.HTTPException) as exc:
+        _LAST_HEALTH_ERROR = f"{type(exc).__name__}: {exc}"
         return {}
+    finally:
+        if connection:
+            connection.close()
 
 
 def _wait_ready(url: str, timeout: float = 15) -> bool:
@@ -225,7 +245,7 @@ def main(argv: list[str] | None = None) -> int:
                     stopped.set()
             threading.Thread(target=serve, name="workbench-http", daemon=True).start()
         if not _wait_ready(url):
-            raise RuntimeError(f"本地服务未能就绪：{url}")
+            raise RuntimeError(f"本地服务未能就绪：{url}（{_LAST_HEALTH_ERROR}）")
         restart = _run_window(url, cfg, gate, stopped, httpd, background=args.background,
                               smoke_output=args.smoke_test)
     finally:

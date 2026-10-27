@@ -81,6 +81,8 @@ def connection():
                 CREATE TABLE IF NOT EXISTS drafts(id TEXT PRIMARY KEY,payload TEXT NOT NULL);
             """)
             conn.execute("INSERT OR REPLACE INTO metadata VALUES('schema_version',?)", (str(SCHEMA_VERSION),))
+            from . import agent_sources
+            agent_sources.schema(conn)
             conn.commit()
             _READY.add(str(path))
     try:
@@ -124,7 +126,7 @@ def save_session(data: dict, *, export=True, merge=False) -> dict:
         old = conn.execute("SELECT deleted FROM sessions WHERE id=?", (sid,)).fetchone()
         if old and old[0]:
             raise ValueError("会话已删除")
-        payload = {k: v for k, v in data.items() if k != "messages"}
+        payload = {k: v for k, v in data.items() if k not in ("messages", "source_archive")}
         conn.execute("INSERT INTO sessions(id,payload) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload", (sid, encode(payload)))
         ordinal = conn.execute("SELECT COALESCE(MAX(ordinal),-1)+1 FROM messages WHERE session_id=?", (sid,)).fetchone()[0] if merge else 0
         if not merge:
@@ -135,6 +137,8 @@ def save_session(data: dict, *, export=True, merge=False) -> dict:
             msg = dict(message)
             msg.setdefault("id", "msg-" + hashlib.sha256((sid + str(idx) + encode(msg)).encode()).hexdigest()[:20])
             conn.execute("INSERT INTO messages VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload", (msg["id"], sid, ordinal + idx, encode(msg)))
+        from . import agent_sources
+        agent_sources.restore(conn, sid, data.get("source_archive"))
         result = _session(conn, sid)
     if export:
         with _LOCK:
@@ -145,6 +149,9 @@ def save_session(data: dict, *, export=True, merge=False) -> dict:
 def _export_session(data: dict) -> None:
     path = ensure_workspace() / "System" / "AgentChats" / (data["id"] + ".json")
     with _LOCK:
+        from . import agent_sources
+        with connection() as conn:
+            data = {**data, "source_archive": agent_sources.archive(conn, data["id"])}
         atomic_json(path, data)
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         with connection() as conn:
@@ -433,7 +440,7 @@ def recall(query: str, *, namespace="research", session_id="", project_id="", li
                     candidates[row["id"]] = row
                     scores[row["id"]] = .5 / 61
     ordered = sorted(candidates, key=lambda mid: scores[mid] * (1 + .15 * candidates[mid]["importance"]), reverse=True)
-    hits, chunks, size = [], [], 0
+    hits, chunks, size, source_blocks = [], [], 0, []
     for mid in ordered[:max(1, min(int(limit), 30))]:
         item = _memory(candidates[mid])
         text = f"[MEM {mid}] ({item['scope']}/{item['kind']}) {item['content']}\n来源: {encode(item['source'])}"
@@ -441,10 +448,12 @@ def recall(query: str, *, namespace="research", session_id="", project_id="", li
         if remaining < 128:
             break
         text = text[:remaining]
+        from . import agent_sources
+        source_blocks.append(agent_sources.span(agent_sources.source(item, "memory", entity_type="memory", text=text), text, sum(len(c) + 2 for c in chunks)))
         chunks.append(text)
         size += len(text) + 2
         hits.append({**item, "rank": len(hits) + 1, "score": round(scores[mid], 8)})
-    return {"query": query, "mode": "hybrid" if vector else "lexical_graph", "limit": limit, "count": len(hits), "results": hits, "context_pack": {"text": "\n\n".join(chunks), "sources": [{"id": h["id"], "source": h["source"]} for h in hits], "chars": min(size, max_chars)}}
+    return {"query": query, "mode": "hybrid" if vector else "lexical_graph", "limit": limit, "count": len(hits), "results": hits, "context_pack": {"text": "\n\n".join(chunks), "source_blocks": source_blocks, "sources": [{"id": h["id"], "source": h["source"]} for h in hits], "chars": min(size, max_chars)}}
 
 
 def graph_data(**filters) -> dict:

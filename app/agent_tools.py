@@ -181,6 +181,7 @@ def _t_kb_read(args: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
             links.append({"title": target, "resolved": False})
     return {"id": doc["id"], "title": doc.get("title"), "display_title": doc.get("title"), "citation": f"[[{doc.get('title') or '未命名条目'}]]", "kind": doc.get("kind"), "paper_id": papers.get(doc["id"], {}).get("id"), "links": links,
             "projects": doc.get("projects") or [],
+            "tags": doc.get("tags") or [], "updated": doc.get("updated") or "",
             **{key: doc[key] for key in ("start_date", "due", "progress", "status", "status_class", "revision") if key in doc},
             "body": body[offset:offset + limit],
             "version": hashlib.sha256(body.encode()).hexdigest(), "total_chars": len(body), "read_scope": "full_body" if offset == 0 and len(body) <= limit else "body_slice",
@@ -312,7 +313,7 @@ def _t_lit_context(args: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
     offset = max(0, int(args.get("note_offset") or 0))
     note = full_note[offset:offset + _MAX_BODY_CHARS]
     anns = literature.get_annotations(paper_id)
-    return {"paper": {k: item.get(k) for k in ("id", "title", "authors", "year", "venue", "doi", "reading_status", "tags")},
+    return {"paper": {k: item.get(k) for k in ("id", "doc_id", "title", "authors", "year", "venue", "doi", "reading_status", "tags")},
             "annotation_count": len(anns), "note": note, "note_version": hashlib.sha256(full_note.encode()).hexdigest(),
             "note_total_chars": len(full_note), "note_next_offset": offset + _MAX_BODY_CHARS if offset + _MAX_BODY_CHARS < len(full_note) else None}
 

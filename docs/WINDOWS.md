@@ -1,6 +1,6 @@
 # Windows 桌面版
 
-当前版本：`v261021.3`。
+当前版本：`v261026.1`。
 
 双击 `ResearchWorkbench.exe` 即可打开独立窗口。推荐 Windows 10 / 11 x64，需要 Microsoft Edge WebView2 Runtime；普通使用无需安装 Python。若提示缺少运行环境，安装 [Microsoft 官方 WebView2 Evergreen Runtime](https://developer.microsoft.com/microsoft-edge/webview2/#download-section)。
 
@@ -51,6 +51,14 @@
 
 这是便携版：默认读取 exe 同级的 `config/` 和 `Workspace/`。把 exe 放在当前项目根目录，会沿用现有配置和资料。也可使用 `ResearchWorkbench.exe --data-dir "D:\ResearchData"` 指定另一数据目录。
 
+### 条目转换与浏览导航
+
+条目编辑区右下角的“⋯ → 更改类型”支持灵感、笔记和工作总结互转，保留 ID、标题、正文、项目、标签和创建时间，引用与图谱同步更新；“类型变更记录”可查看历次转换。目标类型兼容的状态会保留，否则使用目标类型的默认状态。文献、里程碑与其他专用类型暂不支持转换。
+
+顶部前进 / 后退按钮（Alt + ← / →）可返回刚才的条目与阅读位置，恢复筛选、分页和编辑 / 预览模式；文献支持恢复笔记标签与 PDF 阅读位置。离开未保存内容时仍会询问如何处理。
+
+知识链接和列表条目停留片刻显示悬停卡片，提供项目、标签、更新时间和最多 5 行正文；带章节的链接优先显示对应段落。正文与列表不再显示整栏的原生缩放提示，Ctrl + 滚轮缩放继续可用。
+
 ### 统一文献阅读
 
 点击“文献”直接进入 PDF 工作区。上传 PDF 建立文献，右侧“信息”维护题名、作者、项目、分类、标签、来源、日期、引用键和 BibTeX，“笔记”编辑原 Markdown 正文。旧文献与引用 ID 保留，没有 PDF 的旧条目可通过“待补充 PDF”筛选找到，选择后原位补传，历史笔记不会被替换。
@@ -87,5 +95,9 @@ Agent 可以创建或更新阶段计划的开始日期、截止日期、进度�
 - `build_client.log`，记录构建输出。
 
 已有 `build/.venv` 时会直接复用；创建环境时也可通过环境变量 `ERW_BUILD_PYTHON` 指定 Python 路径。自动构建可执行 `build_client.bat --no-pause`。源码变更后须重新构建 exe。
+
+日常更新不需要为了打包修改代码：拿到最新源码后，在项目根目录运行上述脚本即可。脚本依次检查隔离 Python 环境、安装或确认依赖、准备图标，并将 Python 程序、网页资源、内置技能和 Python 运行时打包成单个 exe，最后生成发布 ZIP 与校验清单。首次构建或依赖有变化时需要下载依赖；普通使用者直接运行生成的 exe，无需 Python。
+
+修改 `app/`、`web/`、`client.py` 等程序源码后，需要重新构建并退出旧版再运行新版。修改 `config/` 中的设置或 `Workspace/` 中的资料不需要重新构建。`VERSION` 只用于区分发布版本，可在发布新版本时更新；它不是编译前必须手动修改的文件。若用 `python server.py` 运行源码版，可重启服务加载代码变化，无需生成 exe。
 
 底层采用 [pywebview](https://pywebview.flowrl.com/api/) 与 [pystray](https://pystray.readthedocs.io/en/latest/usage.html)，由 WebView2 承载现有前端，本地 Python 服务负责数据处理。Windows 11 使用系统圆角和阴影；Windows 10 的圆角效果由系统能力决定。

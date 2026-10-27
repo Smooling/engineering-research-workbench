@@ -131,7 +131,16 @@ const server=http.createServer(async(req,res)=>{
     const page=await browser.newPage({viewport:{width:1440,height:1000},reducedMotion:'reduce'}),errors=[];page.on('pageerror',e=>errors.push(String(e)));
     lastPage=page;page.setDefaultTimeout(10000);
     await page.goto('http://127.0.0.1:'+server.address().port+'/#agent');
-    await page.getByRole('tab',{name:'对话',exact:true}).waitFor();
+    await page.locator('#agent-chat-panel [data-agent-settings]').waitFor();
+    async function agentTab(name){
+      await page.locator('#agent-workspace-tabs [data-as-tab]').first().waitFor({state:'attached'});
+      if(name==='对话'){if(await page.locator('#agent-system-panel').isVisible())await page.locator('#as-back-chat').click();return}
+      if(await page.locator('#agent-chat-panel').isVisible())await page.locator('#agent-chat-panel [data-agent-settings]').click();
+      await page.getByRole('tab',{name,exact:true}).click();
+    }
+    assert.equal(await page.locator('#agent-workspace-tabs').isVisible(),false,'settings navigation is collapsed during chat');
+    const chatTop=await page.locator('#agent-chat-panel').boundingBox(),workspaceTop=await page.locator('#agent-workspace').boundingBox();
+    assert.ok(Math.abs(chatTop.y-workspaceTop.y)<1,'chat uses the space previously occupied by the tabs');
     await page.locator('#agent-profile-select').waitFor({state:'attached'});
     const headerLayout=async()=>{
       const layout=await page.locator('.agent-chat-head').evaluate(header=>{
@@ -158,10 +167,10 @@ const server=http.createServer(async(req,res)=>{
     assert.equal(await page.getByRole('button',{name:'Agent 系统',exact:true}).count(),0);
     assert.equal(await page.locator('.agent-system-overlay').count(),0);
     await page.locator('#agent-input').fill('保留这段输入');
-    await page.getByRole('tab',{name:'技能',exact:true}).click();
+    await agentTab('技能');
     await page.getByRole('checkbox',{name:'启用 literature-review',exact:true}).uncheck();
     await page.getByRole('checkbox',{name:'启用 literature-review',exact:true}).check();
-    await page.getByRole('tab',{name:'对话',exact:true}).click();
+    await agentTab('对话');
     await page.locator('#agent-input').waitFor({state:'visible'});
     assert.equal(await page.locator('#agent-input').inputValue(),'保留这段输入');
     assert.equal(await page.locator('#agent-skill').count(),0,'skills are managed outside the composer');
@@ -181,7 +190,7 @@ const server=http.createServer(async(req,res)=>{
     await page.getByText('回复已保存，界面刷新失败：模拟会话列表刷新失败',{exact:true}).waitFor();
     mode='draft';await page.locator('#agent-input').fill('生成知识草稿');await page.locator('#agent-send').click();
     await page.waitForFunction(()=>document.querySelector('#agent-send').textContent==='发送');
-    await page.getByRole('tab',{name:'任务',exact:true}).click();
+    await agentTab('任务');
     assert.equal(await page.locator('#as-run-form').count(),0,'tasks use the existing chat composer');
     assert.equal(await page.locator('#agent-input').count(),1,'one Agent input across all panels');
     await page.getByText('待确认：kb_create_entry').click();
@@ -190,14 +199,14 @@ const server=http.createServer(async(req,res)=>{
     await page.getByRole('button',{name:'继续',exact:true}).click();
     await page.locator('.as-run-result>summary').click();await page.locator('.as-answer').getByText('确认后已在同一会话完成',{exact:true}).waitFor();
     await page.screenshot({path:path.join(output,'integrated-tasks.png')});
-    await page.getByRole('tab',{name:'对话',exact:true}).click();
+    await agentTab('对话');
     await page.locator('#agent-messages').getByText('确认后已在同一会话完成',{exact:true}).waitFor();
-    await page.getByRole('tab',{name:'记忆',exact:true}).click();
+    await agentTab('记忆');
     await page.locator('#as-memory-session').waitFor();assert.equal(await page.locator('#as-memory-session').inputValue(),'chat-fixture123');
     await page.getByText('添加长期记忆',{exact:true}).click();await page.locator('#as-memory-form textarea').fill('实验统一使用 SCR 指标');
     await page.getByRole('button',{name:'保存记忆',exact:true}).click();await page.getByText('实验统一使用 SCR 指标',{exact:true}).waitFor();
     await page.getByRole('button',{name:'忘记',exact:true}).click();await page.getByText(/没有匹配的记忆/).waitFor();
-    await page.getByRole('tab',{name:'技能',exact:true}).click();await page.locator('.as-skill-tech>summary').click();await page.getByRole('button',{name:'查看指令',exact:true}).click();
+    await agentTab('技能');await page.locator('.as-skill-tech>summary').click();await page.getByRole('button',{name:'查看指令',exact:true}).click();
     await page.getByText('核对来源与页码',{exact:false}).waitFor();await page.getByText('安装文本技能',{exact:true}).click();
     await page.locator('#as-skill-install input').fill('custom-flow');await page.locator('#as-skill-install textarea').fill('---\nname: custom-flow\ndescription: test\n---\n检查输入');
     await page.getByRole('button',{name:'安装技能',exact:true}).click();await page.locator('[data-enable-skill="custom-flow"]').waitFor();
@@ -205,21 +214,24 @@ const server=http.createServer(async(req,res)=>{
     await page.locator('#as-skill-search').fill('custom-flow');assert.equal(await page.locator('[data-skill-card="literature-review"]').isVisible(),false);await page.locator('#as-skill-search').fill('');
     await page.locator('.as-skill-import>summary').click();await page.locator('#as-skill-zip').setInputFiles({name:'skill.zip',mimeType:'application/zip',buffer:Buffer.from('fake fixture ZIP')});await page.locator('[data-enable-skill="zip-flow"]').waitFor();
     assert.equal(await page.locator('#agent-skill').count(),0);
-    delayMemory=true;await page.getByRole('tab',{name:'记忆',exact:true}).click();await page.locator('#as-memory-session').waitFor();
-    const lateMemory=page.waitForResponse(r=>r.url().includes('/api/agent/memories'));await page.getByRole('tab',{name:'技能',exact:true}).click();await lateMemory;
+    delayMemory=true;await agentTab('记忆');await page.locator('#as-memory-session').waitFor();
+    const lateMemory=page.waitForResponse(r=>r.url().includes('/api/agent/memories'));await agentTab('技能');await lateMemory;
     await page.locator('.as-skill').filter({hasText:'custom-flow'}).waitFor();assert.equal(await page.locator('#as-memory-results').count(),0);delayMemory=false;
-    await page.getByRole('tab',{name:'设置',exact:true}).click();await page.getByText('高级运行设置',{exact:true}).click();await page.locator('input[name=max_steps]').fill('64');
+    await agentTab('设置');await page.getByText('高级运行设置',{exact:true}).click();await page.locator('input[name=max_steps]').fill('64');
     await page.getByRole('button',{name:'保存设置',exact:true}).click();await page.getByText('设置已保存',{exact:true}).waitFor();assert.equal(opts.max_steps,64);
     await page.getByRole('button',{name:'刷新 MCP 连接',exact:true}).click();await page.getByRole('button',{name:'备份记忆库',exact:true}).click();await page.getByRole('link',{name:'下载一致性备份'}).waitFor();
+    assert.equal(await page.locator('#agent-system-panel').evaluate(panel=>{const bounds=panel.getBoundingClientRect(),back=panel.querySelector('#as-back-chat').getBoundingClientRect(),nav=panel.querySelector('#agent-workspace-tabs').getBoundingClientRect();return back.top>=bounds.top&&nav.bottom<bounds.bottom&&panel.querySelector('.as-content').scrollTop>0}),true,'settings navigation and return button remain reachable while the form scrolls');
     await page.screenshot({path:path.join(output,'integrated-settings.png')});
     await page.locator('#theme-btn').click();await page.screenshot({path:path.join(output,'integrated-dark.png')});
-    await page.getByRole('tab',{name:'技能',exact:true}).click();await page.locator('.as-skill').filter({hasText:'custom-flow'}).waitFor();
-    await page.getByRole('tab',{name:'技能',exact:true}).press('Home');assert.equal(await page.getByRole('tab',{name:'对话',exact:true}).getAttribute('aria-selected'),'true');
-    await page.locator('#agent-input').fill('切换会话前保留的草稿');await page.getByRole('tab',{name:'任务',exact:true}).click();await page.getByRole('tab',{name:'对话',exact:true}).click();assert.equal(await page.locator('#agent-input').inputValue(),'切换会话前保留的草稿');
+    await agentTab('技能');await page.locator('.as-skill').filter({hasText:'custom-flow'}).waitFor();
+    await page.getByRole('tab',{name:'技能',exact:true}).press('Home');assert.equal(await page.getByRole('tab',{name:'任务',exact:true}).getAttribute('aria-selected'),'true');
+    await page.getByRole('tab',{name:'任务',exact:true}).press('End');assert.equal(await page.getByRole('tab',{name:'设置',exact:true}).getAttribute('aria-selected'),'true');
+    await agentTab('对话');assert.equal(await page.locator('#agent-input').evaluate(el=>document.activeElement===el),true);
+    await page.locator('#agent-input').fill('切换会话前保留的草稿');await agentTab('任务');await agentTab('对话');assert.equal(await page.locator('#agent-input').inputValue(),'切换会话前保留的草稿');
     mode='error';await page.locator('#agent-input').fill('验证真实模型失败');await page.locator('#agent-send').click();await page.locator('.agent-error').getByText('请求失败：模拟模型接口失败',{exact:true}).waitFor();
-    await page.locator('[data-agent-session="chat-other123"]').click();await page.getByRole('tab',{name:'任务',exact:true}).click();await page.locator('[data-as-run="run-other"]').waitFor();
+    await page.locator('[data-agent-session="chat-other123"]').click();await agentTab('任务');await page.locator('[data-as-run="run-other"]').waitFor();
     assert.equal(await page.locator('.as-run').count(),1);
-    await page.getByRole('tab',{name:'对话',exact:true}).click();mode='multi';
+    await agentTab('对话');mode='multi';
     await page.locator('#agent-input').fill('展示全部分析过程');await page.locator('#agent-send').click();
     await page.locator('#agent-thinking .agent-response-part').filter({hasText:'第二轮比较'}).waitFor();
     assert.equal(await page.locator('#agent-thinking .agent-response-part').count(),2);
@@ -233,9 +245,9 @@ const server=http.createServer(async(req,res)=>{
     releaseStream();await page.waitForFunction(()=>document.querySelector('#agent-send').textContent==='发送');
     assert.equal(await page.locator('#agent-messages .agent-response-part').count(),2);
     assert.match(await page.locator('#agent-messages').innerText(),/任务已完成/);
-    await page.getByRole('tab',{name:'任务',exact:true}).click();await page.locator('[data-as-run="'+runs[0].id+'"]').click();
+    await agentTab('任务');await page.locator('[data-as-run="'+runs[0].id+'"]').click();
     await page.locator('.as-run-result>summary').click();await page.locator('.as-answer .agent-response-part').nth(1).waitFor();assert.match(await page.locator('.as-answer').innerText(),/第一轮分析/);
-    await page.getByRole('tab',{name:'对话',exact:true}).click();
+    await agentTab('对话');
     await page.reload();await page.locator('#agent-input').waitFor();
     await page.locator('[data-agent-session="chat-other123"]').click();
     await page.locator('#agent-messages .agent-response-part').nth(1).waitFor();
@@ -316,10 +328,10 @@ const server=http.createServer(async(req,res)=>{
     mode='normal';await page.locator('#agent-send').click();await page.waitForFunction(()=>document.querySelector('#agent-send').textContent==='发送');
     assert.match(requests.filter(r=>r.path==='/api/agent/send').at(-1).body.context.quote_text,/第一轮分析/);assert.match(requests.filter(r=>r.path==='/api/agent/send').at(-1).body.context.quote_text,/第二轮比较/);assert.equal(await page.locator('#agent-context-strip .agent-quote-chip').count(),0);assert.ok(await page.locator('#agent-messages .agent-sent-quote').count()>0);
     await page.locator('#erw-fab-ball').click();await selectReply('#fab-messages');await page.locator('[data-fab-act="quote"]').click();assert.match(await page.locator('#fab-quote').innerText(),/回复选段/);await page.locator('#fab-quote-x').click();await page.locator('#fab-close').click();
-    await page.getByRole('tab',{name:'RAG',exact:true}).click();await page.locator('#as-rag-settings').waitFor();if(await page.locator('#as-rag-connection').getAttribute('open')===null)await page.locator('#as-rag-connection>summary').click();
+    await agentTab('RAG');await page.locator('#as-rag-settings').waitFor();if(await page.locator('#as-rag-connection').getAttribute('open')===null)await page.locator('#as-rag-connection>summary').click();
     await page.locator('#as-rag-settings input[name=rag_enabled]').uncheck();await page.locator('#as-rag-settings input[name=rag_top_k]').fill('4');
     await page.getByRole('button',{name:'保存 RAG 设置',exact:true}).click();await page.getByText('RAG 设置已保存',{exact:true}).waitFor();assert.equal(opts.rag_enabled,false);assert.equal(opts.rag_top_k,4);
-    await page.getByRole('tab',{name:'技能',exact:true}).click();await page.locator('#as-skills-enabled').uncheck();await page.locator('[data-enable-skill="literature-review"]').waitFor();
+    await agentTab('技能');await page.locator('#as-skills-enabled').uncheck();await page.locator('[data-enable-skill="literature-review"]').waitFor();
     await page.waitForFunction(()=>document.querySelector('[data-enable-skill="literature-review"]')?.disabled===true);
     assert.equal(await page.locator('[data-enable-skill="literature-review"]').isDisabled(),true);assert.equal(opts.skills_enabled,false);
     await page.screenshot({path:path.join(output,'skills-managed.png')});
@@ -348,11 +360,11 @@ const server=http.createServer(async(req,res)=>{
     await page.locator('#as-rag-status').getByText('模拟清除失败，原索引保留',{exact:true}).waitFor();assert.equal(ragIndex.ready,true);assert.equal(ragOptions.scheduled_updates,true);
     await page.locator('#as-rag-clear:enabled').click();await page.screenshot({path:path.join(output,'rag-clear-confirm-dark.png')});await page.locator('#workbench-dialog [data-dialog-result=confirm]').click();
     await page.getByText('向量数据库已清除，原始资料和长期记忆已保留，自动更新已关闭',{exact:true}).waitFor();assert.equal(clearRequests(),clearBefore+2);assert.equal(ragIndex.ready,false);assert.equal(ragOptions.realtime_updates,false);assert.equal(ragOptions.scheduled_updates,false);assert.equal(await page.locator('[name=realtime_updates]').isChecked(),false);
-    await page.locator('[data-route="agent"]').click();await page.getByRole('tab',{name:'对话',exact:true}).click();await page.locator('#agent-chat-panel [data-agent-rag-config]').click();await page.locator('#as-rag-settings').waitFor();if(await page.locator('#as-rag-connection').getAttribute('open')===null)await page.locator('#as-rag-connection>summary').click();
+    await page.locator('[data-route="agent"]').click();await agentTab('对话');await page.locator('#agent-chat-panel [data-agent-settings]').click();await page.locator('#as-capabilities [data-capability]').first().waitFor();assert.equal(await page.getByRole('tab',{name:'设置',exact:true}).getAttribute('aria-selected'),'true');await agentTab('RAG');await page.locator('#as-rag-settings').waitFor();if(await page.locator('#as-rag-connection').getAttribute('open')===null)await page.locator('#as-rag-connection>summary').click();
     await page.screenshot({path:path.join(output,'rag-settings.png')});
-    await page.setViewportSize({width:390,height:844});await page.getByRole('tab',{name:'技能',exact:true}).click();await page.locator('.as-skill').filter({hasText:'custom-flow'}).waitFor();
+    await page.setViewportSize({width:390,height:844});await agentTab('技能');await page.locator('.as-skill').filter({hasText:'custom-flow'}).waitFor();
     assert.ok(await page.locator('#agent-system-panel').evaluate(e=>e.scrollWidth<=e.clientWidth+1));await page.screenshot({path:path.join(output,'integrated-mobile.png'),fullPage:true});
-    await page.getByRole('tab',{name:'对话',exact:true}).click();await page.locator('#agent-input').waitFor();
+    await agentTab('对话');await page.locator('#agent-input').waitFor();
     assert.equal(await page.locator('.agent-sessions').isVisible(),false);
     await page.locator('#agent-input').fill('窄屏抽屉操作保留草稿');
     await page.locator('#agent-session-drawer').click();assert.equal(await page.locator('.agent-sessions').isVisible(),true);
@@ -390,7 +402,7 @@ const server=http.createServer(async(req,res)=>{
     assert.equal(await reply.locator('[data-agent-reference]').count(),2,'wiki links become clickable, inline code stays literal');
     await hoverContrast('#agent-messages .assistant:last-child tbody td');await reply.locator('.agent-skills-used summary').click();await reply.getByText('证据核查 · 任务匹配',{exact:true}).waitFor();
     await page.locator('#erw-fab-ball').click();await page.locator('#fab-messages .assistant').last().locator('tbody td').last().waitFor();await hoverContrast('#fab-messages .assistant:last-child tbody td');await page.locator('#fab-close').click();
-    await reply.getByRole('link',{name:citationNote.title,exact:true}).click();
+    await reply.getByRole('link',{name:citationNote.title,exact:true}).click({modifiers:['Control']});
     await page.waitForFunction(()=>window.ERWCurrentDoc==='note-citation');
     await page.locator('#md-input').waitFor({state:'attached'});assert.match(await page.locator('#md-input').inputValue(),/无环还需要结合连通性/);
     async function hoverContrast(selector){
@@ -403,7 +415,7 @@ const server=http.createServer(async(req,res)=>{
     await page.locator('#theme-btn').click();await page.locator('#theme-btn').click();await hoverContrast('.md-preview tbody td');
     await page.locator('[data-route="agent"]').click();await page.locator('#agent-input').waitFor();
     await page.evaluate(()=>{window.__openedCitationPdf='';window.ERWLiterature.openByDocument=async id=>{window.__openedCitationPdf=id}});
-    await page.locator('#agent-messages .assistant').last().getByRole('link',{name:'组会原文',exact:true}).click();
+    await page.locator('#agent-messages .assistant').last().getByRole('link',{name:'组会原文',exact:true}).click({modifiers:['Control']});
     await page.waitForFunction(()=>window.__openedCitationPdf==='literature-citation');
     assert.equal(await page.locator('#doc-list [data-doc-id="literature-citation"]').count(),0,'citation opens a PDF even when absent from the filtered list page');
     await page.locator('[data-route="agent"]').click();await page.locator('#agent-input').waitFor();

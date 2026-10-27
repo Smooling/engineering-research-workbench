@@ -3,7 +3,7 @@
   'use strict';
   const q=(s,r=document)=>r.querySelector(s),all=(s,r=document)=>[...r.querySelectorAll(s)];
   const esc=value=>window.ERWResearchUI.esc(value);
-  const kinds={note:'笔记',literature:'文献',idea:'灵感',journal:'实验记录',summary:'工作总结',milestone:'里程碑'};
+  const kinds={note:'笔记',literature:'文献',idea:'灵感',journal:'实验记录',summary:'工作总结',milestone:'里程碑',project:'项目',tag:'标签'};
   const cache=new Map();
   let peek=null,completion=null,completionSeq=0;
   async function json(url,signal){
@@ -20,9 +20,105 @@
     return entry.promise;
   }
   function targetOf(anchor){return anchor.dataset.wiki||anchor.dataset.agentReference||''}
+  // Delegation also covers rows replaced by filtering, pagination or navigation.
+  const hoverSelector='a[data-wiki],a[data-agent-reference],[data-doc-id]:not([data-doc-draft]),[data-hover-doc-id],[data-open-doc],[data-ms-id]';
+  let hover=null;
+  function hoverTrigger(node){
+    if(!(node instanceof Element)||node.closest('[data-bulk-control],input,textarea,select,.document-reference-completion'))return null;
+    return node.closest(hoverSelector);
+  }
+  function closeHover(){
+    const current=hover;if(!current)return;hover=null;
+    clearTimeout(current.timer);clearTimeout(current.closeTimer);current.observer?.disconnect();current.panel?.remove();
+    const described=(current.trigger.getAttribute('aria-describedby')||'').split(/\s+/).filter(id=>id&&id!=='document-hover-preview');
+    if(described.length)current.trigger.setAttribute('aria-describedby',described.join(' '));else current.trigger.removeAttribute('aria-describedby');
+    for(const [element,title] of current.titles||[])if(element.getAttribute('title')===''){
+      if(title===null)element.removeAttribute('title');else element.setAttribute('title',title);
+    }
+    current.onClose?.();
+  }
+  function leaveHover(){if(hover){if(!hover.panel){closeHover();return}clearTimeout(hover.closeTimer);hover.closeTimer=setTimeout(closeHover,180)}}
+  function plainPreview(markdown){
+    let text=String(markdown||'').replace(/^\s*(`{3,}|~{3,})[^\n]*\n[\s\S]*?^\s*\1\s*$/gm,'');
+    text=text.replace(/!\[[^\]]*\]\([^)]*\)/g,'').replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,(_,target,label)=>label||target);
+    if(window.marked&&window.DOMPurify){
+      const html=marked.parse(text,{gfm:true}).replace(/<\/(?:p|li|h[1-6]|tr|blockquote)>|<br\s*\/?>/gi,' ');
+      const holder=document.createElement('div');holder.innerHTML=DOMPurify.sanitize(html,{ALLOWED_TAGS:[],ALLOWED_ATTR:[]});text=holder.textContent;
+    }else text=text.replace(/<[^>]*>/g,'').replace(/\[([^\]]+)\]\([^)]*\)/g,'$1').replace(/[#>*_`~]/g,'');
+    return text.replace(/\s+/g,' ').trim();
+  }
+  function hoverExcerpt(doc,current){
+    const body=String(doc.body||''),rawTarget=current.target.split('|',1)[0],hash=rawTarget.indexOf('#');
+    let fragment=hash>=0?rawTarget.slice(hash+1):'';
+    try{fragment=decodeURIComponent(fragment)}catch{}
+    if(current.link&&fragment){
+      const normalize=value=>plainPreview(value).toLocaleLowerCase().replace(/[^\p{L}\p{N}_\s-]/gu,'').replace(/\s+/g,'-');
+      if(window.marked){
+        const tokens=marked.lexer(body),index=tokens.findIndex(token=>token.type==='heading'&&normalize(token.text)===normalize(fragment));
+        if(index>=0){const section=[];for(let i=index+1;i<tokens.length;i++){if(tokens[i].type==='heading'&&tokens[i].depth<=tokens[index].depth)break;section.push(tokens[i].raw)}return {label:'对应段落 · '+plainPreview(tokens[index].text),text:plainPreview(section.join(''))||'该章节暂无正文'}};
+      }
+      return {label:'未找到对应章节 · 正文开头',text:plainPreview(body)||doc.excerpt||'暂无正文'};
+    }
+    const summary=current.link&&(typeof doc.abstract==='string'?doc.abstract:typeof doc.summary==='string'?doc.summary:'');
+    return {label:summary?'摘要':'正文开头',text:plainPreview(summary||body)||doc.excerpt||'暂无正文'};
+  }
+  function positionHover(current){
+    if(hover!==current||!current.panel)return;
+    const {panel,trigger}=current,rect=current.getRect?.()||trigger.getBoundingClientRect(),zoom=parseFloat(document.documentElement.style.zoom)||1;
+    const width=innerWidth/zoom,height=innerHeight/zoom;
+    panel.style.maxWidth=Math.max(0,width-24)+'px';panel.style.maxHeight=Math.max(0,height-24)+'px';
+    const w=panel.offsetWidth,h=panel.offsetHeight,below=rect.bottom/zoom+8;
+    const right=rect.right/zoom+10,left=rect.left/zoom-w-10,side=right+w<=width-12?right:left>=12?left:null;
+    panel.style.left=Math.max(12,Math.min(side??rect.left/zoom,width-w-12))+'px';
+    panel.style.top=Math.max(12,Math.min(side!==null?rect.top/zoom:below+h<=height-12?below:rect.top/zoom-h-8,height-h-12))+'px';
+  }
+  function hoverStatus(current,title,message,error=false){
+    current.panel.innerHTML='<div class="document-hover-eyebrow">'+(current.link?'链接预览':'条目信息速览')+'</div><h3>'+esc(title)+'</h3><p class="document-hover-status'+(error?' reference-error':'')+'" role="status">'+esc(message)+'</p>';
+    positionHover(current);
+  }
+  async function showHover(current){
+    if(hover!==current)return;if(!current.trigger.isConnected||!current.trigger.matches(':hover,:focus-within')){closeHover();return}
+    const panel=document.createElement('aside');current.panel=panel;panel.id='document-hover-preview';panel.className='document-hover-preview';panel.setAttribute('role','tooltip');panel.title='';
+    document.body.append(panel);current.trigger.setAttribute('aria-describedby',[(current.trigger.getAttribute('aria-describedby')||''),panel.id].filter(Boolean).join(' '));
+    panel.addEventListener('pointerenter',()=>clearTimeout(current.closeTimer));panel.addEventListener('pointerleave',leaveHover);
+    current.observer=new MutationObserver(()=>{if(!current.trigger.isConnected)closeHover()});current.observer.observe(document.body,{childList:true,subtree:true});
+    hoverStatus(current,'正在读取…','正在读取条目内容');
+    try{
+      const doc=current.doc||await resolve(current.target);if(hover!==current||!current.trigger.isConnected)return;
+      const projects=doc.projects?.length?doc.projects:doc.project?[doc.project]:[],tags=Array.isArray(doc.tags)?doc.tags:[],excerpt=hoverExcerpt(doc,current);
+      const updated=String(doc.updated||'').replace('T',' ').replace(/\.\d+(Z|[+-].*)?$/,'$1');
+      panel.innerHTML='<div class="document-hover-eyebrow">'+esc((current.link?'链接预览':'条目信息速览')+' · '+(kinds[doc.kind]||doc.kind||'条目'))+'</div><h3>'+esc(doc.title||'未命名条目')+'</h3><dl><dt>所属项目</dt><dd>'+esc(projects.join('、')||'未关联项目')+'</dd><dt>标签</dt><dd class="document-hover-tags">'+(tags.length?tags.map(tag=>'<span>'+esc(tag)+'</span>').join(''):'暂无标签')+'</dd><dt>更新时间</dt><dd>'+esc(updated||'暂无更新时间')+'</dd></dl><div class="document-hover-excerpt" role="group" aria-label="'+esc(excerpt.label)+'"><p>'+esc(excerpt.text.length>420?excerpt.text.slice(0,420)+'…':excerpt.text)+'</p></div>';
+      positionHover(current);
+    }catch(error){if(hover===current){cache.delete(String(current.target).trim());hoverStatus(current,[400,404].includes(error.status)?'条目不可用':'暂时无法读取',error.message+'；移开后悬停可重试',true)}}
+  }
+  function scheduleHover(trigger,options={}){
+    if(!trigger){closeHover();return}
+    const link=trigger.matches('a[data-wiki],a[data-agent-reference]'),target=options.target||(link?targetOf(trigger):trigger.dataset.hoverDocId||trigger.dataset.docId||trigger.dataset.openDoc||trigger.dataset.msId);
+    if(hover?.trigger===trigger&&hover.target===target){clearTimeout(hover.closeTimer);return}
+    closeHover();if(!target)return;
+    const current={trigger,target,link,getRect:options.getRect,doc:options.doc,onClose:options.onClose};hover=current;
+    // An empty title blocks inherited ancestor tooltips; removing it does not.
+    current.titles=[trigger,...all('[title]',trigger)].map(element=>[element,element.getAttribute('title')]);
+    current.titles.forEach(([element])=>element.setAttribute('title',''));
+    current.timer=setTimeout(()=>showHover(current),420);
+  }
+  document.addEventListener('pointerover',event=>{if(event.pointerType==='touch')return;const trigger=hoverTrigger(event.target);if(trigger)scheduleHover(trigger)});
+  document.addEventListener('pointerout',event=>{if(hover?.trigger.contains(event.target)&&!hover.trigger.contains(event.relatedTarget)&&!hover.panel?.contains(event.relatedTarget))leaveHover()});
+  document.addEventListener('focusin',event=>{const trigger=hoverTrigger(event.target);if(trigger)scheduleHover(trigger)});
+  document.addEventListener('focusout',event=>{if(hover?.trigger.contains(event.target))leaveHover()});
+  document.addEventListener('pointerdown',event=>{if(!hover?.panel?.contains(event.target))closeHover()},true);
+  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&hover){event.preventDefault();closeHover()}},true);
+  document.addEventListener('scroll',event=>{
+    if(!hover||hover.panel?.contains(event.target))return;
+    // Scrolling into view can dispatch after pointerover. Keep a pending hover
+    // only while its trigger still has the pointer or keyboard focus.
+    if(hover.panel||!hover.trigger.matches(':hover,:focus-within'))closeHover();
+  },true);
+  window.addEventListener('resize',closeHover);window.addEventListener('blur',closeHover);window.addEventListener('hashchange',closeHover);
   function annotate(anchor,state,message){
     anchor.dataset.referenceState=state;
-    anchor.title=message;
+    const suppressed=hover?.titles?.find(([element])=>element===anchor);
+    if(suppressed)suppressed[1]=message;else anchor.title=message;
     anchor.setAttribute('aria-label',(anchor.textContent||'引用')+'；'+message);
   }
   async function validate(root,force=false){
@@ -34,7 +130,7 @@
       for(;;){
         if(!root.isConnected||root._referenceValidation!==version)return;
         const target=groups[next++];if(target===undefined)return;const anchors=links.filter(anchor=>targetOf(anchor)===target);
-        try{await resolve(target,force);if(root._referenceValidation===version)anchors.filter(anchor=>anchor.isConnected).forEach(anchor=>annotate(anchor,'valid','点击预览 · Ctrl/⌘ + 点击打开文档'))}
+        try{await resolve(target,force);if(root._referenceValidation===version)anchors.filter(anchor=>anchor.isConnected).forEach(anchor=>annotate(anchor,'valid','悬停速览 · 点击预览 · Ctrl/⌘ + 点击打开文档'))}
         catch(error){
           if(root._referenceValidation!==version)continue;
           const broken=[400,404].includes(error.status);
@@ -50,7 +146,7 @@
       try{
         const url=new URL(anchor.getAttribute('href'),location.href);if(url.origin!==location.origin)return;
         const endpoint=url.pathname.match(/^\/api\/docs\/([^/]+)(?:\/attachment)?$/),file=url.pathname.match(/\/([^/]+)\.md$/i);
-        if(endpoint||file)anchor.dataset.agentReference=decodeURIComponent((endpoint||file)[1]);
+        if(endpoint||file)anchor.dataset.agentReference=decodeURIComponent((endpoint||file)[1])+(url.hash||'');
       }catch{}
     });
     if(!root.dataset.referencePreviewBound){
@@ -118,7 +214,7 @@
       q('[data-reference-retry]',body).onclick=()=>{cache.delete(String(target).trim());showPreview(target,false)};
     }
   }
-  function invalidate(){cache.clear();all('[data-reference-preview-bound]').forEach(root=>validate(root,true))}
+  function invalidate(){closeHover();cache.clear();all('[data-reference-preview-bound]').forEach(root=>validate(root,true))}
 
   function closeCompletion(restoreFocus=false){
     completionSeq++;
@@ -215,10 +311,12 @@
     ta.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.shiftKey&&event.key.toLowerCase()==='k'){event.preventDefault();event.stopPropagation();openPicker(ta);return}completionKey(event)});
     ta.addEventListener('click',()=>updateCompletion(ta));ta.addEventListener('scroll',positionCompletion);
   }
-  function close(){closeCompletion();closePreview(false)}
+  function close(){closeHover();closeCompletion();closePreview(false)}
   document.addEventListener('pointerdown',event=>{if(completion&&!completion.menu.contains(event.target)&&event.target!==completion.ta&&!event.target.closest('[data-md="wiki"]'))closeCompletion()});
   document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!event.defaultPrevented&&!event.isComposing&&event.keyCode!==229&&peek){event.preventDefault();closePreview()}});
   window.addEventListener('resize',()=>{positionCompletion();positionPreview()});window.addEventListener('scroll',positionPreview,{passive:true});
   window.addEventListener('focus',()=>all('[data-reference-preview-bound]').forEach(root=>validate(root,true)));
-  window.ERWDocReferences={bindEditor,bindPreview,openPicker,close,invalidate};
+  // Canvas nodes share the same delay, document cache, bounds and race protection as list entries.
+  const hoverPreview={show:scheduleHover,leave:trigger=>{if(hover?.trigger===trigger)leaveHover()},close:trigger=>{if(hover?.trigger===trigger)closeHover()}};
+  window.ERWDocReferences={bindEditor,bindPreview,openPicker,close,invalidate,hover:hoverPreview};
 })();
